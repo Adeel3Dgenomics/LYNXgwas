@@ -277,10 +277,13 @@ public class LocusUpdater {
                 pw.print("})();");
             }
 
-            // Add to lists and re-export manifest
+            // Add to lists, sort by chromosome then start, rebuild navigation
             allLoci.add(locus);
             allOutputs.add(lo);
-            JsonExporter.exportManifest(allOutputs, config);
+            allLoci.sort(Comparator.comparingInt(Locus::chrInt).thenComparingLong(l -> l.start));
+            allOutputs.sort(Comparator.comparingInt((LocusOutput o) -> Locus.chrToInt(o.chr))
+                .thenComparingLong(o -> o.start));
+            rebuildLocusContext(allOutputs, config);
 
             result.ok = true;
             result.jsonPath = jsonPath;
@@ -338,8 +341,13 @@ public class LocusUpdater {
             allLoci.removeIf(l -> l.index == origIndex);
             allOutputs.removeIf(o -> o.locusIndex == origIndex);
 
-            // Re-export manifest
-            JsonExporter.exportManifest(allOutputs, config);
+            // Sort by chromosome then start position
+            allLoci.sort(Comparator.comparingInt(Locus::chrInt).thenComparingLong(l -> l.start));
+            allOutputs.sort(Comparator.comparingInt((LocusOutput o) -> Locus.chrToInt(o.chr))
+                .thenComparingLong(o -> o.start));
+
+            // Rebuild prev/next context for all loci and re-export their JSONs
+            rebuildLocusContext(allOutputs, config);
 
             result.ok = true;
             System.out.printf("[LocusUpdater] Split locus %d into %d sub-loci: %s%n",
@@ -522,6 +530,49 @@ public class LocusUpdater {
         }
 
         return vr;
+    }
+
+    private static void rebuildLocusContext(List<LocusOutput> allOutputs, Config config) {
+        for (int i = 0; i < allOutputs.size(); i++) {
+            LocusOutput lo = allOutputs.get(i);
+            lo.locusContext = new LocusOutput.LocusContext();
+            if (i > 0) {
+                LocusOutput prev = allOutputs.get(i - 1);
+                long dist = lo.chr.equals(prev.chr)
+                    ? Math.abs(lo.start - prev.end) : Long.MAX_VALUE;
+                lo.locusContext.prevLocus = new LocusOutput.LocusRef(
+                    prev.locusIndex, prev.chr, prev.start, prev.end,
+                    (prev.start + prev.end) / 2, dist);
+            }
+            if (i < allOutputs.size() - 1) {
+                LocusOutput next = allOutputs.get(i + 1);
+                long dist = lo.chr.equals(next.chr)
+                    ? Math.abs(next.start - lo.end) : Long.MAX_VALUE;
+                lo.locusContext.nextLocus = new LocusOutput.LocusRef(
+                    next.locusIndex, next.chr, next.start, next.end,
+                    (next.start + next.end) / 2, dist);
+            }
+        }
+        // Re-export all locus JSONs with updated context + manifest
+        try {
+            String dataDir = config.outputDir + "/data";
+            for (LocusOutput lo : allOutputs) {
+                String json = JsonExporter.locusToJson(lo);
+                try (PrintWriter pw = new PrintWriter(new BufferedWriter(
+                        new FileWriter(dataDir + "/locus_" + lo.locusIndex + ".json")))) {
+                    pw.print(json);
+                }
+                try (PrintWriter pw = new PrintWriter(new BufferedWriter(
+                        new FileWriter(dataDir + "/locus_" + lo.locusIndex + ".js")))) {
+                    pw.print("(function(){window.LOCUS_DATA=window.LOCUS_DATA||{};");
+                    pw.print("window.LOCUS_DATA[" + lo.locusIndex + "]=" + json + ";");
+                    pw.print("})();");
+                }
+            }
+            JsonExporter.exportManifest(allOutputs, config);
+        } catch (IOException e) {
+            System.err.println("[LocusUpdater] Failed to re-export locus context: " + e.getMessage());
+        }
     }
 
     private static void streamGwasForLocus(Locus locus, Config config) throws IOException {

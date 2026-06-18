@@ -192,11 +192,14 @@ public class JsonExporter {
     }
 
     private static String manifestToJson(List<LocusOutput> outputs) {
+        List<LocusOutput> sorted = new ArrayList<>(outputs);
+        sorted.sort(Comparator.comparingInt((LocusOutput o) -> Locus.chrToInt(o.chr))
+            .thenComparingLong(o -> o.start));
         Jb j = new Jb();
         j.obj(() -> {
-            j.kv("total_loci", outputs.size());
+            j.kv("total_loci", sorted.size());
             j.key("loci");
-            j.arr(() -> outputs.forEach(lo -> j.obj(() -> {
+            j.arr(() -> sorted.forEach(lo -> j.obj(() -> {
                 j.kv("index",        lo.locusIndex);
                 j.kv("chr",          lo.chr);
                 j.kv("start",        lo.start);

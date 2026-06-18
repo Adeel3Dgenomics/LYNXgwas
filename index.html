@@ -1579,6 +1579,15 @@ function renderLdTriangle(wrap, ldData, data, xScale, yScale, svgW, svgH, plotWr
       showBlocks ? ldBlocks : null, {closeBlockTops, shadeBlocks, labelBlocks});
     drawTriangleAxis(axisSvg, ldData.snps, cellPx);
     drawLdLegend(legSvg, scaleType);
+    // Center the triangle when it's narrower than the available area
+    const triW = N * cellPx;
+    const containerW = scrollWrap.clientWidth - MARGIN.left - MARGIN.right;
+    if (triW < containerW) {
+      const pad = MARGIN.left + Math.floor((containerW - triW) / 2);
+      triInner.style.paddingLeft = pad + 'px';
+    } else {
+      triInner.style.paddingLeft = MARGIN.left + 'px';
+    }
   }
 
   function redetect() {
