@@ -1,0 +1,587 @@
+import java.io.*;
+import java.util.*;
+
+/**
+ * Recomputes a single locus with new boundaries: re-streams GWAS, re-runs GFF overlap,
+ * PLINK subset, LD, and re-exports the JSON.
+ */
+public class LocusUpdater {
+
+    public static class UpdateResult {
+        public boolean ok;
+        public String error;
+        public String jsonPath;
+    }
+
+    public static UpdateResult update(int locusIndex, long newStart, long newEnd,
+                                      Config config, GffParser gff,
+                                      List<Locus> allLoci) {
+        UpdateResult result = new UpdateResult();
+        try {
+            // Find the original locus
+            Locus original = null;
+            int locusPos = -1;
+            for (int i = 0; i < allLoci.size(); i++) {
+                if (allLoci.get(i).index == locusIndex) {
+                    original = allLoci.get(i);
+                    locusPos = i;
+                    break;
+                }
+            }
+            if (original == null) {
+                result.error = "Locus " + locusIndex + " not found";
+                return result;
+            }
+
+            // Create updated locus with new boundaries
+            Locus updated = new Locus(original.index, original.chr, newStart, newEnd, config.locusPadding);
+
+            // Re-stream GWAS for this single locus
+            streamGwasForLocus(updated, config);
+
+            // Find top SNP
+            Snp topSnp = updated.snps.stream()
+                .min(Comparator.comparingDouble(s -> s.pvalue))
+                .orElse(null);
+
+            // Downsample if needed
+            if (updated.snps.size() > config.maxSnpsPerLocus) {
+                List<Snp> significant = new ArrayList<>();
+                List<Snp> rest = new ArrayList<>();
+                for (Snp s : updated.snps) {
+                    if (s.pvalue < 1e-4) significant.add(s);
+                    else rest.add(s);
+                }
+                int remaining = config.maxSnpsPerLocus - significant.size();
+                if (remaining > 0 && !rest.isEmpty()) {
+                    Collections.shuffle(rest, new Random(42));
+                    significant.addAll(rest.subList(0, Math.min(remaining, rest.size())));
+                }
+                updated.snps.clear();
+                updated.snps.addAll(significant);
+            }
+
+            // Optional rsid annotation
+            if (topSnp != null && config.colRsid.isEmpty() && config.topSnpFile.isEmpty()) {
+                Map<Integer, Snp> topMap = new LinkedHashMap<>();
+                topMap.put(locusIndex, topSnp);
+                new SnpAnnotator().annotateTopSnps(topMap, config);
+            }
+
+            // PLINK subset + LD
+            PlinkSubsetter.SubsetResult subset = null;
+            LdCalculator.LdResult ldResult = null;
+            String plinkBin = null;
+
+            if (config.ldEnabled) {
+                plinkBin = PlinkSubsetter.findPlink(config);
+                if (plinkBin != null) {
+                    // Subset
+                    new File(config.plinkSubsetsDir()).mkdirs();
+                    List<Locus> singleList = Collections.singletonList(updated);
+                    Map<Integer, Snp> topMap = new LinkedHashMap<>();
+                    topMap.put(locusIndex, topSnp);
+                    Map<Integer, PlinkSubsetter.SubsetResult> subsets =
+                        PlinkSubsetter.subsetAll(singleList, topMap, plinkBin, config, null);
+                    subset = subsets.get(locusIndex);
+
+                    // LD
+                    if (subset != null && subset.ok) {
+                        new File(config.ldResultsDir()).mkdirs();
+                        Map<Integer, LdCalculator.LdResult> ldResults =
+                            LdCalculator.computeAll(singleList, topMap, subsets, plinkBin, config, null);
+                        ldResult = ldResults.get(locusIndex);
+                    }
+                }
+            }
+
+            // Build output
+            LocusOutput lo = new LocusOutput();
+            lo.locusIndex  = updated.index;
+            lo.locusName   = "Locus " + updated.index;
+            lo.chr         = updated.chr;
+            lo.start       = updated.start;
+            lo.end         = updated.end;
+            lo.paddedStart = updated.paddedStart;
+            lo.paddedEnd   = updated.paddedEnd;
+            lo.refPanel    = config.ldEnabled ? config.refPanelPopulation : "";
+            lo.topSnp      = topSnp;
+
+            lo.genes        = gff.overlapping(updated.chr, updated.paddedStart, updated.paddedEnd);
+            lo.nearestGenes = gff.nearestGeneNames(updated.mid(), new ArrayList<>(lo.genes));
+
+            lo.gwasSnps = new ArrayList<>(updated.snps);
+            lo.gwasSnps.sort(Comparator.comparingLong(s -> s.pos));
+
+            if (ldResult != null && !ldResult.ldFailed) {
+                for (Snp snp : lo.gwasSnps) {
+                    Double r2 = ldResult.r2ByPos.get(snp.chr + ":" + snp.pos);
+                    if (r2 != null) snp.r2 = r2;
+                }
+                lo.ldTriangle = ldResult.triangle;
+            } else if (lo.topSnp != null && !config.ldEnabled) {
+                for (Snp snp : lo.gwasSnps)
+                    if (snp.id.equals(lo.topSnp.id)) { snp.r2 = 1.0; break; }
+            }
+
+            // Locus context
+            lo.locusContext = new LocusOutput.LocusContext();
+            if (locusPos > 0) {
+                Locus prev = allLoci.get(locusPos - 1);
+                long dist = updated.chr.equals(prev.chr)
+                    ? Math.abs(updated.start - prev.end) : Long.MAX_VALUE;
+                lo.locusContext.prevLocus = new LocusOutput.LocusRef(
+                    prev.index, prev.chr, prev.start, prev.end, prev.mid(), dist);
+            }
+            if (locusPos < allLoci.size() - 1) {
+                Locus next = allLoci.get(locusPos + 1);
+                long dist = updated.chr.equals(next.chr)
+                    ? Math.abs(next.start - updated.end) : Long.MAX_VALUE;
+                lo.locusContext.nextLocus = new LocusOutput.LocusRef(
+                    next.index, next.chr, next.start, next.end, next.mid(), dist);
+            }
+
+            // Export JSON
+            String dataDir = config.outputDir + "/data";
+            String json = JsonExporter.locusToJson(lo);
+            String jsonPath = dataDir + "/locus_" + locusIndex + ".json";
+            try (PrintWriter pw = new PrintWriter(new BufferedWriter(new FileWriter(jsonPath)))) {
+                pw.print(json);
+            }
+            try (PrintWriter pw = new PrintWriter(new BufferedWriter(
+                    new FileWriter(dataDir + "/locus_" + locusIndex + ".js")))) {
+                pw.print("(function(){window.LOCUS_DATA=window.LOCUS_DATA||{};");
+                pw.print("window.LOCUS_DATA[" + locusIndex + "]=" + json + ";");
+                pw.print("})();");
+            }
+
+            // Update the loci list so subsequent updates see the new boundaries
+            allLoci.set(locusPos, updated);
+
+            result.ok = true;
+            result.jsonPath = jsonPath;
+            System.out.printf("[LocusUpdater] Locus %d updated: chr%s:%d-%d → %d SNPs%n",
+                locusIndex, updated.chr, newStart, newEnd, lo.gwasSnps.size());
+
+        } catch (Exception e) {
+            result.error = e.getMessage();
+            e.printStackTrace();
+        }
+        return result;
+    }
+
+    public static UpdateResult create(String chr, long newStart, long newEnd, String locusName,
+                                       Config config, GffParser gff,
+                                       List<Locus> allLoci, List<LocusOutput> allOutputs) {
+        UpdateResult result = new UpdateResult();
+        try {
+            int newIndex = allLoci.stream().mapToInt(l -> l.index).max().orElse(0) + 1;
+
+            Locus locus = new Locus(newIndex, chr, newStart, newEnd, config.locusPadding);
+
+            // Stream GWAS
+            streamGwasForLocus(locus, config);
+
+            // Top SNP
+            Snp topSnp = locus.snps.stream()
+                .min(Comparator.comparingDouble(s -> s.pvalue))
+                .orElse(null);
+
+            // Downsample
+            if (locus.snps.size() > config.maxSnpsPerLocus) {
+                List<Snp> significant = new ArrayList<>();
+                List<Snp> rest = new ArrayList<>();
+                for (Snp s : locus.snps) {
+                    if (s.pvalue < 1e-4) significant.add(s);
+                    else rest.add(s);
+                }
+                int remaining = config.maxSnpsPerLocus - significant.size();
+                if (remaining > 0 && !rest.isEmpty()) {
+                    Collections.shuffle(rest, new Random(42));
+                    significant.addAll(rest.subList(0, Math.min(remaining, rest.size())));
+                }
+                locus.snps.clear();
+                locus.snps.addAll(significant);
+            }
+
+            // rsid annotation
+            if (topSnp != null && config.colRsid.isEmpty() && config.topSnpFile.isEmpty()) {
+                Map<Integer, Snp> topMap = new LinkedHashMap<>();
+                topMap.put(newIndex, topSnp);
+                new SnpAnnotator().annotateTopSnps(topMap, config);
+            }
+
+            // PLINK + LD
+            PlinkSubsetter.SubsetResult subset = null;
+            LdCalculator.LdResult ldResult = null;
+            if (config.ldEnabled) {
+                String plinkBin = PlinkSubsetter.findPlink(config);
+                if (plinkBin != null) {
+                    new File(config.plinkSubsetsDir()).mkdirs();
+                    List<Locus> singleList = Collections.singletonList(locus);
+                    Map<Integer, Snp> topMap = new LinkedHashMap<>();
+                    topMap.put(newIndex, topSnp);
+                    Map<Integer, PlinkSubsetter.SubsetResult> subsets =
+                        PlinkSubsetter.subsetAll(singleList, topMap, plinkBin, config, null);
+                    subset = subsets.get(newIndex);
+
+                    if (subset != null && subset.ok) {
+                        new File(config.ldResultsDir()).mkdirs();
+                        Map<Integer, LdCalculator.LdResult> ldResults =
+                            LdCalculator.computeAll(singleList, topMap, subsets, plinkBin, config, null);
+                        ldResult = ldResults.get(newIndex);
+                    }
+                }
+            }
+
+            // Build output
+            LocusOutput lo = new LocusOutput();
+            lo.locusIndex  = newIndex;
+            lo.locusName   = locusName != null && !locusName.isEmpty() ? locusName : "Locus " + newIndex;
+            lo.chr         = chr;
+            lo.start       = newStart;
+            lo.end         = newEnd;
+            lo.paddedStart = locus.paddedStart;
+            lo.paddedEnd   = locus.paddedEnd;
+            lo.refPanel    = config.ldEnabled ? config.refPanelPopulation : "";
+            lo.topSnp      = topSnp;
+            lo.genes       = gff.overlapping(chr, locus.paddedStart, locus.paddedEnd);
+            lo.nearestGenes = gff.nearestGeneNames(locus.mid(), new ArrayList<>(lo.genes));
+            lo.gwasSnps    = new ArrayList<>(locus.snps);
+            lo.gwasSnps.sort(Comparator.comparingLong(s -> s.pos));
+
+            if (ldResult != null && !ldResult.ldFailed) {
+                for (Snp snp : lo.gwasSnps) {
+                    Double r2 = ldResult.r2ByPos.get(snp.chr + ":" + snp.pos);
+                    if (r2 != null) snp.r2 = r2;
+                }
+                lo.ldTriangle = ldResult.triangle;
+            } else if (lo.topSnp != null && !config.ldEnabled) {
+                for (Snp snp : lo.gwasSnps)
+                    if (snp.id.equals(lo.topSnp.id)) { snp.r2 = 1.0; break; }
+            }
+
+            lo.locusContext = new LocusOutput.LocusContext();
+
+            // Export locus JSON
+            String dataDir = config.outputDir + "/data";
+            String json = JsonExporter.locusToJson(lo);
+            String jsonPath = dataDir + "/locus_" + newIndex + ".json";
+            try (PrintWriter pw = new PrintWriter(new BufferedWriter(new FileWriter(jsonPath)))) {
+                pw.print(json);
+            }
+            try (PrintWriter pw = new PrintWriter(new BufferedWriter(
+                    new FileWriter(dataDir + "/locus_" + newIndex + ".js")))) {
+                pw.print("(function(){window.LOCUS_DATA=window.LOCUS_DATA||{};");
+                pw.print("window.LOCUS_DATA[" + newIndex + "]=" + json + ";");
+                pw.print("})();");
+            }
+
+            // Add to lists and re-export manifest
+            allLoci.add(locus);
+            allOutputs.add(lo);
+            JsonExporter.exportManifest(allOutputs, config);
+
+            result.ok = true;
+            result.jsonPath = jsonPath;
+            System.out.printf("[LocusUpdater] Created locus %d: chr%s:%d-%d → %d SNPs%n",
+                newIndex, chr, newStart, newEnd, lo.gwasSnps.size());
+
+        } catch (Exception e) {
+            result.error = e.getMessage();
+            e.printStackTrace();
+        }
+        return result;
+    }
+
+    public static class SplitRegion {
+        public String name;
+        public long start, end;
+        public SplitRegion(String name, long start, long end) {
+            this.name = name; this.start = start; this.end = end;
+        }
+    }
+
+    public static UpdateResult split(int origIndex, List<SplitRegion> regions,
+                                     Config config, GffParser gff,
+                                     List<Locus> allLoci, List<LocusOutput> allOutputs) {
+        UpdateResult result = new UpdateResult();
+        try {
+            // Find and remove original
+            Locus original = null;
+            int origPos = -1;
+            for (int i = 0; i < allLoci.size(); i++) {
+                if (allLoci.get(i).index == origIndex) {
+                    original = allLoci.get(i);
+                    origPos = i;
+                    break;
+                }
+            }
+            if (original == null) {
+                result.error = "Locus " + origIndex + " not found";
+                return result;
+            }
+
+            // Create each sub-locus
+            List<Integer> newIndices = new ArrayList<>();
+            for (SplitRegion r : regions) {
+                UpdateResult sub = create(original.chr, r.start, r.end, r.name,
+                    config, gff, allLoci, allOutputs);
+                if (!sub.ok) {
+                    result.error = "Failed creating sub-locus '" + r.name + "': " + sub.error;
+                    return result;
+                }
+                newIndices.add(allLoci.get(allLoci.size() - 1).index);
+            }
+
+            // Remove original locus from lists
+            allLoci.removeIf(l -> l.index == origIndex);
+            allOutputs.removeIf(o -> o.locusIndex == origIndex);
+
+            // Re-export manifest
+            JsonExporter.exportManifest(allOutputs, config);
+
+            result.ok = true;
+            System.out.printf("[LocusUpdater] Split locus %d into %d sub-loci: %s%n",
+                origIndex, regions.size(), newIndices);
+
+        } catch (Exception e) {
+            result.error = e.getMessage();
+            e.printStackTrace();
+        }
+        return result;
+    }
+
+    public static class ValidationResult {
+        public boolean valid = true;
+        public List<String> warnings = new ArrayList<>();
+        public List<LdViolation> ldViolations = new ArrayList<>();
+    }
+
+    public static class LdViolation {
+        public String snpA, snpB;
+        public long posA, posB;
+        public int regionA, regionB;
+        public double r2;
+    }
+
+    public static ValidationResult validateSplit(int origIndex, List<SplitRegion> regions,
+                                                  Config config, List<Locus> allLoci) {
+        ValidationResult vr = new ValidationResult();
+
+        // Check minimum distance between adjacent regions
+        List<SplitRegion> sorted = new ArrayList<>(regions);
+        sorted.sort(Comparator.comparingLong(r -> r.start));
+        for (int i = 0; i < sorted.size() - 1; i++) {
+            long gap = sorted.get(i + 1).start - sorted.get(i).end;
+            if (gap < config.splitMinDistBp) {
+                vr.warnings.add("Regions '" + sorted.get(i).name + "' and '" +
+                    sorted.get(i + 1).name + "' are only " + gap +
+                    " bp apart (minimum: " + config.splitMinDistBp + " bp).");
+                vr.valid = false;
+            }
+        }
+
+        // Check overlapping regions
+        for (int i = 0; i < sorted.size() - 1; i++) {
+            if (sorted.get(i).end > sorted.get(i + 1).start) {
+                vr.warnings.add("Regions '" + sorted.get(i).name + "' and '" +
+                    sorted.get(i + 1).name + "' overlap.");
+                vr.valid = false;
+            }
+        }
+
+        // Cross-region LD check using PLINK
+        if (!config.ldEnabled) return vr;
+        String plinkBin = PlinkSubsetter.findPlink(config);
+        if (plinkBin == null) return vr;
+
+        // Find original locus to get the PLINK subset prefix
+        Locus original = null;
+        for (Locus l : allLoci) {
+            if (l.index == origIndex) { original = l; break; }
+        }
+        if (original == null) return vr;
+
+        String subPrefix = config.plinkSubsetsDir() + "/locus_" + origIndex;
+        File bimFile = new File(subPrefix + ".bim");
+        if (!bimFile.exists()) return vr;
+
+        try {
+            // Read BIM to get SNP positions
+            Map<Long, String> posToBimId = new LinkedHashMap<>();
+            try (BufferedReader br = new BufferedReader(new FileReader(bimFile))) {
+                String line;
+                while ((line = br.readLine()) != null) {
+                    String[] f = line.trim().split("\t", -1);
+                    if (f.length < 4) continue;
+                    long pos = Long.parseLong(f[3].trim());
+                    posToBimId.put(pos, f[1]);
+                }
+            }
+
+            // For each region, collect SNP BIM IDs within that region
+            List<List<String>> regionSnps = new ArrayList<>();
+            for (SplitRegion r : regions) {
+                List<String> ids = new ArrayList<>();
+                for (Map.Entry<Long, String> e : posToBimId.entrySet()) {
+                    if (e.getKey() >= r.start && e.getKey() <= r.end) ids.add(e.getValue());
+                }
+                regionSnps.add(ids);
+            }
+
+            // For each pair of regions, pick up to 10 random SNPs from each and compute LD
+            Random rng = new Random(42);
+            for (int i = 0; i < regions.size(); i++) {
+                for (int j = i + 1; j < regions.size(); j++) {
+                    List<String> snpsA = regionSnps.get(i);
+                    List<String> snpsB = regionSnps.get(j);
+                    if (snpsA.isEmpty() || snpsB.isEmpty()) continue;
+
+                    // Sample up to 10 from each
+                    List<String> sampleA = new ArrayList<>(snpsA);
+                    List<String> sampleB = new ArrayList<>(snpsB);
+                    Collections.shuffle(sampleA, rng);
+                    Collections.shuffle(sampleB, rng);
+                    sampleA = sampleA.subList(0, Math.min(10, sampleA.size()));
+                    sampleB = sampleB.subList(0, Math.min(10, sampleB.size()));
+
+                    // Write SNP list for extraction
+                    String ldDir = config.ldResultsDir();
+                    new File(ldDir).mkdirs();
+                    String extractFile = ldDir + "/split_validate_snps.txt";
+                    try (PrintWriter pw = new PrintWriter(extractFile)) {
+                        for (String s : sampleA) pw.println(s);
+                        for (String s : sampleB) pw.println(s);
+                    }
+
+                    // Run PLINK --r2
+                    String ldPrefix = ldDir + "/split_validate";
+                    long windowKb = (original.paddedEnd - original.paddedStart) / 1000 + 2;
+                    Process proc = new ProcessBuilder(Arrays.asList(
+                        plinkBin,
+                        "--bfile", subPrefix,
+                        "--r2",
+                        "--extract", extractFile,
+                        "--ld-window", "999999",
+                        "--ld-window-kb", String.valueOf(windowKb),
+                        "--ld-window-r2", "0.0",
+                        "--out", ldPrefix,
+                        "--silent"
+                    )).redirectErrorStream(true).start();
+                    try (BufferedReader br = new BufferedReader(
+                            new InputStreamReader(proc.getInputStream()))) {
+                        while (br.readLine() != null) {}
+                    }
+                    proc.waitFor();
+
+                    // Parse results — look for cross-region pairs with r² > threshold
+                    Set<String> setA = new HashSet<>(sampleA);
+                    Set<String> setB = new HashSet<>(sampleB);
+
+                    File ldFile = new File(ldPrefix + ".ld");
+                    if (ldFile.exists()) {
+                        try (BufferedReader br = new BufferedReader(new FileReader(ldFile))) {
+                            br.readLine(); // header
+                            String line;
+                            while ((line = br.readLine()) != null) {
+                                String[] f = line.trim().split("\\s+");
+                                if (f.length < 7) continue;
+                                String snpA = f[2], snpB = f[5];
+                                double r2 = Double.parseDouble(f[6]);
+                                // Check if cross-region
+                                boolean crossRegion = (setA.contains(snpA) && setB.contains(snpB))
+                                    || (setA.contains(snpB) && setB.contains(snpA));
+                                if (crossRegion && r2 > config.splitLdThreshold) {
+                                    LdViolation v = new LdViolation();
+                                    v.snpA = snpA; v.snpB = snpB;
+                                    v.posA = Long.parseLong(f[1]); v.posB = Long.parseLong(f[4]);
+                                    v.regionA = i; v.regionB = j;
+                                    v.r2 = r2;
+                                    vr.ldViolations.add(v);
+                                    vr.valid = false;
+                                }
+                            }
+                        }
+                        ldFile.delete();
+                    }
+                    // Cleanup
+                    new File(extractFile).delete();
+                    new File(ldPrefix + ".log").delete();
+                    new File(ldPrefix + ".nosex").delete();
+                }
+            }
+
+            if (!vr.ldViolations.isEmpty()) {
+                vr.warnings.add(vr.ldViolations.size() + " SNP pair(s) exceed r² threshold of " +
+                    config.splitLdThreshold + " across regions.");
+            }
+
+        } catch (Exception e) {
+            vr.warnings.add("LD validation error: " + e.getMessage());
+        }
+
+        return vr;
+    }
+
+    private static void streamGwasForLocus(Locus locus, Config config) throws IOException {
+        try (BufferedReader br = new BufferedReader(new FileReader(config.gwasFile), 1024 * 1024)) {
+            String header = br.readLine();
+            if (header == null) return;
+
+            String[] cols = header.trim().split("\t");
+            int iChr   = colIdx(cols, config.colChr);
+            int iPos   = colIdx(cols, config.colPos);
+            int iPval  = colIdx(cols, config.colPvalue);
+            int iVarid = config.colVarid.isEmpty() ? -1 : colIdx(cols, config.colVarid);
+            int iRsid  = config.colRsid.isEmpty()  ? -1 : colIdx(cols, config.colRsid);
+            int iEa    = colIdx(cols, config.colEa);
+            int iNea   = colIdx(cols, config.colNea);
+
+            String line;
+            while ((line = br.readLine()) != null) {
+                if (line.isEmpty()) continue;
+                String[] f = splitTab(line);
+                if (f.length <= Math.max(iChr, Math.max(iPos, iPval))) continue;
+
+                String chr = f[iChr].trim();
+                if (!chr.equals(locus.chr)) continue;
+
+                long pos;
+                double pval;
+                try {
+                    pos  = Long.parseLong(f[iPos].trim());
+                    pval = Double.parseDouble(f[iPval].trim());
+                } catch (NumberFormatException e) { continue; }
+
+                if (pos < locus.paddedStart || pos > locus.paddedEnd) continue;
+
+                String varid = (iVarid >= 0 && iVarid < f.length) ? f[iVarid].trim() : chr + ":" + pos;
+                String rsid  = (iRsid  >= 0 && iRsid  < f.length) ? f[iRsid].trim()  : "";
+                String id    = (!rsid.isEmpty() && !rsid.equals(".")) ? rsid : varid;
+                String ea    = (iEa  >= 0 && iEa  < f.length) ? f[iEa].trim()  : ".";
+                String nea   = (iNea >= 0 && iNea < f.length) ? f[iNea].trim() : ".";
+
+                locus.snps.add(new Snp(id, chr, pos, pval, ea, nea));
+            }
+        }
+    }
+
+    private static int colIdx(String[] cols, String name) {
+        for (int i = 0; i < cols.length; i++)
+            if (cols[i].trim().equalsIgnoreCase(name)) return i;
+        return -1;
+    }
+
+    private static String[] splitTab(String line) {
+        int count = 1;
+        for (int i = 0; i < line.length(); i++) if (line.charAt(i) == '\t') count++;
+        String[] parts = new String[count];
+        int start = 0, idx = 0;
+        for (int i = 0; i < line.length(); i++) {
+            if (line.charAt(i) == '\t') { parts[idx++] = line.substring(start, i); start = i + 1; }
+        }
+        parts[idx] = line.substring(start);
+        return parts;
+    }
+}

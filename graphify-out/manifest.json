@@ -1,0 +1,107 @@
+{
+  "C:\\Users\\alsammana\\Documents\\LOCAL_ANALYSIS_HERE\\LociCatalogue\\src\\Config.java": {
+    "mtime": 1781661803.774949,
+    "ast_hash": "fe7b1ed840c2b9155270bf46d36e43b0",
+    "semantic_hash": "fe7b1ed840c2b9155270bf46d36e43b0"
+  },
+  "C:\\Users\\alsammana\\Documents\\LOCAL_ANALYSIS_HERE\\LociCatalogue\\src\\Exon.java": {
+    "mtime": 1781639542.233001,
+    "ast_hash": "5a4476cc428057671732db6badb2db62",
+    "semantic_hash": "5a4476cc428057671732db6badb2db62"
+  },
+  "C:\\Users\\alsammana\\Documents\\LOCAL_ANALYSIS_HERE\\LociCatalogue\\src\\Gene.java": {
+    "mtime": 1781639555.9732077,
+    "ast_hash": "9e14fd99f76af5b557edea3c83254e0b",
+    "semantic_hash": "9e14fd99f76af5b557edea3c83254e0b"
+  },
+  "C:\\Users\\alsammana\\Documents\\LOCAL_ANALYSIS_HERE\\LociCatalogue\\src\\GenomeSkyline.java": {
+    "mtime": 1781731914.5050428,
+    "ast_hash": "502fa4feb19e922c9862c60c676134e6",
+    "semantic_hash": "502fa4feb19e922c9862c60c676134e6"
+  },
+  "C:\\Users\\alsammana\\Documents\\LOCAL_ANALYSIS_HERE\\LociCatalogue\\src\\GffParser.java": {
+    "mtime": 1781640254.5340283,
+    "ast_hash": "e289b47f37a1b1b8ec5139c56ba1298f",
+    "semantic_hash": "e289b47f37a1b1b8ec5139c56ba1298f"
+  },
+  "C:\\Users\\alsammana\\Documents\\LOCAL_ANALYSIS_HERE\\LociCatalogue\\src\\GwasParser.java": {
+    "mtime": 1781649445.221702,
+    "ast_hash": "23ebfe1bfede2d0ae45e9c3d72338c38",
+    "semantic_hash": "23ebfe1bfede2d0ae45e9c3d72338c38"
+  },
+  "C:\\Users\\alsammana\\Documents\\LOCAL_ANALYSIS_HERE\\LociCatalogue\\src\\JsonExporter.java": {
+    "mtime": 1781709082.932225,
+    "ast_hash": "7cec1c8cb6781620d464c56d77ced326",
+    "semantic_hash": "7cec1c8cb6781620d464c56d77ced326"
+  },
+  "C:\\Users\\alsammana\\Documents\\LOCAL_ANALYSIS_HERE\\LociCatalogue\\src\\LdCalculator.java": {
+    "mtime": 1781731200.343105,
+    "ast_hash": "67b9a57f6498dcca7646b678e1fb882a",
+    "semantic_hash": "67b9a57f6498dcca7646b678e1fb882a"
+  },
+  "C:\\Users\\alsammana\\Documents\\LOCAL_ANALYSIS_HERE\\LociCatalogue\\src\\LocalServer.java": {
+    "mtime": 1781652939.1968985,
+    "ast_hash": "f7d542f08ffa309b4d70a1abad111ab7",
+    "semantic_hash": "f7d542f08ffa309b4d70a1abad111ab7"
+  },
+  "C:\\Users\\alsammana\\Documents\\LOCAL_ANALYSIS_HERE\\LociCatalogue\\src\\LociParser.java": {
+    "mtime": 1781639571.7308967,
+    "ast_hash": "33fc6608e02f7316722a0db1bdd2c584",
+    "semantic_hash": "33fc6608e02f7316722a0db1bdd2c584"
+  },
+  "C:\\Users\\alsammana\\Documents\\LOCAL_ANALYSIS_HERE\\LociCatalogue\\src\\Locus.java": {
+    "mtime": 1781639537.1837254,
+    "ast_hash": "3a0569580d5fd2495cc89ce6841b9cbb",
+    "semantic_hash": "3a0569580d5fd2495cc89ce6841b9cbb"
+  },
+  "C:\\Users\\alsammana\\Documents\\LOCAL_ANALYSIS_HERE\\LociCatalogue\\src\\LocusOutput.java": {
+    "mtime": 1781661775.7602787,
+    "ast_hash": "9450b1874443cc2e377e8e8d85786cf2",
+    "semantic_hash": "9450b1874443cc2e377e8e8d85786cf2"
+  },
+  "C:\\Users\\alsammana\\Documents\\LOCAL_ANALYSIS_HERE\\LociCatalogue\\src\\Main.java": {
+    "mtime": 1781731922.9595325,
+    "ast_hash": "6b65d5d4dba24d787853d584c77994de",
+    "semantic_hash": "6b65d5d4dba24d787853d584c77994de"
+  },
+  "C:\\Users\\alsammana\\Documents\\LOCAL_ANALYSIS_HERE\\LociCatalogue\\src\\PlinkSubsetter.java": {
+    "mtime": 1781652839.814502,
+    "ast_hash": "34e553861197b8e65f57858d55c744d6",
+    "semantic_hash": "34e553861197b8e65f57858d55c744d6"
+  },
+  "C:\\Users\\alsammana\\Documents\\LOCAL_ANALYSIS_HERE\\LociCatalogue\\src\\ProgressTracker.java": {
+    "mtime": 1781652819.5367582,
+    "ast_hash": "53a06bd7d6862546eb3ed2f15f797374",
+    "semantic_hash": "53a06bd7d6862546eb3ed2f15f797374"
+  },
+  "C:\\Users\\alsammana\\Documents\\LOCAL_ANALYSIS_HERE\\LociCatalogue\\src\\Snp.java": {
+    "mtime": 1781652805.4014516,
+    "ast_hash": "e2509fd304f9785ded69cd332296bb9b",
+    "semantic_hash": "e2509fd304f9785ded69cd332296bb9b"
+  },
+  "C:\\Users\\alsammana\\Documents\\LOCAL_ANALYSIS_HERE\\LociCatalogue\\src\\SnpAnnotator.java": {
+    "mtime": 1781639704.7437973,
+    "ast_hash": "9d2aaf7f39f7ad533b16854340ac10a9",
+    "semantic_hash": "9d2aaf7f39f7ad533b16854340ac10a9"
+  },
+  "C:\\Users\\alsammana\\Documents\\LOCAL_ANALYSIS_HERE\\LociCatalogue\\src\\Transcript.java": {
+    "mtime": 1781639551.7187567,
+    "ast_hash": "3f1347b3dad65241326447e7dda2cd7c",
+    "semantic_hash": "3f1347b3dad65241326447e7dda2cd7c"
+  },
+  "C:\\Users\\alsammana\\Documents\\LOCAL_ANALYSIS_HERE\\LociCatalogue\\New Text Document.txt": {
+    "mtime": 1781734660.3100834,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "C:\\Users\\alsammana\\Documents\\LOCAL_ANALYSIS_HERE\\LociCatalogue\\ld_triangle_test.html": {
+    "mtime": 1781731334.8059137,
+    "ast_hash": "0dc588ba4fc5a52ceac7950d094b10e6",
+    "semantic_hash": "0dc588ba4fc5a52ceac7950d094b10e6"
+  },
+  "C:\\Users\\alsammana\\Documents\\LOCAL_ANALYSIS_HERE\\LociCatalogue\\output\\index.html": {
+    "mtime": 1781747969.6546528,
+    "ast_hash": "f29af4111f291ac023210cda8c048114",
+    "semantic_hash": "f29af4111f291ac023210cda8c048114"
+  }
+}

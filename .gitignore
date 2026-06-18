@@ -1,0 +1,30 @@
+# Large input data (GWAS files, loci definitions, spreadsheets)
+input/
+
+# Reference annotations (GFF3 — too large for git)
+resources/
+
+# PLINK binaries and compiled Java classes
+bin/
+
+# Third-party libraries
+lib/
+
+# Generated output (data files, PLINK subsets, LD results, tmp)
+output/data/
+output/plink_subsets/
+output/ld_results/
+output/tmp/
+output/plots/
+
+# Keep the viewer HTML (output/index.html) — it IS the app
+!output/index.html
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# Claude Code project config
+.claude/
