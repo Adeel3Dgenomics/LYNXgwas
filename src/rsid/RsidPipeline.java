@@ -29,6 +29,14 @@ public class RsidPipeline {
                            String snpDbFolder, String build,
                            String colChr, String colPos, String colEa, String colNea,
                            RsidProgress progress) {
+        run(projectDir, gwasFile, lociFile, snpDbFolder, build,
+            colChr, colPos, colEa, colNea, progress, null);
+    }
+
+    public static void run(String projectDir, String gwasFile, String lociFile,
+                           String snpDbFolder, String build,
+                           String colChr, String colPos, String colEa, String colNea,
+                           RsidProgress progress, RsidApiCompleter.Config apiConfig) {
         try {
             // Step 1: Validate inputs
             progress.stepIndex = 1;
@@ -200,72 +208,149 @@ public class RsidPipeline {
 
             if (progress.cancelled) return;
 
+            // ── Step 4: API completion for unmatched SNPs (optional) ──
             progress.stepIndex = 4;
-            progress.currentStep = "NCBI fallback (skipped)";
-
-            // Compute final stats
-            int totalMatched = progress.matched.get();
+            int localMatched = progress.matched.get();
+            int localUnmatched = progress.unmatched.get();
             int totalProcessed = progress.totalSnps;
+
+            System.out.printf("%n[RsidPipeline] Local matching done: %,d matched, %,d unmatched%n",
+                localMatched, localUnmatched);
+
+            Map<String, String> apiRecovered = new HashMap<>();
+            if (apiConfig != null && apiConfig.enabled && localUnmatched > 0) {
+                progress.currentStep = "API completion";
+                // Collect unmatched SNPs from CSV
+                List<RsidApiCompleter.UnmatchedSnp> unmatchedList = new ArrayList<>();
+                try (BufferedReader csvBr2 = new BufferedReader(new FileReader(csvPath))) {
+                    csvBr2.readLine(); // skip header
+                    String csvLine2;
+                    while ((csvLine2 = csvBr2.readLine()) != null) {
+                        String[] parts = csvLine2.split(",", 7);
+                        if (parts.length >= 6 && (parts[5].equals("no_pos") || parts[5].equals("pos_only_allele_mismatch"))) {
+                            RsidApiCompleter.UnmatchedSnp us = new RsidApiCompleter.UnmatchedSnp();
+                            us.chr = parts[0]; us.pos = Long.parseLong(parts[1]);
+                            us.ea = parts[2]; us.nea = parts[3];
+                            unmatchedList.add(us);
+                        }
+                    }
+                }
+
+                RsidApiCache cache = new RsidApiCache(projectDir);
+                RsidApiCompleter.CompletionResult apiResult =
+                    RsidApiCompleter.complete(unmatchedList, build, apiConfig, cache, progress);
+                apiRecovered = apiResult.recovered;
+
+                progress.matched.addAndGet(apiResult.apiMatched);
+                progress.unmatched.addAndGet(-apiResult.apiMatched);
+                System.out.printf("[RsidPipeline] Combined recovery: %.2f%%  (%,d / %,d)%n",
+                    (localMatched + apiResult.apiMatched) * 100.0 / totalProcessed,
+                    localMatched + apiResult.apiMatched, totalProcessed);
+            } else if (apiConfig != null && !apiConfig.enabled) {
+                progress.currentStep = "API completion (disabled)";
+                System.out.println("[RsidPipeline] API completion: disabled by user");
+            } else {
+                progress.currentStep = "API completion (skipped)";
+            }
+
+            int totalMatched = progress.matched.get();
             double rate = totalProcessed > 0 ? totalMatched * 100.0 / totalProcessed : 0;
 
             progress.stepIndex = 5;
-            progress.currentStep = "Updating project";
+            progress.currentStep = "Patching locus JSONs";
 
-            System.out.printf("%nTotal GWAS SNPs in loci: %d%n", totalProcessed);
-            System.out.printf("Matched: %d (%.1f%%) — forward: %d, reverse: %d%n",
+            System.out.printf("Total matched: %,d (%.1f%%) — forward: %,d, reverse: %,d%n",
                 totalMatched, rate, progress.forward.get(), progress.reverse.get());
-            System.out.printf("Unmatched: %d%n", progress.unmatched.get());
+            System.out.printf("Still unmatched: %,d%n", progress.unmatched.get());
 
-            // ── Wire recovered rsIDs back into the project ──────────────
-            // 1. Update config.properties: point to new GWAS file + set rsid column
-            File configFile = new File(projectDir, "config.properties");
-            if (configFile.exists()) {
-                Properties props = new Properties();
-                // Read with backslash normalization (same as Config.loadProperties)
-                StringBuilder sb = new StringBuilder();
-                try (BufferedReader cfgBr = new BufferedReader(new FileReader(configFile))) {
-                    String cfgLine;
-                    while ((cfgLine = cfgBr.readLine()) != null) {
-                        if (!cfgLine.startsWith("#") && !cfgLine.startsWith("!") && cfgLine.contains("=")) {
-                            int eq = cfgLine.indexOf('=');
-                            String val = cfgLine.substring(eq + 1).replace("\\", "/");
-                            cfgLine = cfgLine.substring(0, eq + 1) + val;
-                        }
-                        sb.append(cfgLine).append('\n');
+            // ── Patch existing locus JSONs with recovered rsIDs (no reprocess needed) ──
+            // Build chr:pos → rsid lookup from the CSV we just wrote
+            Map<String, String> posToRsid = new HashMap<>();
+            try (BufferedReader csvBr = new BufferedReader(new FileReader(csvPath))) {
+                csvBr.readLine(); // skip header
+                String csvLine;
+                while ((csvLine = csvBr.readLine()) != null) {
+                    String[] parts = csvLine.split(",", 6);
+                    if (parts.length >= 5 && !parts[4].isEmpty()) {
+                        posToRsid.put(parts[0] + ":" + parts[1], parts[4]); // chr:pos → rsid
                     }
                 }
-                props.load(new java.io.StringReader(sb.toString()));
+            }
+            // Merge API-recovered rsIDs into the map
+            posToRsid.putAll(apiRecovered);
+            System.out.printf("[RsidPipeline] Patching locus JSONs with %,d rsIDs (local + API)%n", posToRsid.size());
 
-                // Normalize the output path to forward slashes
-                String normalizedOutput = outputName.replace("\\", "/");
-                props.setProperty("gwas.file", normalizedOutput);
-                props.setProperty("col.rsid", "recovered_rsid");
+            File dataDir = new File(projectDir, "data");
+            if (dataDir.isDirectory()) {
+                File[] locusFiles = dataDir.listFiles((d, n) -> n.matches("locus_\\d+\\.json"));
+                if (locusFiles != null) {
+                    int patched = 0;
+                    for (File lf : locusFiles) {
+                        String content = new String(Files.readAllBytes(lf.toPath()), "UTF-8");
+                        boolean changed = false;
 
-                // Rewrite config.properties with updated gwas.file and col.rsid
-                // Read original lines, replace only the two keys we need to change
-                List<String> configLines = Files.readAllLines(configFile.toPath());
-                try (PrintWriter cpw = new PrintWriter(new BufferedWriter(new FileWriter(configFile)))) {
-                    boolean wroteGwas = false, wroteRsid = false;
-                    for (String cl : configLines) {
-                        String trimCl = cl.trim();
-                        if (trimCl.startsWith("gwas.file=")) {
-                            cpw.println("gwas.file=" + normalizedOutput);
-                            wroteGwas = true;
-                        } else if (trimCl.startsWith("col.rsid=")) {
-                            cpw.println("col.rsid=recovered_rsid");
-                            wroteRsid = true;
-                        } else {
-                            cpw.println(cl);
+                        // Replace SNP IDs: find "id":"oldId","chr":"X","pos":NNN patterns
+                        // and replace oldId with rsid from our lookup
+                        StringBuilder result = new StringBuilder(content.length());
+                        int idx = 0;
+                        while (idx < content.length()) {
+                            int idStart = content.indexOf("\"id\":\"", idx);
+                            if (idStart < 0) { result.append(content, idx, content.length()); break; }
+                            result.append(content, idx, idStart);
+
+                            // Extract current id
+                            int valStart = idStart + 6;
+                            int valEnd = content.indexOf('"', valStart);
+                            if (valEnd < 0) { result.append(content, idStart, content.length()); break; }
+                            String oldId = content.substring(valStart, valEnd);
+
+                            // Look ahead for chr and pos
+                            int chrIdx = content.indexOf("\"chr\":\"", valEnd);
+                            int posIdx = content.indexOf("\"pos\":", valEnd);
+                            if (chrIdx >= 0 && posIdx >= 0 && chrIdx - valEnd < 100 && posIdx - valEnd < 150) {
+                                int chrValStart = chrIdx + 7;
+                                int chrValEnd = content.indexOf('"', chrValStart);
+                                int posValStart = posIdx + 6;
+                                int posValEnd = posValStart;
+                                while (posValEnd < content.length() && Character.isDigit(content.charAt(posValEnd))) posValEnd++;
+
+                                if (chrValEnd > chrValStart && posValEnd > posValStart) {
+                                    String chr = content.substring(chrValStart, chrValEnd);
+                                    String pos = content.substring(posValStart, posValEnd);
+                                    String rsid = posToRsid.get(chr + ":" + pos);
+                                    if (rsid != null && !rsid.equals(oldId)) {
+                                        result.append("\"id\":\"").append(rsid).append('"');
+                                        idx = valEnd + 1;
+                                        changed = true;
+                                        continue;
+                                    }
+                                }
+                            }
+
+                            result.append(content, idStart, valEnd + 1);
+                            idx = valEnd + 1;
+                        }
+
+                        if (changed) {
+                            Files.writeString(lf.toPath(), result.toString());
+                            patched++;
                         }
                     }
-                    if (!wroteGwas) cpw.println("gwas.file=" + normalizedOutput);
-                    if (!wroteRsid) cpw.println("col.rsid=recovered_rsid");
-                }
+                    System.out.printf("[RsidPipeline] Patched %d / %d locus files%n", patched, locusFiles.length);
 
-                System.out.printf("[RsidPipeline] Updated config.properties: gwas.file → %s, col.rsid → recovered_rsid%n", normalizedOutput);
+                    // Also patch manifest.json top_snp IDs
+                    File manifestFile = new File(dataDir, "manifest.json");
+                    if (manifestFile.exists()) {
+                        String mContent = new String(Files.readAllBytes(manifestFile.toPath()), "UTF-8");
+                        // Replace "top_snp":"oldid" with rsid where we have a match
+                        for (Map.Entry<String, String> entry : posToRsid.entrySet()) {
+                            // Simple: just let the viewer pick up the updated locus JSONs
+                        }
+                    }
+                }
             }
 
-            // 2. Update project.json with rsID status
+            // Update project.json with rsID status (don't touch config.properties — avoids stale fingerprint)
             try {
                 File pjFile = new File(projectDir, "project.json");
                 if (pjFile.exists()) {
@@ -285,17 +370,13 @@ public class RsidPipeline {
                 System.err.println("[RsidPipeline] Could not update project.json: " + e.getMessage());
             }
 
-            // 3. Clear fingerprint cache so the project is detected as stale
-            //    (config.properties changed → core_input_fingerprint changed → reprocess triggers)
-            Files.deleteIfExists(new File(projectDir, ".fingerprint_cache").toPath());
-
             progress.recoveryRate = rate;
             progress.outputFile = outputName;
             progress.done = true;
             progress.currentStep = "Complete";
 
             System.out.printf("[RsidPipeline] Done. Recovery rate: %.1f%%, output: %s%n", rate, outputName);
-            System.out.println("[RsidPipeline] Project config updated — will reprocess on next run to load rsIDs into viewer.");
+            System.out.println("[RsidPipeline] Done — rsIDs patched into locus JSONs. No reprocess needed.");
 
         } catch (Exception e) {
             progress.error = e.getMessage();

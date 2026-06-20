@@ -129,7 +129,7 @@ public class Config {
 
     public void validate() {
         if (gwasFile.isEmpty()) throw new IllegalStateException("gwas.file must be specified");
-        if (lociFile.isEmpty()) throw new IllegalStateException("loci.file must be specified");
+        // lociFile is optional — user can generate it via "Get Loci"
         if (gff3File.isEmpty()) throw new IllegalStateException("gff3.file must be specified");
         if (ldEnabled && refPanelPath.isEmpty()) {
             System.err.println("[WARN] ld.enabled=true but ref.panel.path is not set — disabling LD");

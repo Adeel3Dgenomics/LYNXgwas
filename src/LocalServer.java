@@ -6,6 +6,7 @@ import java.nio.file.*;
 import java.util.*;
 import java.util.concurrent.*;
 import rsid.*;
+import loci.*;
 
 public class LocalServer {
 
@@ -62,6 +63,7 @@ public class LocalServer {
         // ── Project-scoped API (Step 6) ──────────────────────────────────
         http.createContext("/api/projects/process", this::processProjects);
         http.createContext("/api/projects",         this::listProjects);
+        http.createContext("/api/delete-project",    this::projectDelete);
         http.createContext("/api/project/",         this::projectRouter);
         http.createContext("/api/peek-file-header", this::peekFileHeader);
 
@@ -70,6 +72,8 @@ public class LocalServer {
         http.createContext("/api/rsid-recover",      this::rsidRecover);
         http.createContext("/api/rsid-progress",     this::rsidProgressEndpoint);
         http.createContext("/api/rsid-detect",       this::rsidDetect);
+        http.createContext("/api/loci-identify",     this::lociIdentify);
+        http.createContext("/api/loci-progress",     this::lociProgressEndpoint);
         http.createContext("/pick-folder-native",    this::pickFolder);
 
         // ── Legacy endpoints (kept for backward compatibility) ───────────
@@ -124,9 +128,12 @@ public class LocalServer {
                 json.append(",\"rsid_recovery_rate\":\"").append(escJ(pm.rsidRecoveryRate)).append('"');
             }
 
-            // Live-computed status (never cached — read directly from config)
+            // rsID status from project.json (always available, even if config fails)
+            boolean rsidPresent = pm != null && pm.rsidColumnPresent;
+            boolean hasLoci = false;
+
+            // Live-computed pipeline status
             String status;
-            boolean rsidPresent = false;
             if (processing.contains(id)) {
                 status = "processing";
             } else {
@@ -136,14 +143,19 @@ public class LocalServer {
                         ProjectMetadata.checkStaleness(dir.getAbsolutePath(), cfg);
                     status = reason == ProjectMetadata.StaleReason.NOT_STALE
                         ? "up_to_date" : "needs_reprocessing";
-                    // rsID status: live from config, not from project.json
-                    rsidPresent = cfg.colRsid != null && !cfg.colRsid.isEmpty();
+                    // Also check config for rsID column (covers projects that had rsIDs from the start)
+                    if (cfg.colRsid != null && !cfg.colRsid.isEmpty()) rsidPresent = true;
+                    // Check if loci file exists
+                    if (cfg.lociFile != null && !cfg.lociFile.isEmpty() && new File(cfg.lociFile).exists()) {
+                        hasLoci = true;
+                    }
                 } catch (Exception e) {
                     status = "error";
                 }
             }
             json.append(",\"status\":\"").append(status).append('"');
             json.append(",\"rsid_column_present\":").append(rsidPresent);
+            json.append(",\"has_loci\":").append(hasLoci);
             json.append('}');
         }
         json.append(']');
@@ -243,6 +255,27 @@ public class LocalServer {
 
     // ── Project router: /api/project/{id}/... ────────────────────────────
 
+    // POST /api/project-delete — { "id": "..." }
+    private void projectDelete(HttpExchange ex) throws IOException {
+        cors(ex); if (preflight(ex)) return;
+        if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) {
+            respond(ex, 405, "application/json", "{\"error\":\"POST required\"}".getBytes()); return;
+        }
+        String body = new String(readAll(ex.getRequestBody()), "UTF-8");
+        String id = extractStr(body, "id");
+        if (id == null || id.isEmpty()) {
+            respond(ex, 400, "application/json", "{\"error\":\"missing id\"}".getBytes()); return;
+        }
+        File dir = new File("projects", id);
+        if (!dir.isDirectory()) {
+            respond(ex, 404, "application/json", "{\"error\":\"Project not found\"}".getBytes()); return;
+        }
+        deleteDirectory(dir);
+        projectStates.remove(id);
+        respond(ex, 200, "application/json", "{\"ok\":true}".getBytes());
+        System.out.printf("[Server] Deleted project '%s'%n", id);
+    }
+
     private void projectRouter(HttpExchange ex) throws IOException {
         cors(ex); if (preflight(ex)) return;
         String path = ex.getRequestURI().getPath();
@@ -254,6 +287,20 @@ public class LocalServer {
 
         String projectDir = new File("projects", projectId).getAbsolutePath();
         String dataDir = projectDir + "/data";
+
+        // DELETE /api/project/{id} — delete entire project
+        if (action.isEmpty() && "DELETE".equalsIgnoreCase(ex.getRequestMethod())) {
+            File dir = new File("projects", projectId);
+            if (!dir.isDirectory()) {
+                respond(ex, 404, "application/json", "{\"error\":\"Project not found\"}".getBytes());
+                return;
+            }
+            deleteDirectory(dir);
+            projectStates.remove(projectId);
+            respond(ex, 200, "application/json", "{\"ok\":true}".getBytes());
+            System.out.printf("[Server] Deleted project '%s'%n", projectId);
+            return;
+        }
 
         if (action.equals("manifest")) {
             serveJson(ex, dataDir + "/manifest.json");
@@ -603,6 +650,7 @@ public class LocalServer {
     // ══════════════════════════════════════════════════════════════════════
 
     private final Map<String, RsidProgress> rsidProgressMap = new ConcurrentHashMap<>();
+    private final Map<String, LociProgress> lociProgressMap = new ConcurrentHashMap<>();
 
     // GET/POST /api/global-config
     private void globalConfigEndpoint(HttpExchange ex) throws IOException {
@@ -671,17 +719,39 @@ public class LocalServer {
             return;
         }
 
+        // Block if another heavy process is running for this project
+        if (processing.contains(projectId)) {
+            respond(ex, 409, "application/json",
+                "{\"error\":\"Project is currently being processed. Wait for it to finish.\"}".getBytes());
+            return;
+        }
+
+        // Parse API completion config from request
+        RsidApiCompleter.Config apiCfg = null;
+        String apiEnabled = extractStr(body, "api_enabled");
+        if ("true".equals(apiEnabled)) {
+            apiCfg = new RsidApiCompleter.Config();
+            apiCfg.enabled = true;
+            String maxU = extractStr(body, "api_max_unmatched");
+            if (maxU != null && !maxU.isEmpty()) apiCfg.maxUnmatched = Integer.parseInt(maxU);
+            String batch = extractStr(body, "api_batch_size");
+            if (batch != null && !batch.isEmpty()) apiCfg.batchSize = Math.min(200, Integer.parseInt(batch));
+            String ncbiKey = extractStr(body, "ncbi_api_key");
+            if (ncbiKey != null) apiCfg.ncbiApiKey = ncbiKey;
+        }
+
         // Start recovery in background
         RsidProgress rp = new RsidProgress();
         rsidProgressMap.put(projectId, rp);
 
         String snpFolder = snpDb.folder;
         String build = snpDb.build;
+        RsidApiCompleter.Config finalApiCfg = apiCfg;
         new Thread(() -> RsidPipeline.run(
             projDir.getAbsolutePath(), projConfig.gwasFile,
             projConfig.lociFile, snpFolder, build,
             projConfig.colChr, projConfig.colPos, projConfig.colEa, projConfig.colNea,
-            rp
+            rp, finalApiCfg
         ), "rsid-" + projectId).start();
 
         respond(ex, 200, "application/json", "{\"started\":true}".getBytes());
@@ -734,6 +804,120 @@ public class LocalServer {
             respond(ex, 500, "application/json",
                 ("{\"error\":\"" + escJ(e.getMessage()) + "\"}").getBytes());
         }
+    }
+
+    // POST /api/loci-identify — { "project_id": "...", params... }
+    private void lociIdentify(HttpExchange ex) throws IOException {
+        cors(ex); if (preflight(ex)) return;
+        if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) {
+            respond(ex, 405, "application/json", "{\"error\":\"POST required\"}".getBytes()); return;
+        }
+        String body = new String(readAll(ex.getRequestBody()), "UTF-8");
+        String projectId = extractStr(body, "project_id");
+        if (projectId == null || projectId.isEmpty()) {
+            respond(ex, 400, "application/json", "{\"error\":\"missing project_id\"}".getBytes()); return;
+        }
+        File projDir = new File("projects/" + projectId);
+        if (!projDir.isDirectory()) {
+            respond(ex, 404, "application/json", "{\"error\":\"Project not found\"}".getBytes()); return;
+        }
+
+        Config projConfig;
+        try { projConfig = Config.loadFromProject(projDir.getAbsolutePath()); }
+        catch (Exception e) {
+            respond(ex, 500, "application/json",
+                ("{\"error\":\"" + escJ(e.getMessage()) + "\"}").getBytes()); return;
+        }
+
+        // Parse optional parameters
+        LociIdentifier.Params params = new LociIdentifier.Params();
+        String v;
+        v = extractStr(body, "pre_filter_p");
+        if (v != null && !v.isEmpty()) params.preFilterP = Double.parseDouble(v);
+        v = extractStr(body, "lead_p_threshold");
+        if (v != null && !v.isEmpty()) params.leadPThreshold = Double.parseDouble(v);
+        v = extractStr(body, "merge_distance_kb");
+        if (v != null && !v.isEmpty()) params.mergeDistanceBp = Integer.parseInt(v) * 1000;
+        v = extractStr(body, "min_snps_per_locus");
+        if (v != null && !v.isEmpty()) params.minSnpsPerLocus = Integer.parseInt(v);
+
+        // Reference panel path for chr:pos matching and PLINK clumping
+        params.refPanelPath = projConfig.refPanelPath;
+
+        // Column mapping
+        String colChr = projConfig.colChr;
+        String colPos = projConfig.colPos;
+        String colP   = projConfig.colPvalue;
+        String colId  = projConfig.colRsid.isEmpty() ? projConfig.colVarid : projConfig.colRsid;
+
+        LociProgress lp = new LociProgress();
+        lociProgressMap.put(projectId, lp);
+        String gwasFile = projConfig.gwasFile;
+        String projectDir = projDir.getAbsolutePath();
+
+        new Thread(() -> {
+            try {
+                List<LociIdentifier.IdentifiedLocus> loci = LociIdentifier.identify(
+                    gwasFile, colChr, colPos, colP, colId, params, lp);
+
+                String lociPath = projectDir + "/loci.txt";
+                String detailPath = projectDir + "/loci_detail.tsv";
+                LociIdentifier.writeLociFiles(loci, lociPath, detailPath);
+
+                // Update project config to point to loci file
+                File configFile = new File(projectDir, "config.properties");
+                List<String> lines = Files.readAllLines(configFile.toPath());
+                boolean wroteLoci = false;
+                try (PrintWriter pw = new PrintWriter(new BufferedWriter(new FileWriter(configFile)))) {
+                    for (String line : lines) {
+                        if (line.trim().startsWith("loci.file=")) {
+                            pw.println("loci.file=" + lociPath);
+                            wroteLoci = true;
+                        } else {
+                            pw.println(line);
+                        }
+                    }
+                    if (!wroteLoci) pw.println("loci.file=" + lociPath);
+                }
+
+                // Clear fingerprint cache so project is stale for reprocessing
+                Files.deleteIfExists(new File(projectDir, ".fingerprint_cache").toPath());
+
+                lp.done = true;
+                lp.currentStep = "Complete";
+                System.out.printf("[LociServer] Identified %d loci for project '%s'%n",
+                    loci.size(), projectId);
+            } catch (Exception e) {
+                lp.error = e.getMessage();
+                lp.done = true;
+                lp.currentStep = "Error";
+                System.err.printf("[LociServer] Failed for '%s': %s%n", projectId, e.getMessage());
+                e.printStackTrace(System.err);
+            }
+        }, "loci-" + projectId).start();
+
+        respond(ex, 200, "application/json", "{\"started\":true}".getBytes());
+    }
+
+    // GET /api/loci-progress?project=...
+    private void lociProgressEndpoint(HttpExchange ex) throws IOException {
+        cors(ex); if (preflight(ex)) return;
+        String query = ex.getRequestURI().getQuery();
+        String projectId = null;
+        if (query != null) {
+            for (String param : query.split("&")) {
+                String[] kv = param.split("=", 2);
+                if (kv.length == 2 && kv[0].equals("project"))
+                    projectId = URLDecoder.decode(kv[1], "UTF-8");
+            }
+        }
+        LociProgress lp = projectId != null ? lociProgressMap.get(projectId) : null;
+        if (lp == null) {
+            respond(ex, 200, "application/json",
+                "{\"pct\":0,\"current_step\":\"Not started\",\"step_index\":0,\"total_steps\":4,\"done\":false,\"error\":null,\"candidate_snps\":0,\"seed_snps\":0,\"loci_found\":0,\"total_chromosomes\":0,\"current_chromosome\":0}".getBytes());
+            return;
+        }
+        respond(ex, 200, "application/json", lp.toJson().getBytes("UTF-8"));
     }
 
     // ══════════════════════════════════════════════════════════════════════
@@ -975,7 +1159,7 @@ public class LocalServer {
 
     private void cors(HttpExchange ex) {
         ex.getResponseHeaders().add("Access-Control-Allow-Origin",  "*");
-        ex.getResponseHeaders().add("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+        ex.getResponseHeaders().add("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
         ex.getResponseHeaders().add("Access-Control-Allow-Headers", "Content-Type");
     }
 
@@ -1057,6 +1241,17 @@ public class LocalServer {
         return regions;
     }
 
+    private static void deleteDirectory(File dir) {
+        File[] files = dir.listFiles();
+        if (files != null) {
+            for (File f : files) {
+                if (f.isDirectory()) deleteDirectory(f);
+                else f.delete();
+            }
+        }
+        dir.delete();
+    }
+
     private static String guessMime(String path) {
         if (path.endsWith(".html")) return "text/html";
         if (path.endsWith(".js"))   return "application/javascript";
@@ -1072,19 +1267,30 @@ public class LocalServer {
     private static String filePicker(String startDir) {
         final String[] result = {null};
         try {
-            // Run on EDT with a timeout to prevent hanging
             Thread edtThread = new Thread(() -> {
                 try {
                     SwingUtilities.invokeAndWait(() -> {
                         try { UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName()); } catch (Exception ignore) {}
+                        // Create an always-on-top frame so the dialog appears in front of the browser
+                        JFrame frame = new JFrame();
+                        frame.setAlwaysOnTop(true);
+                        frame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
+                        // Make it tiny and invisible but focusable
+                        frame.setSize(0, 0);
+                        frame.setLocationRelativeTo(null);
+                        frame.setVisible(true);
+                        frame.toFront();
+                        frame.requestFocus();
+
                         JFileChooser fc = new JFileChooser(startDir);
                         fc.setFileSelectionMode(JFileChooser.FILES_ONLY);
                         fc.setDialogTitle("Select file");
                         fc.setAcceptAllFileFilterUsed(true);
                         fc.addChoosableFileFilter(new javax.swing.filechooser.FileNameExtensionFilter(
                             "Data files (*.tsv, *.csv, *.txt, *.gz, *.gff3, *.bed)", "tsv", "csv", "txt", "gz", "gff3", "bed", "bim", "fam"));
-                        if (fc.showOpenDialog(null) == JFileChooser.APPROVE_OPTION)
+                        if (fc.showOpenDialog(frame) == JFileChooser.APPROVE_OPTION)
                             result[0] = fc.getSelectedFile().getAbsolutePath();
+                        frame.dispose();
                     });
                 } catch (Exception e) {
                     System.err.println("[LocalServer] File picker EDT error: " + e.getMessage());
@@ -1092,7 +1298,7 @@ public class LocalServer {
             });
             edtThread.setDaemon(true);
             edtThread.start();
-            edtThread.join(120_000); // 2 minute timeout
+            edtThread.join(120_000);
         } catch (Exception e) {
             System.err.println("[LocalServer] File picker error: " + e.getMessage());
         }
@@ -1104,11 +1310,21 @@ public class LocalServer {
         try {
             SwingUtilities.invokeAndWait(() -> {
                 try { UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName()); } catch (Exception ignore) {}
+                JFrame frame = new JFrame();
+                frame.setAlwaysOnTop(true);
+                frame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
+                frame.setSize(0, 0);
+                frame.setLocationRelativeTo(null);
+                frame.setVisible(true);
+                frame.toFront();
+                frame.requestFocus();
+
                 JFileChooser fc = new JFileChooser(startDir);
                 fc.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
-                fc.setDialogTitle("Select output folder for PDF");
-                if (fc.showSaveDialog(null) == JFileChooser.APPROVE_OPTION)
+                fc.setDialogTitle("Select folder");
+                if (fc.showSaveDialog(frame) == JFileChooser.APPROVE_OPTION)
                     result[0] = fc.getSelectedFile().getAbsolutePath();
+                frame.dispose();
             });
         } catch (Exception e) {
             System.err.println("[LocalServer] Folder picker error: " + e.getMessage());

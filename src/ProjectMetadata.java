@@ -353,7 +353,13 @@ public class ProjectMetadata {
         if (i < 0) return "";
         i += search.length();
         while (i < json.length() && json.charAt(i) == ' ') i++;
-        if (i >= json.length() || json.charAt(i) != '"') return "";
+        if (i >= json.length()) return "";
+        // Handle unquoted values (booleans, numbers, null)
+        if (json.charAt(i) != '"') {
+            int end = i;
+            while (end < json.length() && ",}\n\r\t ".indexOf(json.charAt(end)) < 0) end++;
+            return json.substring(i, end).trim();
+        }
         i++;
         StringBuilder sb = new StringBuilder();
         while (i < json.length()) {

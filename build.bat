@@ -14,7 +14,15 @@ javac -d bin -cp "bin%LIBCP%" ^
   src\rsid\RsidDetector.java ^
   src\rsid\GlobalConfig.java ^
   src\rsid\RsidProgress.java ^
+  src\rsid\RateLimiter.java ^
+  src\rsid\RsidApiProvider.java ^
+  src\rsid\RsidApiCache.java ^
+  src\rsid\NcbiDbSnpProvider.java ^
+  src\rsid\GnomadProvider.java ^
+  src\rsid\RsidApiCompleter.java ^
   src\rsid\RsidPipeline.java ^
+  src\loci\LociIdentifier.java ^
+  src\loci\LociProgress.java ^
   src\Config.java ^
   src\Locus.java ^
   src\Snp.java ^

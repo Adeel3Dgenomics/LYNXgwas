@@ -32,7 +32,7 @@ header .meta a { color: #FAC775; text-decoration: none; }
 header .meta a:hover { text-decoration: underline; }
 
 /* ── Main ────────────────────────────────────────── */
-main { max-width: 1200px; margin: 0 auto; padding: 1.5rem; }
+main { max-width: 1600px; margin: 0 auto; padding: 1.5rem 2rem; }
 
 /* ── Toolbar ─────────────────────────────────────── */
 .toolbar {
@@ -53,17 +53,19 @@ main { max-width: 1200px; margin: 0 auto; padding: 1.5rem; }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* ── Table ───────────────────────────────────────── */
-.table-wrap { background: #fff; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); overflow-x: auto; }
-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+.table-wrap { background: #fff; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); overflow-x: auto; min-height: 300px; }
+.btn-danger { background: #dc2626; color: #fff; }
+.btn-danger:hover { background: #b91c1c; }
+table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
 thead th {
-  text-align: left; padding: 0.7rem 0.9rem; font-weight: 600;
+  text-align: left; padding: 0.5rem 0.6rem; font-weight: 600;
   background: #f9fafb; border-bottom: 2px solid #e5e7eb;
-  white-space: nowrap; font-size: 0.8rem; color: #555;
+  white-space: nowrap; font-size: 0.75rem; color: #555;
   text-transform: uppercase; letter-spacing: 0.3px;
 }
 tbody tr { border-bottom: 1px solid #f0f0f0; cursor: pointer; transition: background 0.1s; }
 tbody tr:hover { background: #f0faf6; }
-td { padding: 0.65rem 0.9rem; white-space: nowrap; }
+td { padding: 0.45rem 0.6rem; white-space: nowrap; }
 td.desc { white-space: normal; max-width: 200px; color: #666; }
 td.actions { white-space: nowrap; }
 td.actions button { margin-right: 0.4rem; }
@@ -194,6 +196,7 @@ td.actions button { margin-right: 0.4rem; }
           <th>Last processed</th>
           <th>Status</th>
           <th>rsIDs</th>
+          <th>Loci source</th>
           <th>Actions</th>
         </tr>
       </thead>
@@ -228,10 +231,21 @@ td.actions button { margin-right: 0.4rem; }
       <div id="refpanel-list"></div>
       <button class="btn btn-secondary" onclick="addRefPanel()" style="margin-top:0.4rem">+ Add reference panel</button>
 
-      <h4 style="font-size:0.9rem;margin:1rem 0 0.5rem">NCBI API (coming soon)</h4>
-      <p style="color:#888;font-size:0.82rem">NCBI API fallback is not yet active. Settings will be available here when implemented.</p>
+      <h4 style="font-size:0.9rem;margin:1rem 0 0.5rem">API Providers</h4>
+      <p style="color:#666;font-size:0.82rem">NCBI dbSNP and gnomAD are available as fallback providers for rsID recovery. Enable them per-project in the "Add rsIDs" dialog. Rate limits: NCBI 3 req/s (higher with API key), gnomAD 5 req/s.</p>
     </div>
   </details>
+
+<!-- ── Get Loci modal ──────────────────────────────────────── -->
+<div class="wizard-overlay" id="loci-overlay">
+<div class="wizard-box" style="max-width:580px">
+  <div style="display:flex;justify-content:space-between;align-items:center">
+    <h3>Identify Loci</h3>
+    <button class="btn btn-secondary" onclick="lociClose()" style="padding:0.3rem 0.7rem">&times;</button>
+  </div>
+  <div id="loci-content"></div>
+</div>
+</div>
 
 <!-- ── rsID Recovery modal ────────────────────────────────── -->
 <div class="wizard-overlay" id="rsid-overlay">
@@ -314,9 +328,11 @@ function render() {
       + '<td>' + last + '</td>'
       + '<td>' + badge + '</td>'
       + '<td>' + rsidBadge(p) + '</td>'
+      + '<td>' + lociBadge(p) + '</td>'
       + '<td class="actions" onclick="event.stopPropagation()">'
       + '<button class="btn btn-secondary" onclick="editConfig(\'' + esc(p.id) + '\')" title="Edit configuration">Edit</button>'
       + '<button class="btn btn-secondary" onclick="reprocess(\'' + esc(p.id) + '\')" title="Reprocess">Reprocess</button>'
+      + '<button class="btn btn-danger" style="padding:0.2rem 0.6rem;font-size:0.75rem" onclick="deleteProject(\'' + esc(p.id) + '\')" title="Delete project">Delete</button>'
       + '</td></tr>';
   }).join('');
 
@@ -458,7 +474,7 @@ function wizValidateStep() {
   }
   if (wiz.step === 1) {
     if (!wiz.cfg['gwas.file']) return 'GWAS summary statistics file is required.';
-    if (!wiz.cfg['loci.file']) return 'Loci definition file is required.';
+    // loci.file is optional — can be generated via "Get Loci" after project creation
     if (!wiz.cfg['gff3.file']) return 'GFF3 annotation file is required.';
   }
   if (wiz.step === 2) {
@@ -692,6 +708,22 @@ async function wizSubmit() {
 
 function escAttr(s) { return (s || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
 
+async function deleteProject(id) {
+  if (!confirm('Are you sure you want to delete project "' + id + '"?\n\nThis will permanently remove the project folder and all its processed data. This cannot be undone.')) return;
+  try {
+    var resp = await fetch(API + '/api/delete-project', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({id: id})
+    });
+    var d = await resp.json();
+    if (d.error) { alert('Delete failed: ' + d.error); return; }
+    loadProjects();
+  } catch (e) {
+    alert('Delete failed: ' + e.message);
+  }
+}
+
 async function reprocess(id) {
   try {
     await fetch(API + '/api/projects/process', {
@@ -780,21 +812,51 @@ async function rsidRenderSource() {
     '<p style="margin:0.75rem 0 0.5rem"><b>' + esc(pName) + '</b></p>'
     + '<div class="wiz-field"><label>Source 1 — Local SNP database</label>'
     + '<select id="rsid-snpdb">' + dbOpts + '</select></div>'
-    + '<div class="wiz-field"><label style="color:#888"><input type="checkbox" disabled> Source 2 — NCBI API fallback <span style="font-size:0.75rem">(coming soon)</span></label></div>'
+    + '<div class="wiz-section-title" style="margin-top:1rem">Source 2 — API completion (for remaining unmatched)</div>'
+    + '<div class="wiz-field"><label><input type="checkbox" id="rsid-api-enabled"> Enable API completion (NCBI + gnomAD)</label>'
+    + '<div class="hint">Runs only if unmatched SNPs are below the cap. Batched, rate-limited.</div></div>'
+    + '<div id="rsid-api-opts" style="display:none;margin-left:1.5rem">'
+    + '<div class="wiz-field"><label>Max unmatched for API</label>'
+    + '<input type="number" id="rsid-api-max" value="2000" style="width:100px">'
+    + '<div class="hint">Skip API if more unmatched than this (likely a data issue).</div></div>'
+    + '<div class="wiz-field"><label>Batch size</label>'
+    + '<input type="number" id="rsid-api-batch" value="100" max="200" style="width:80px">'
+    + '<div class="hint">Max 200 per batch.</div></div>'
+    + '<div class="wiz-field"><label>NCBI API key (optional, for higher rate limit)</label>'
+    + '<input type="text" id="rsid-ncbi-key" placeholder="Leave blank for default rate" style="width:250px"></div></div>'
     + '<div style="display:flex;justify-content:flex-end;gap:0.5rem;margin-top:1rem">'
     + '<button class="btn btn-secondary" onclick="rsidClose()">Cancel</button>'
     + '<button class="btn btn-primary" onclick="rsidStart()" ' + (gc.snp_databases.length === 0 ? 'disabled' : '') + '>Process</button>'
     + '</div>';
+
+  // Wire checkbox toggle for API options
+  setTimeout(function() {
+    var cb = document.getElementById('rsid-api-enabled');
+    var opts = document.getElementById('rsid-api-opts');
+    if (cb && opts) cb.addEventListener('change', function() { opts.style.display = cb.checked ? '' : 'none'; });
+  }, 0);
 }
 
 async function rsidStart() {
   var snpDbId = document.getElementById('rsid-snpdb').value;
   if (!snpDbId) { alert('Select a SNP database first.'); return; }
 
+  var payload = { project_id: rsidState.projectId, snp_database_id: snpDbId };
+  var apiCb = document.getElementById('rsid-api-enabled');
+  if (apiCb && apiCb.checked) {
+    payload.api_enabled = 'true';
+    var maxEl = document.getElementById('rsid-api-max');
+    var batchEl = document.getElementById('rsid-api-batch');
+    var keyEl = document.getElementById('rsid-ncbi-key');
+    if (maxEl) payload.api_max_unmatched = maxEl.value;
+    if (batchEl) payload.api_batch_size = Math.min(200, parseInt(batchEl.value) || 100).toString();
+    if (keyEl && keyEl.value) payload.ncbi_api_key = keyEl.value;
+  }
+
   try {
     await fetch(API + '/api/rsid-recover', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ project_id: rsidState.projectId, snp_database_id: snpDbId })
+      body: JSON.stringify(payload)
     });
   } catch(e) { alert('Failed: ' + e.message); return; }
 
@@ -811,7 +873,7 @@ function rsidRenderProgress() {
     try {
       var r = await fetch(API + '/api/rsid-progress?project=' + encodeURIComponent(rsidState.projectId));
       var d = await r.json();
-      var steps = ['Validate project & build', 'Load dbSNP regions', 'Match SNPs', 'NCBI fallback', 'Write output'];
+      var steps = ['Validate project & build', 'Load dbSNP regions', 'Match SNPs', 'API completion', 'Patch locus data'];
       var html = '';
       for (var i = 0; i < steps.length; i++) {
         var si = i + 1;
@@ -850,10 +912,9 @@ function rsidRenderResult(d) {
     + '<tr><td>Unmatched</td><td>' + d.unmatched.toLocaleString() + '</td></tr>'
     + '<tr><td>Output file</td><td style="word-break:break-all">' + esc(d.output_file) + '</td></tr>'
     + '</table>'
-    + '<p style="margin-top:0.75rem;font-size:0.85rem;color:#555">Project config updated to use the new GWAS file with rsIDs. Reprocess to load rsIDs into the viewer.</p>'
-    + '<div style="display:flex;justify-content:flex-end;gap:0.5rem;margin-top:1rem">'
-    + '<button class="btn btn-secondary" onclick="rsidClose()">Later</button>'
-    + '<button class="btn btn-primary" onclick="rsidReprocessAndClose()">Reprocess now</button></div>';
+    + '<p style="margin-top:0.75rem;font-size:0.85rem;color:#065f46">rsIDs have been applied to the locus data. Refresh the viewer to see them.</p>'
+    + '<div style="display:flex;justify-content:flex-end;margin-top:1rem">'
+    + '<button class="btn btn-primary" onclick="rsidClose()">Done</button></div>';
 }
 
 async function rsidReprocessAndClose() {
@@ -965,6 +1026,148 @@ async function removeRefPanel(id) {
   gc.reference_panels = (gc.reference_panels || []).filter(function(p) { return p.id !== id; });
   await fetch(API + '/api/global-config', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(gc) });
   loadResources();
+}
+
+// ══════════════════════════════════════════════════════════
+//  LOCI IDENTIFICATION UI
+// ══════════════════════════════════════════════════════════
+
+function lociBadge(p) {
+  if (p.has_loci) {
+    var count = p.loci_count || 0;
+    return '<span class="badge badge-ok">' + count + ' loci</span>';
+  }
+  return '<span class="badge badge-stale">No loci</span> '
+    + '<button class="btn btn-primary" style="padding:0.2rem 0.6rem;font-size:0.75rem" '
+    + 'onclick="event.stopPropagation();lociOpen(\'' + esc(p.id) + '\')">Get Loci</button>';
+}
+
+var lociState = { projectId: null, pollTimer: null };
+
+function lociOpen(projectId) {
+  lociState.projectId = projectId;
+  document.getElementById('loci-overlay').classList.add('open');
+  lociRenderParams();
+}
+
+function lociClose() {
+  document.getElementById('loci-overlay').classList.remove('open');
+  if (lociState.pollTimer) { clearInterval(lociState.pollTimer); lociState.pollTimer = null; }
+  loadProjects();
+}
+
+function lociRenderParams() {
+  var c = document.getElementById('loci-content');
+  var p = projects.find(function(x) { return x.id === lociState.projectId; });
+  var pName = p ? (p.name || p.id) : lociState.projectId;
+
+  c.innerHTML =
+    '<p style="margin:0.75rem 0"><b>' + esc(pName) + '</b></p>'
+    + '<div class="wiz-field"><label>Seed significance threshold</label>'
+    + '<div class="radio-group" style="display:flex;gap:1rem">'
+    + '<label><input type="radio" name="loci-seed" value="5e-8" checked> 5e-8 (genome-wide significance)</label>'
+    + '<label><input type="radio" name="loci-seed" value="5e-5"> 5e-5 (suggestive — more loci, more noise)</label>'
+    + '</div></div>'
+    + '<div class="wiz-field"><label>Pre-filter p-value</label>'
+    + '<input type="text" id="loci-prefilter" value="5e-3" style="width:120px">'
+    + '<div class="hint">Keeps only SNPs with p below this for speed. Default from preCodes: 5e-3</div></div>'
+    + '<div class="wiz-field"><label>Merge distance (kb)</label>'
+    + '<input type="number" id="loci-mergedist" value="250" style="width:120px">'
+    + '<div class="hint">Adjacent SNPs within this distance are merged into one locus.</div></div>'
+    + '<div class="wiz-field"><label>Min SNPs per locus</label>'
+    + '<input type="number" id="loci-minsnps" value="2" style="width:120px">'
+    + '<div class="hint">Loci with fewer SNPs than this are discarded (filters noise).</div></div>'
+    + '<div style="display:flex;justify-content:flex-end;gap:0.5rem;margin-top:1rem">'
+    + '<button class="btn btn-secondary" onclick="lociClose()">Cancel</button>'
+    + '<button class="btn btn-primary" onclick="lociStart()">Process</button></div>';
+}
+
+async function lociStart() {
+  var seed = document.querySelector('input[name="loci-seed"]:checked').value;
+  var prefilter = document.getElementById('loci-prefilter').value || '5e-3';
+  var mergeDist = document.getElementById('loci-mergedist').value || '250';
+  var minSnps   = document.getElementById('loci-minsnps').value || '1';
+
+  try {
+    await fetch(API + '/api/loci-identify', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        project_id: lociState.projectId,
+        lead_p_threshold: seed,
+        pre_filter_p: prefilter,
+        merge_distance_kb: mergeDist,
+        min_snps_per_locus: minSnps
+      })
+    });
+  } catch(e) { alert('Failed: ' + e.message); return; }
+
+  lociRenderProgress();
+}
+
+function lociRenderProgress() {
+  var c = document.getElementById('loci-content');
+  c.innerHTML = '<p style="margin:0.75rem 0"><b>Identifying loci...</b></p>'
+    + '<div id="loci-steps" style="font-size:0.85rem;line-height:1.8"></div>'
+    + '<div id="loci-counters" style="font-size:0.82rem;color:#555;margin-top:0.75rem"></div>';
+
+  lociState.pollTimer = setInterval(async function() {
+    try {
+      var r = await fetch(API + '/api/loci-progress?project=' + encodeURIComponent(lociState.projectId));
+      var d = await r.json();
+      var steps = ['Pre-filtering GWAS', 'Ref-panel match (chr:pos)', 'Seed filter', 'PLINK clumping', 'Merging clump intervals', 'Finalizing'];
+      var html = '';
+      for (var i = 0; i < steps.length; i++) {
+        var si = i + 1;
+        if (si < d.step_index) html += '<div style="color:#065f46">&#10003; Step ' + si + ': ' + steps[i] + '</div>';
+        else if (si === d.step_index) html += '<div style="color:#1e40af;font-weight:600">&#9656; Step ' + si + ': ' + esc(d.current_step) + '</div>';
+        else html += '<div style="color:#aaa">&#183; Step ' + si + ': ' + steps[i] + '</div>';
+      }
+      document.getElementById('loci-steps').innerHTML = html;
+      document.getElementById('loci-counters').innerHTML =
+        'Progress: <b>' + d.pct + '%</b> &nbsp; candidates: ' + (d.candidate_snps || 0).toLocaleString()
+        + ' &middot; seeds: ' + (d.seed_snps || 0).toLocaleString()
+        + ' &middot; loci found: ' + (d.loci_found || 0);
+
+      if (d.done) {
+        clearInterval(lociState.pollTimer); lociState.pollTimer = null;
+        if (d.error) lociRenderError(d.error);
+        else lociRenderResult(d);
+      }
+    } catch(e) {}
+  }, 500);
+}
+
+function lociRenderResult(d) {
+  var c = document.getElementById('loci-content');
+  c.innerHTML =
+    '<p style="margin:0.75rem 0;color:#065f46;font-weight:600;font-size:1.05rem">&#10003; Loci identification complete</p>'
+    + '<table class="wiz-summary-table">'
+    + '<tr><td>Loci identified</td><td><b>' + d.loci_found + '</b></td></tr>'
+    + '<tr><td>Seed SNPs</td><td>' + (d.seed_snps || 0).toLocaleString() + '</td></tr>'
+    + '<tr><td>Candidate SNPs (pre-filter)</td><td>' + (d.candidate_snps || 0).toLocaleString() + '</td></tr>'
+    + '<tr><td>Written to</td><td>input/loci.txt</td></tr>'
+    + '</table>'
+    + '<p style="margin-top:0.75rem;font-size:0.85rem;color:#555">Project config updated. Reprocess to load loci into viewer.</p>'
+    + '<div style="display:flex;justify-content:flex-end;gap:0.5rem;margin-top:1rem">'
+    + '<button class="btn btn-secondary" onclick="lociClose()">Later</button>'
+    + '<button class="btn btn-primary" onclick="lociReprocessAndClose()">Reprocess now</button></div>';
+}
+
+function lociRenderError(err) {
+  var c = document.getElementById('loci-content');
+  c.innerHTML = '<p style="color:#dc2626;font-weight:600;margin:0.75rem 0">Error: ' + esc(err) + '</p>'
+    + '<div style="display:flex;justify-content:flex-end;margin-top:1rem">'
+    + '<button class="btn btn-secondary" onclick="lociClose()">Close</button></div>';
+}
+
+async function lociReprocessAndClose() {
+  try {
+    await fetch(API + '/api/projects/process', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({id: lociState.projectId})
+    });
+  } catch(e) {}
+  lociClose();
 }
 
 loadProjects();

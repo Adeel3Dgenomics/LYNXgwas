@@ -103,16 +103,28 @@ public class Main {
             System.err.println("[WARN] Could not start server: " + e.getMessage());
         }
 
-        if (staleIds.isEmpty()) {
-            System.out.println("All projects are up to date. Nothing to process.");
+        // Only auto-process if explicitly requested via --project= or --all
+        if (forceProjectId == null && !forceAll) {
+            if (!staleIds.isEmpty()) {
+                System.out.printf("%d project(s) need reprocessing. Use 'Reprocess' on the home page or run with --all.%n", staleIds.size());
+            } else {
+                System.out.println("All projects are up to date.");
+            }
             if (server != null) {
                 System.out.printf("Home page: http://localhost:%d/%nPress Ctrl+C to stop.%n", LocalServer.PORT);
-                return;
             }
             return;
         }
 
-        // Process stale projects sequentially
+        if (staleIds.isEmpty()) {
+            System.out.println("All projects are up to date. Nothing to process.");
+            if (server != null) {
+                System.out.printf("Home page: http://localhost:%d/%nPress Ctrl+C to stop.%n", LocalServer.PORT);
+            }
+            return;
+        }
+
+        // Process stale projects sequentially (only when explicitly requested)
         int processed = 0, succeeded = 0, failed = 0;
         List<String[]> summaryRows = new ArrayList<>();
         PipelineResult lastResult = null;
@@ -126,6 +138,14 @@ public class Main {
             }
 
             String projectDir = new File("projects", id).getAbsolutePath();
+
+            // Skip projects that have no loci file — they need "Get Loci" first
+            if (config.lociFile.isEmpty() || !new File(config.lociFile).exists()) {
+                summaryRows.add(new String[]{id, "SKIP", "no loci file — use Get Loci"});
+                System.out.printf("[SKIP] Project '%s': no loci file. Use 'Get Loci' on the home page.%n", id);
+                continue;
+            }
+
             System.out.printf("────────────────────────────────────────────────────%n");
             System.out.printf("Processing project: %s%n", id);
             System.out.printf("────────────────────────────────────────────────────%n");
