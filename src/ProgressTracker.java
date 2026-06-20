@@ -5,13 +5,43 @@ public class ProgressTracker {
     public volatile int    totalLoci  = 0;
     public volatile boolean done      = false;
 
+    // Overall progress: each phase gets a weight, progress within phase is per-locus
+    private volatile int    phaseIndex  = 0;
+    private volatile int    totalPhases = 1;
+
+    public void setPhases(int total) {
+        this.totalPhases = Math.max(1, total);
+        this.phaseIndex  = 0;
+    }
+
     public void update(String phase, int locusIndex, int total) {
         this.phase      = phase;
         this.locusIndex = locusIndex;
         this.totalLoci  = total;
     }
 
+    public void nextPhase(String phase, int total) {
+        this.phase      = phase;
+        this.locusIndex = 0;
+        this.totalLoci  = total;
+        this.phaseIndex++;
+    }
+
+    public void advance(int locusIndex) {
+        this.locusIndex = locusIndex;
+    }
+
+    /**
+     * Overall pipeline percentage (0-99).
+     * Each phase gets an equal share. Within a phase, progress is per-locus.
+     */
     public int pct() {
-        return totalLoci > 0 ? Math.min(99, (int)(locusIndex * 100.0 / totalLoci)) : 0;
+        if (done) return 100;
+        double phaseWeight = 100.0 / totalPhases;
+        double completedPhases = Math.max(0, phaseIndex - 1) * phaseWeight;
+        double withinPhase = totalLoci > 0
+            ? (locusIndex * phaseWeight / totalLoci)
+            : 0;
+        return Math.min(99, (int)(completedPhases + withinPhase));
     }
 }

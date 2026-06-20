@@ -3,3253 +3,973 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>LYNXgwas – Locus Analysis and Genomic Explorer</title>
-<script src="https://d3js.org/d3.v7.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<title>LYNXgwas</title>
+<link rel="icon" type="image/png" href="docs/images/icon.png">
 <style>
-/* ─── Reset ─────────────────────────────────────────────── */
-*{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
-     background:#f0f2f5;color:#1a1a2e;font-size:13px}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: #f5f6f8; color: #1a1a2e; line-height: 1.5;
+}
 
-/* ─── Startup loading overlay ───────────────────────────── */
-#loading-overlay{position:fixed;inset:0;background:#0f1021;
-  display:flex;align-items:center;justify-content:center;z-index:999;
-  transition:opacity .4s}
-#loading-overlay.hidden{opacity:0;pointer-events:none}
-.loading-box{width:420px;text-align:center}
-.loading-title{font-size:22px;font-weight:800;color:#c084fc;margin-bottom:24px}
-.loading-phase{font-size:15px;color:#e2e8f0;margin-bottom:6px}
-.loading-sub{font-size:12px;color:#94a3b8;margin-bottom:16px;min-height:18px}
-.loading-bar-track{background:#2d2f50;border-radius:99px;height:10px;overflow:hidden;margin-bottom:10px}
-.loading-bar-fill{height:100%;background:linear-gradient(90deg,#7c3aed,#4f46e5);
-  border-radius:99px;transition:width .5s ease;width:0%}
-.loading-count{font-size:11px;color:#64748b}
-.loading-skip{margin-top:20px;font-size:11px;color:#4a4c6e;cursor:pointer}
-.loading-skip:hover{color:#94a3b8}
+/* ── Header ──────────────────────────────────────── */
+header {
+  background: linear-gradient(135deg, #0F6E56 0%, #1a3a4a 100%);
+  color: #fff; padding: 2rem 2rem;
+  display: flex; align-items: center; gap: 1.5rem; flex-wrap: wrap;
+}
+header .logo {
+  width: 90px; height: 90px; border-radius: 50%;
+  border: 3px solid rgba(255,255,255,0.25);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+  object-fit: cover; flex-shrink: 0;
+}
+header .title-block { flex: 1; min-width: 200px; }
+header h1 { font-size: 1.8rem; font-weight: 800; letter-spacing: 0.5px; }
+header .subtitle { font-size: 0.95rem; opacity: 0.85; margin-top: 0.15rem; }
+header .meta { font-size: 0.78rem; opacity: 0.7; display: flex; gap: 1.2rem; flex-wrap: wrap; margin-top: 0.4rem; }
+header .meta a { color: #FAC775; text-decoration: none; }
+header .meta a:hover { text-decoration: underline; }
 
-/* ─── LD triangle panel ─────────────────────────────────── */
-.ldt-wrap{padding:0 14px 8px}
-.ldt-wrap.hidden{display:none}
-.ldt-section.hidden{display:none}
-.ldt-connector{pointer-events:none}
-.ldt-scroll-outer{padding:8px 0 2px}
-.ldt-header{display:flex;align-items:center;padding:0 14px 4px;min-height:22px}
-.ldt-inner-scroll{overflow-x:auto;overflow-y:hidden;white-space:nowrap}
-.ldt-tri-inner{display:inline-block;vertical-align:top}
-.ldt-triangle-canvas{display:block;image-rendering:pixelated}
-.connector-overlay{pointer-events:none}
+/* ── Main ────────────────────────────────────────── */
+main { max-width: 1200px; margin: 0 auto; padding: 1.5rem; }
 
-/* ─── Global header ──────────────────────────────────────── */
-#global-header{
-  position:sticky;top:0;z-index:50;
-  background:#1e2040;color:#e2e8f0;
-  display:flex;align-items:center;gap:12px;
-  padding:8px 16px;box-shadow:0 2px 8px rgba(0,0,0,.35)}
-#tool-title{font-weight:700;font-size:14px;color:#c084fc;white-space:nowrap}
-#search-wrap{position:relative;flex:1;max-width:280px}
-#search-input{width:100%;padding:5px 10px;border:1px solid #3d3f5c;border-radius:16px;
-  background:#2d2f50;color:#e2e8f0;font-size:12px;outline:none}
-#search-input:focus{border-color:#c084fc}
-#search-dropdown{position:absolute;top:calc(100% + 4px);left:0;right:0;
-  background:#2d2f50;border:1px solid #3d3f5c;border-radius:8px;
-  box-shadow:0 8px 24px rgba(0,0,0,.4);max-height:300px;overflow-y:auto;
-  display:none;z-index:200}
-.search-item{padding:7px 12px;cursor:pointer;font-size:12px;border-bottom:1px solid #3d3f5c}
-.search-item:last-child{border-bottom:none}
-.search-item:hover{background:#3d3f5c}
-.search-item .si-name{color:#c084fc;font-weight:600}
-.search-item .si-sub{color:#94a3b8;font-size:11px}
+/* ── Toolbar ─────────────────────────────────────── */
+.toolbar {
+  display: flex; gap: 0.75rem; align-items: center;
+  margin-bottom: 1rem; flex-wrap: wrap;
+}
+.toolbar h2 { flex: 1; font-size: 1.1rem; font-weight: 600; }
+.btn {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  padding: 0.5rem 1rem; border: none; border-radius: 6px;
+  font-size: 0.85rem; font-weight: 500; cursor: pointer;
+  transition: background 0.15s;
+}
+.btn-primary { background: #0F6E56; color: #fff; }
+.btn-primary:hover { background: #0b5a46; }
+.btn-secondary { background: #e2e6ea; color: #333; }
+.btn-secondary:hover { background: #d0d4d8; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-#toggles{display:flex;gap:6px}
-.toggle-btn{padding:4px 11px;border:1px solid #4a4c6e;border-radius:14px;
-  background:transparent;color:#94a3b8;font-size:11px;cursor:pointer;transition:all .15s}
-.toggle-btn.active{background:#4f46e5;color:#fff;border-color:#4f46e5}
+/* ── Table ───────────────────────────────────────── */
+.table-wrap { background: #fff; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+thead th {
+  text-align: left; padding: 0.7rem 0.9rem; font-weight: 600;
+  background: #f9fafb; border-bottom: 2px solid #e5e7eb;
+  white-space: nowrap; font-size: 0.8rem; color: #555;
+  text-transform: uppercase; letter-spacing: 0.3px;
+}
+tbody tr { border-bottom: 1px solid #f0f0f0; cursor: pointer; transition: background 0.1s; }
+tbody tr:hover { background: #f0faf6; }
+td { padding: 0.65rem 0.9rem; white-space: nowrap; }
+td.desc { white-space: normal; max-width: 200px; color: #666; }
+td.actions { white-space: nowrap; }
+td.actions button { margin-right: 0.4rem; }
 
-#nav-controls{display:flex;align-items:center;gap:8px;margin-left:auto}
-#nav-counter{font-size:12px;color:#94a3b8;white-space:nowrap}
-.nav-btn{padding:5px 12px;border:1px solid #4a4c6e;border-radius:6px;
-  background:transparent;color:#e2e8f0;cursor:pointer;font-size:12px;transition:all .15s}
-.nav-btn:hover:not(:disabled){background:#2d2f50}
-.nav-btn:disabled{opacity:.3;cursor:not-allowed}
+/* ── Badges ──────────────────────────────────────── */
+.badge {
+  display: inline-block; padding: 0.15rem 0.55rem; border-radius: 10px;
+  font-size: 0.75rem; font-weight: 600; letter-spacing: 0.2px;
+}
+.badge-ok        { background: #d1fae5; color: #065f46; }
+.badge-stale     { background: #fef3c7; color: #92400e; }
+.badge-proc      { background: #dbeafe; color: #1e40af; }
+.badge-error     { background: #fee2e2; color: #991b1b; }
 
-#export-pdf-btn{padding:5px 14px;background:#7c3aed;color:#fff;
-  border:none;border-radius:6px;font-size:12px;cursor:pointer;white-space:nowrap}
-#export-pdf-btn:hover{background:#6d28d9}
+/* ── Empty state ─────────────────────────────────── */
+.empty {
+  text-align: center; padding: 3rem; color: #888;
+}
+.empty p { margin-bottom: 0.5rem; }
 
-/* ─── Main viewport ──────────────────────────────────────── */
-#main{padding:16px;overflow-y:auto;height:calc(100vh - 46px)}
-#panels-container{display:flex;flex-direction:column;gap:20px;
-  transition:opacity .2s ease,transform .2s ease}
-#panels-container.transitioning{opacity:0;transform:translateY(10px)}
+/* ── Manual panel ────────────────────────────────── */
+.manual-panel {
+  margin-top: 1.5rem; padding: 1rem 1.25rem;
+  background: #fff; border-radius: 10px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  font-size: 0.85rem; color: #555;
+}
+.manual-panel summary {
+  cursor: pointer; font-weight: 600; color: #333;
+  padding: 0.25rem 0;
+}
+.manual-panel code {
+  background: #f3f4f6; padding: 0.15rem 0.4rem; border-radius: 4px;
+  font-size: 0.82rem;
+}
+.manual-panel ol { margin: 0.5rem 0 0 1.5rem; }
+.manual-panel li { margin-bottom: 0.3rem; }
 
-/* ─── Per-locus panel ────────────────────────────────────── */
-.locus-panel{background:#fff;border-radius:10px;
-  box-shadow:0 1px 4px rgba(0,0,0,.1);overflow:hidden}
+/* ── Progress text ────────────────────────────────── */
+.progress-text { font-size: 0.75rem; color: #1e40af; margin-left: 0.3rem; }
 
-/* A: Header */
-.locus-header{display:flex;align-items:center;gap:10px;padding:9px 14px;
-  background:linear-gradient(90deg,#312e81 0%,#4c1d95 100%);color:#fff}
-.lh-title{font-weight:700;font-size:13px;min-width:120px;white-space:nowrap}
-.lh-ops{display:flex;gap:4px;margin-left:4px}
-.lh-op-btn{padding:2px 8px;border:1px solid rgba(255,255,255,0.3);border-radius:3px;
-  background:rgba(255,255,255,0.1);color:#e0e7ff;font-size:10px;font-weight:600;cursor:pointer}
-.lh-op-btn:hover{background:rgba(255,255,255,0.25);color:#fff}
-.lh-genes{flex:1;font-size:11px;color:#c4b5fd}
-.lh-top{font-size:11px;text-align:right;white-space:nowrap}
-.lh-top strong{color:#fbbf24}
-.warning-banner{background:#fffbeb;color:#92400e;padding:4px 14px;
-  font-size:11px;border-bottom:1px solid #fde68a}
-.empty-msg{padding:40px;text-align:center;color:#94a3b8;font-style:italic}
-.plot-loading{padding:32px;text-align:center;color:#94a3b8;font-size:12px}
+/* ── Wizard overlay ──────────────────────────────── */
+.wizard-overlay {
+  display: none; position: fixed; inset: 0; z-index: 1000;
+  background: rgba(0,0,0,0.45); justify-content: center; align-items: flex-start;
+  padding: 3rem 1rem; overflow-y: auto;
+}
+.wizard-overlay.open { display: flex; }
+.wizard-box {
+  background: #fff; border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,0.18);
+  width: 100%; max-width: 640px; padding: 1.5rem 2rem 1.25rem;
+}
+.wizard-box h3 { font-size: 1.15rem; margin-bottom: 0.25rem; }
+.wizard-steps {
+  display: flex; gap: 0.25rem; margin-bottom: 1.25rem;
+}
+.wizard-steps .step {
+  flex: 1; height: 4px; border-radius: 2px; background: #e5e7eb;
+}
+.wizard-steps .step.done { background: #0F6E56; }
+.wizard-steps .step.active { background: #3b82f6; }
 
-/* Panel wrappers */
-.ctx-wrap{padding:4px 14px 0;display:block}
-.ctx-wrap.hidden{display:none}
-.plot-wrap{padding:0 14px 10px;position:relative}
-.genes-wrap,.ld-wrap{padding:0 14px 8px}
-.genes-wrap.hidden,.ld-wrap.hidden,.ctx-wrap.hidden{display:none}
+.wiz-field { margin-bottom: 1rem; }
+.wiz-field label { display: block; font-size: 0.82rem; font-weight: 600; color: #444; margin-bottom: 0.25rem; }
+.wiz-field input, .wiz-field select, .wiz-field textarea {
+  width: 100%; padding: 0.45rem 0.6rem; border: 1px solid #d1d5db; border-radius: 6px;
+  font-size: 0.88rem; font-family: inherit;
+}
+.wiz-field input:focus, .wiz-field select:focus { outline: none; border-color: #0F6E56; box-shadow: 0 0 0 2px rgba(15,110,86,0.15); }
+.wiz-field .hint { font-size: 0.75rem; color: #888; margin-top: 0.15rem; }
+.wiz-field .error-msg { font-size: 0.78rem; color: #dc2626; margin-top: 0.15rem; }
+.wiz-field .file-row { display: flex; gap: 0.5rem; }
+.wiz-field .file-row input { flex: 1; }
+.wiz-field .file-row button { white-space: nowrap; }
 
-/* Per-locus PNG button */
-.dl-png-btn{position:absolute;top:6px;right:16px;padding:3px 9px;
-  background:#f8fafc;border:1px solid #cbd5e1;border-radius:5px;
-  font-size:11px;cursor:pointer;color:#475569}
-.dl-png-btn:hover{background:#e2e8f0}
+.wiz-section-title { font-size: 0.85rem; font-weight: 600; color: #555; margin: 1rem 0 0.5rem; border-bottom: 1px solid #eee; padding-bottom: 0.25rem; }
 
-/* LD legend */
-.ld-legend{display:flex;gap:10px;align-items:center;
-  padding:3px 14px 6px;font-size:11px;color:#64748b;flex-wrap:wrap}
-.ld-swatch{width:12px;height:12px;border-radius:2px;display:inline-block;
-  vertical-align:middle;margin-right:3px}
+.wiz-footer {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid #eee;
+}
+.wiz-footer .step-label { font-size: 0.8rem; color: #888; }
 
-/* Overview density strip */
-.overview-wrap{padding:4px 14px 0}
+.wiz-summary-table { width: 100%; font-size: 0.85rem; border-collapse: collapse; }
+.wiz-summary-table td { padding: 0.3rem 0.5rem; border-bottom: 1px solid #f0f0f0; }
+.wiz-summary-table td:first-child { font-weight: 600; color: #555; width: 40%; }
 
-/* Genome-wide skyline panel — sticky below header */
-#genome-skyline{background:#f8f9fb;padding:8px 16px 4px;
-  border-bottom:2px solid #e2e8f0;cursor:pointer;
-  position:sticky;top:46px;z-index:40}
-#genome-skyline .sky-label{font-size:11px;color:#475569;font-weight:600;margin-bottom:4px}
-#genome-skyline svg{display:block}
-
-/* Gene filter controls */
-.gene-filter{display:flex;align-items:center;gap:10px;padding:2px 14px 4px;
-  font-size:11px;color:#475569;flex-wrap:wrap}
-.gene-filter label{display:flex;align-items:center;gap:4px;cursor:pointer}
-.gene-filter .gf-count{margin-left:auto;color:#94a3b8;font-size:10px}
-.gene-filter .gf-quick{color:#6366f1;cursor:pointer;font-size:10px;
-  text-decoration:underline;border:none;background:none;padding:0}
-.gene-filter .gf-quick:hover{color:#4338ca}
-.gene-filter .gf-sep{width:1px;height:16px;background:#d1d5db;margin:0 4px}
-.exonic-mode .snp-circle:not(.snp-exonic){opacity:0.07!important}
-.exonic-mode .snp-circle.snp-exonic{stroke:#000!important;stroke-width:1px!important}
-.locus-handle-left:hover,.locus-handle-right:hover{opacity:1!important;fill:#7f1d1d!important}
-.locus-update-btn{padding:3px 12px;border:none;border-radius:4px;background:#b91c1c;color:#fff;
-  font-size:11px;font-weight:600;cursor:pointer;margin-left:12px;vertical-align:middle;
-  animation:fadeInBtn .25s ease}
-.locus-update-btn:hover{background:#991b1b}
-.locus-update-btn:disabled{cursor:wait}
-@keyframes fadeInBtn{from{opacity:0;transform:scale(0.9)}to{opacity:1;transform:scale(1)}}
-
-/* Track section visibility toggles */
-.genes-section.hidden,.ld-section.hidden,.ctx-section.hidden{display:none}
-
-/* Axes */
-.axis text{font-size:10px;fill:#6b7280}
-.axis path,.axis line{stroke:#e5e7eb}
-
-/* Tooltip */
-#tooltip{position:fixed;background:rgba(15,15,30,.9);color:#e2e8f0;
-  padding:8px 12px;border-radius:8px;font-size:12px;pointer-events:none;
-  display:none;z-index:200;line-height:1.7;box-shadow:0 4px 16px rgba(0,0,0,.4)}
-#tooltip .tt-id{font-weight:700;color:#c084fc}
-#tooltip .tt-pval{color:#f87171}
-#tooltip .tt-r2{color:#34d399}
-
-/* ─── Modal overlay ──────────────────────────────────────── */
-.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);
-  display:none;align-items:center;justify-content:center;z-index:300}
-.modal-overlay.open{display:flex}
-.modal{background:#fff;border-radius:12px;width:520px;max-width:96vw;
-  box-shadow:0 8px 40px rgba(0,0,0,.3);overflow:hidden}
-.modal-header{display:flex;align-items:center;justify-content:space-between;
-  padding:14px 18px;background:#f8fafc;border-bottom:1px solid #e2e8f0}
-.modal-header h3{font-size:14px;font-weight:700;color:#1e293b}
-.modal-close{background:none;border:none;font-size:18px;cursor:pointer;color:#94a3b8;line-height:1}
-.modal-close:hover{color:#475569}
-.modal-body{padding:18px;display:flex;flex-direction:column;gap:14px}
-.modal-section{border:1px solid #e2e8f0;border-radius:8px;padding:12px 14px}
-.modal-section h4{font-size:12px;font-weight:700;color:#475569;
-  text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px}
-.field-row{display:flex;align-items:center;gap:10px;margin-bottom:8px}
-.field-row:last-child{margin-bottom:0}
-.field-row label{font-size:12px;color:#374151;white-space:nowrap;min-width:100px}
-.field-row input[type=text],.field-row input[type=number],.field-row select{
-  flex:1;padding:5px 9px;border:1px solid #d1d5db;border-radius:6px;
-  font-size:12px;outline:none}
-.field-row input:focus,.field-row select:focus{border-color:#7c3aed}
-.radio-group,.check-group{display:flex;gap:14px;flex-wrap:wrap}
-.radio-group label,.check-group label{display:flex;align-items:center;
-  gap:5px;font-size:12px;cursor:pointer;color:#374151}
-.range-inputs{display:flex;align-items:center;gap:8px}
-.range-inputs input{width:70px}
-.folder-row{display:flex;gap:8px}
-.folder-row input{flex:1}
-.folder-browse{padding:5px 10px;border:1px solid #d1d5db;border-radius:6px;
-  background:#f9fafb;cursor:pointer;font-size:11px}
-.modal-footer{padding:14px 18px;background:#f8fafc;border-top:1px solid #e2e8f0;
-  display:flex;justify-content:flex-end;gap:10px}
-.btn-cancel{padding:7px 16px;border:1px solid #d1d5db;border-radius:6px;
-  background:#fff;cursor:pointer;font-size:12px}
-.btn-start{padding:7px 16px;background:#7c3aed;color:#fff;border:none;
-  border-radius:6px;cursor:pointer;font-size:12px;font-weight:600}
-.btn-start:hover{background:#6d28d9}
-
-/* ─── Progress dialog ────────────────────────────────────── */
-#pdf-progress-modal .modal{width:460px}
-.progress-msg{font-size:13px;color:#374151;margin-bottom:10px;min-height:20px}
-.progress-bar-wrap{background:#e2e8f0;border-radius:99px;height:12px;overflow:hidden}
-.progress-bar-fill{height:100%;background:linear-gradient(90deg,#7c3aed,#4f46e5);
-  border-radius:99px;transition:width .3s ease;width:0%}
-.progress-stats{display:flex;justify-content:space-between;
-  font-size:11px;color:#6b7280;margin-top:6px}
-.btn-cancel-export{padding:7px 16px;background:#dc2626;color:#fff;
-  border:none;border-radius:6px;cursor:pointer;font-size:12px}
-
-/* ─── Toast ──────────────────────────────────────────────── */
-#toast{position:fixed;bottom:24px;right:24px;background:#1e293b;color:#e2e8f0;
-  padding:10px 18px;border-radius:8px;font-size:12px;box-shadow:0 4px 16px rgba(0,0,0,.3);
-  display:none;z-index:400;transition:opacity .3s}
+.wiz-col-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem 1rem; }
+.wiz-col-grid .wiz-field { margin-bottom: 0.5rem; }
+.wiz-col-required { border-left: 3px solid #0F6E56; padding-left: 0.75rem; }
+.wiz-col-optional { border-left: 3px solid #d1d5db; padding-left: 0.75rem; }
 </style>
 </head>
 <body>
 
-<!-- Startup loading overlay -->
-<div id="loading-overlay">
-  <div class="loading-box">
-    <div class="loading-title">LYNXgwas</div>
-    <div class="loading-phase" id="loading-phase">Starting pipeline…</div>
-    <div class="loading-sub" id="loading-sub">Connecting to Java backend…</div>
-    <div class="loading-bar-track"><div class="loading-bar-fill" id="loading-fill"></div></div>
-    <div class="loading-count" id="loading-count"></div>
-    <div class="loading-skip" onclick="skipLoading()">Skip — open viewer with existing data</div>
+<header>
+  <img class="logo" src="docs/images/icon.png" alt="LYNXgwas">
+  <div class="title-block">
+    <h1>LYNXgwas</h1>
+    <div class="subtitle">Locus anal<b>Y</b>sis and ge<b>N</b>omic e<b>X</b>plorer</div>
   </div>
+  <div class="meta">
+    <span id="version-label"></span>
+  </div>
+</header>
+
+<main>
+  <div class="toolbar">
+    <h2>Projects</h2>
+    <button class="btn btn-secondary" id="btn-process-all" onclick="processAllStale()" disabled>
+      Process all updated
+    </button>
+    <button class="btn btn-primary" id="btn-new" onclick="newProject()">
+      + New project
+    </button>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Description</th>
+          <th>Loci</th>
+          <th>SNPs</th>
+          <th>SNP sources</th>
+          <th>Locus sources</th>
+          <th>Last processed</th>
+          <th>Status</th>
+          <th>rsIDs</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="project-tbody"></tbody>
+    </table>
+    <div class="empty" id="empty-state" style="display:none">
+      <p>No projects yet.</p>
+      <p>Click <b>+ New project</b> to create one, or add a project manually below.</p>
+    </div>
+  </div>
+
+  <details class="manual-panel">
+    <summary>Add a project manually</summary>
+    <ol>
+      <li>Copy <code>projects/config.properties.template</code> to <code>projects/your_project_id/config.properties</code></li>
+      <li>Edit the config file &mdash; set paths to your GWAS file, loci file, GFF3, and reference panel</li>
+      <li>Map your GWAS column names (<code>col.chr</code>, <code>col.pos</code>, <code>col.pvalue</code>, <code>col.ea</code>, <code>col.nea</code>)</li>
+      <li>Run <code>run.bat</code> &mdash; it will detect the new project and process it automatically</li>
+    </ol>
+  </details>
+</main>
+
+  <!-- ── Resources & Settings panel ─────────────────────────── -->
+  <details class="manual-panel" style="margin-top:0.75rem">
+    <summary>Resources &amp; Settings</summary>
+    <div style="margin-top:0.75rem">
+      <h4 style="font-size:0.9rem;margin-bottom:0.5rem">SNP Databases</h4>
+      <div id="snpdb-list"></div>
+      <button class="btn btn-secondary" onclick="addSnpDatabase()" style="margin-top:0.4rem">+ Add SNP database</button>
+
+      <h4 style="font-size:0.9rem;margin:1rem 0 0.5rem">Reference Panels</h4>
+      <div id="refpanel-list"></div>
+      <button class="btn btn-secondary" onclick="addRefPanel()" style="margin-top:0.4rem">+ Add reference panel</button>
+
+      <h4 style="font-size:0.9rem;margin:1rem 0 0.5rem">NCBI API (coming soon)</h4>
+      <p style="color:#888;font-size:0.82rem">NCBI API fallback is not yet active. Settings will be available here when implemented.</p>
+    </div>
+  </details>
+
+<!-- ── rsID Recovery modal ────────────────────────────────── -->
+<div class="wizard-overlay" id="rsid-overlay">
+<div class="wizard-box" style="max-width:580px">
+  <div style="display:flex;justify-content:space-between;align-items:center">
+    <h3 id="rsid-title">Add rsIDs</h3>
+    <button class="btn btn-secondary" onclick="rsidClose()" style="padding:0.3rem 0.7rem">&times;</button>
+  </div>
+  <div id="rsid-content"></div>
+</div>
 </div>
 
-<!-- Tooltip -->
-<div id="tooltip">
-  <div class="tt-id"></div>
-  <div class="tt-pos"></div>
-  <div class="tt-pval"></div>
-  <div class="tt-r2"></div>
-</div>
-<!-- Toast -->
-<div id="toast"></div>
-
-<!-- ═══════════════════════════════════════════════════════════ -->
-<!-- PDF Config Modal                                           -->
-<!-- ═══════════════════════════════════════════════════════════ -->
-<div id="pdf-config-modal" class="modal-overlay">
-  <div class="modal">
-    <div class="modal-header">
-      <h3>📄 Export Loci to PDF</h3>
-      <button class="modal-close" id="pdf-cfg-close">✕</button>
-    </div>
-    <div class="modal-body">
-      <!-- Loci selection -->
-      <div class="modal-section">
-        <h4>Loci to export</h4>
-        <div class="radio-group">
-          <label><input type="radio" name="loci-range" value="all" checked> All loci (<span id="cfg-total">?</span> total)</label>
-          <label><input type="radio" name="loci-range" value="view"> Current view only</label>
-          <label><input type="radio" name="loci-range" value="custom"> Custom range:</label>
-        </div>
-        <div class="field-row" style="margin-top:8px" id="custom-range-row">
-          <label>From locus</label>
-          <div class="range-inputs">
-            <input type="number" id="range-from" value="1" min="1">
-            <span style="color:#64748b">to</span>
-            <input type="number" id="range-to" value="1" min="1">
-          </div>
-        </div>
-      </div>
-      <!-- Layout -->
-      <div class="modal-section">
-        <h4>Layout</h4>
-        <div class="field-row">
-          <label>Loci per page</label>
-          <div class="radio-group">
-            <label><input type="radio" name="loci-per-page" value="1"> 1</label>
-            <label><input type="radio" name="loci-per-page" value="2" checked> 2</label>
-            <label><input type="radio" name="loci-per-page" value="3"> 3</label>
-          </div>
-        </div>
-        <div class="field-row">
-          <label>Orientation</label>
-          <div class="radio-group">
-            <label><input type="radio" name="orientation" value="landscape" checked> Landscape</label>
-            <label><input type="radio" name="orientation" value="portrait"> Portrait</label>
-          </div>
-        </div>
-        <div class="field-row">
-          <label>Page size</label>
-          <select id="page-size">
-            <option value="a4">A4</option>
-            <option value="a3">A3</option>
-            <option value="letter">Letter</option>
-          </select>
-        </div>
-      </div>
-      <!-- Tracks -->
-      <div class="modal-section">
-        <h4>Tracks to include</h4>
-        <div class="check-group">
-          <label><input type="checkbox" id="cfg-ctx"   checked> Context sketch</label>
-          <label><input type="checkbox" id="cfg-plot"  checked> Association plot</label>
-          <label><input type="checkbox" id="cfg-genes" checked> Gene structure</label>
-          <label><input type="checkbox" id="cfg-ld"    checked> LD bar track</label>
-        </div>
-      </div>
-      <!-- Output -->
-      <div class="modal-section">
-        <h4>Output</h4>
-        <div class="field-row">
-          <label>Filename</label>
-          <input type="text" id="cfg-filename" value="gwas_loci_plots.pdf">
-        </div>
-        <div class="field-row">
-          <label>Save to</label>
-          <div class="folder-row" style="flex:1">
-            <input type="text" id="cfg-folder" placeholder="Browser downloads folder (default)">
-            <button class="folder-browse" id="cfg-browse">Browse…</button>
-          </div>
-        </div>
-      </div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn-cancel" id="pdf-cfg-cancel">Cancel</button>
-      <button class="btn-start" id="pdf-cfg-start">▶ Start Export</button>
+<!-- ── Project wizard overlay ──────────────────────────────── -->
+<div class="wizard-overlay" id="wizard-overlay">
+<div class="wizard-box">
+  <div style="display:flex;justify-content:space-between;align-items:center">
+    <h3 id="wiz-title">New project</h3>
+    <button class="btn btn-secondary" onclick="wizClose()" style="padding:0.3rem 0.7rem">&times;</button>
+  </div>
+  <div class="wizard-steps" id="wiz-steps-bar"></div>
+  <div id="wiz-content"></div>
+  <div class="wiz-footer">
+    <span class="step-label" id="wiz-step-label"></span>
+    <div style="display:flex;gap:0.5rem">
+      <button class="btn btn-secondary" id="wiz-prev" onclick="wizPrev()">Back</button>
+      <button class="btn btn-primary" id="wiz-next" onclick="wizNext()">Next</button>
     </div>
   </div>
 </div>
-
-<!-- ═══════════════════════════════════════════════════════════ -->
-<!-- PDF Progress Modal                                         -->
-<!-- ═══════════════════════════════════════════════════════════ -->
-<div id="pdf-progress-modal" class="modal-overlay">
-  <div class="modal">
-    <div class="modal-header">
-      <h3>📄 Exporting PDF…</h3>
-    </div>
-    <div class="modal-body">
-      <div class="progress-msg" id="progress-msg">Preparing…</div>
-      <div class="progress-bar-wrap"><div class="progress-bar-fill" id="progress-fill"></div></div>
-      <div class="progress-stats">
-        <span id="progress-count">0 / 0</span>
-        <span id="progress-eta">Estimating…</span>
-      </div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn-cancel-export" id="pdf-cancel-btn">■ Cancel Export</button>
-    </div>
-  </div>
-</div>
-
-<!-- ═══════════════════════════════════════════════════════════ -->
-<!-- App                                                        -->
-<!-- ═══════════════════════════════════════════════════════════ -->
-<div id="global-header">
-  <span id="tool-title">LYNXgwas</span>
-
-  <div id="search-wrap">
-    <input type="text" id="search-input" placeholder="Search locus / gene / rsid…" autocomplete="off">
-    <div id="search-dropdown"></div>
-  </div>
-
-  <div id="toggles">
-    <button class="toggle-btn active" id="toggle-ctx">Context</button>
-    <button class="toggle-btn active" id="toggle-genes">Genes</button>
-    <button class="toggle-btn active" id="toggle-ld">LD Bar</button>
-    <button class="toggle-btn active" id="toggle-ldt">LD Triangle</button>
-  </div>
-
-  <div id="nav-controls">
-    <button class="nav-btn" id="prev-btn" disabled>◀ Prev</button>
-    <span id="nav-counter">Loading…</span>
-    <button class="nav-btn" id="next-btn" disabled>Next ▶</button>
-  </div>
-
-  <button id="export-pdf-btn">Export PDF</button>
-</div>
-
-<div id="genome-skyline">
-  <div class="sky-label">Genome-wide association skyline</div>
-  <svg id="sky-svg"></svg>
-</div>
-
-<div id="main">
-  <div id="panels-container"></div>
 </div>
 
 <script>
-// ═══════════════════════════════════════════════════════════════
-// Constants & State
-// ═══════════════════════════════════════════════════════════════
-const SERVER    = 'http://localhost:8765';
-const DATA_DIR  = 'data';
-const VISIBLE   = 3;
-const MARGIN    = {top:10, right:20, bottom:28, left:52};
-const PLOT_H    = 250;
-const GENE_ROW  = 40;
-const LD_H      = 70;
-const CTX_H     = 70;
-const GW_SIG    = -Math.log10(5e-8);   // 7.30
-const SUG_SIG   = -Math.log10(1e-5);   // 5.0
-const OV_THRESH_BLUE  = -Math.log10(5e-8);
-const OV_THRESH_GREEN = -Math.log10(5e-5);
-const OV_H      = 72;
-const OV_BINS   = 300;
-const LDT_CELL_PX_DEFAULT = 6;   // default triangle cell size in px
-const LDT_AXIS_H          = 44;  // height of x-axis below triangle
+const API = '';
+let projects = [];
+let pollTimers = {};
 
-// LD color scheme per spec
-function ldColor(r2) {
-  if (r2 < 0)    return '#AAAAAA';
-  if (r2 >= 0.8) return '#E41A1C';
-  if (r2 >= 0.6) return '#FF7F00';
-  if (r2 >= 0.4) return '#4DAF4A';
-  if (r2 >= 0.2) return '#377EB8';
-  return '#AAAAAA';
+async function loadProjects() {
+  try {
+    const resp = await fetch(API + '/api/projects');
+    projects = await resp.json();
+  } catch (e) {
+    projects = [];
+  }
+  render();
 }
-const LD_LEGEND = [
-  ['r²≥0.8','#E41A1C'],['0.6–0.8','#FF7F00'],
-  ['0.4–0.6','#4DAF4A'],['0.2–0.4','#377EB8'],
-  ['<0.2','#AAAAAA'],['Top SNP','#7c3aed']
-];
 
-let manifest    = null;
-let currentStart = 0;  // position in lociOrder array (0-based)
-let lociOrder = [];    // sorted array of locus indices from manifest
+function render() {
+  const tbody = document.getElementById('project-tbody');
+  const empty = document.getElementById('empty-state');
+  const btnAll = document.getElementById('btn-process-all');
 
-function rebuildLociOrder() {
-  if (manifest && manifest.loci) {
-    lociOrder = manifest.loci.map(l => l.index).sort((a, b) => a - b);
+  if (projects.length === 0) {
+    tbody.innerHTML = '';
+    empty.style.display = '';
+    btnAll.disabled = true;
+    return;
+  }
+  empty.style.display = 'none';
+
+  const hasStale = projects.some(p => p.status === 'needs_reprocessing');
+  btnAll.disabled = !hasStale;
+
+  tbody.innerHTML = projects.map(p => {
+    const name = p.name || p.id;
+    const desc = p.description || '';
+    const loci = p.loci_count != null ? p.loci_count : '—';
+    const snps = p.total_snps != null ? p.total_snps.toLocaleString() : '—';
+    const snpSrc = p.snp_annotation_sources != null ? p.snp_annotation_sources : '—';
+    const locSrc = p.locus_annotation_sources != null ? p.locus_annotation_sources : '—';
+    const last = p.last_processed ? formatDate(p.last_processed) : '—';
+    const badge = statusBadge(p);
+
+    return '<tr onclick="openProject(\'' + esc(p.id) + '\')" data-id="' + esc(p.id) + '">'
+      + '<td><b>' + esc(name) + '</b></td>'
+      + '<td class="desc">' + esc(desc) + '</td>'
+      + '<td>' + loci + '</td>'
+      + '<td>' + snps + '</td>'
+      + '<td>' + snpSrc + '</td>'
+      + '<td>' + locSrc + '</td>'
+      + '<td>' + last + '</td>'
+      + '<td>' + badge + '</td>'
+      + '<td>' + rsidBadge(p) + '</td>'
+      + '<td class="actions" onclick="event.stopPropagation()">'
+      + '<button class="btn btn-secondary" onclick="editConfig(\'' + esc(p.id) + '\')" title="Edit configuration">Edit</button>'
+      + '<button class="btn btn-secondary" onclick="reprocess(\'' + esc(p.id) + '\')" title="Reprocess">Reprocess</button>'
+      + '</td></tr>';
+  }).join('');
+
+  projects.filter(p => p.status === 'processing').forEach(p => startPolling(p.id));
+}
+
+function statusBadge(p) {
+  switch (p.status) {
+    case 'up_to_date':
+      return '<span class="badge badge-ok">Up to date</span>';
+    case 'needs_reprocessing':
+      return '<span class="badge badge-stale">Needs reprocessing</span>';
+    case 'processing':
+      return '<span class="badge badge-proc">Processing…</span>'
+        + '<span class="progress-text" id="ppct-' + esc(p.id) + '"></span>';
+    case 'error':
+      return '<span class="badge badge-error">Error</span>';
+    default:
+      return '<span class="badge">' + esc(p.status || 'unknown') + '</span>';
   }
 }
-const locusCache = new Map();
-let showCtx    = true;
-let showGenes  = true;
-let showLd     = true;
-let showLdTri  = true;
-let pdfCancelled = false;
 
-// Handle r2 field name change (old JSON: "r2", new JSON: "r2_with_index")
-function snpR2(s) {
-  const v = s.r2_with_index !== undefined ? s.r2_with_index : s.r2;
-  return (v !== undefined && v !== null) ? v : -1;
+function startPolling(id) {
+  if (pollTimers[id]) return;
+  pollTimers[id] = setInterval(async function() {
+    try {
+      var resp = await fetch(API + '/api/project/' + encodeURIComponent(id) + '/progress');
+      var prog = await resp.json();
+      var el = document.getElementById('ppct-' + id);
+      if (el) el.textContent = prog.phase + ' (' + prog.pct + '%)';
+      if (prog.done) {
+        clearInterval(pollTimers[id]);
+        delete pollTimers[id];
+        loadProjects();
+      }
+    } catch (e) {
+      clearInterval(pollTimers[id]);
+      delete pollTimers[id];
+    }
+  }, 2000);
 }
 
-// ═══════════════════════════════════════════════════════════════
-// Data loading — server first, .js fallback
-// ═══════════════════════════════════════════════════════════════
-function loadScript(src) {
-  return new Promise((resolve, reject) => {
-    if (document.querySelector(`script[src="${CSS.escape ? src : src}"]`)) { resolve(); return; }
-    const s = document.createElement('script');
-    s.src = src; s.onload = resolve;
-    s.onerror = () => reject(new Error(`Failed: ${src}`));
-    document.head.appendChild(s);
+function openProject(id) {
+  window.location.href = 'viewer.html?project=' + encodeURIComponent(id);
+}
+
+// ══════════════════════════════════════════════════════════
+//  PROJECT WIZARD (Step 8)
+// ══════════════════════════════════════════════════════════
+
+var wiz = { step: 0, mode: 'create', editId: null, cfg: {}, gwasColumns: [] };
+var WIZ_STEPS = ['Basics', 'Files', 'Column mapping', 'Parameters', 'Preview'];
+var COL_ALIASES = {
+  chr: ['chr','chrom','chromosome','#chrom','#chr'],
+  pos: ['bp','pos','position','base_pair_location'],
+  pvalue: ['p','pval','pvalue','p_value','p-value','log10p'],
+  ea: ['a1','ea','effect_allele','allele1','alt'],
+  nea: ['a2','nea','other_allele','allele2','ref','non_effect_allele']
+};
+var OPT_ALIASES = {
+  rsid: ['snp','rsid','rs','markername','variant_id'],
+  beta: ['beta','effect','b'],
+  or: ['or','odds_ratio'],
+  se: ['se','stderr','standard_error'],
+  n: ['n','n_total','samplesize','sample_size'],
+  maf: ['maf','eaf','freq','a1freq'],
+  info: ['info','info_score','imputation_quality','r2']
+};
+
+function newProject() { wizOpen('create', null); }
+function editConfig(id) { wizOpen('edit', id); }
+
+function wizOpen(mode, editId) {
+  wiz = { step: 0, mode: mode, editId: editId, cfg: {}, gwasColumns: [] };
+  document.getElementById('wiz-title').textContent = mode === 'edit' ? 'Edit project' : 'New project';
+  if (mode === 'edit') {
+    fetch(API + '/api/project/' + encodeURIComponent(editId) + '/config')
+      .then(function(r) { return r.json(); })
+      .then(function(c) { wiz.cfg = c; wiz.cfg._id = editId; wizRender(); })
+      .catch(function() { wiz.cfg = { _id: editId }; wizRender(); });
+    var p = projects.find(function(x) { return x.id === editId; });
+    if (p) { wiz.cfg._name = p.name; wiz.cfg._desc = p.description; }
+  }
+  document.getElementById('wizard-overlay').classList.add('open');
+  wizRender();
+}
+
+function wizClose() {
+  document.getElementById('wizard-overlay').classList.remove('open');
+}
+
+function wizRender() {
+  var bar = document.getElementById('wiz-steps-bar');
+  bar.innerHTML = WIZ_STEPS.map(function(_, i) {
+    var cls = i < wiz.step ? 'step done' : (i === wiz.step ? 'step active' : 'step');
+    return '<div class="' + cls + '"></div>';
+  }).join('');
+  document.getElementById('wiz-step-label').textContent = 'Step ' + (wiz.step + 1) + ' of ' + WIZ_STEPS.length + ' — ' + WIZ_STEPS[wiz.step];
+  document.getElementById('wiz-prev').style.display = wiz.step === 0 ? 'none' : '';
+  var nextBtn = document.getElementById('wiz-next');
+  nextBtn.textContent = wiz.step === WIZ_STEPS.length - 1 ? (wiz.mode === 'edit' ? 'Save & reprocess' : 'Process') : 'Next';
+
+  var c = document.getElementById('wiz-content');
+  switch (wiz.step) {
+    case 0: wizRenderBasics(c); break;
+    case 1: wizRenderFiles(c); break;
+    case 2: wizRenderColumns(c); break;
+    case 3: wizRenderParams(c); break;
+    case 4: wizRenderPreview(c); break;
+  }
+}
+
+function wizPrev() { if (wiz.step > 0) { wizSaveFields(); wiz.step--; wizRender(); } }
+function wizNext() {
+  wizSaveFields();
+  var err = wizValidateStep();
+  if (err) { alert(err); return; }
+  if (wiz.step === 2 && wiz.gwasColumns.length === 0) {
+    var gf = wiz.cfg['gwas.file'] || '';
+    if (gf) { wizLoadColumns(gf, function() { wiz.step++; wizRender(); }); return; }
+  }
+  if (wiz.step < WIZ_STEPS.length - 1) { wiz.step++; wizRender(); }
+  else { wizSubmit(); }
+}
+
+function wizSaveFields() {
+  document.querySelectorAll('[data-wiz-key]').forEach(function(el) {
+    var key = el.getAttribute('data-wiz-key');
+    if (el.type === 'checkbox') wiz.cfg[key] = el.checked;
+    else wiz.cfg[key] = el.value;
   });
 }
 
-async function loadManifest() {
-  // Try HTTP server
-  try {
-    const res = await fetchWithTimeout(`${SERVER}/manifest`, 1500);
-    if (res.ok) return await res.json();
-  } catch(e) {}
-  // Fall back to .js
-  await loadScript(`${DATA_DIR}/manifest.js`);
-  if (window.MANIFEST) return window.MANIFEST;
-  throw new Error('Could not load manifest from server or data/manifest.js');
+function wizValidateStep() {
+  if (wiz.step === 0) {
+    if (!wiz.cfg._name || !wiz.cfg._name.trim()) return 'Project name is required.';
+    if (!wiz.cfg._id || !wiz.cfg._id.trim()) return 'Project ID is required.';
+    if (!/^[a-z0-9_-]+$/.test(wiz.cfg._id)) return 'Project ID must be lowercase letters, numbers, hyphens, or underscores.';
+  }
+  if (wiz.step === 1) {
+    if (!wiz.cfg['gwas.file']) return 'GWAS summary statistics file is required.';
+    if (!wiz.cfg['loci.file']) return 'Loci definition file is required.';
+    if (!wiz.cfg['gff3.file']) return 'GFF3 annotation file is required.';
+  }
+  if (wiz.step === 2) {
+    if (!wiz.cfg['col.chr']) return 'Chromosome column mapping is required.';
+    if (!wiz.cfg['col.pos']) return 'Position column mapping is required.';
+    if (!wiz.cfg['col.pvalue']) return 'P-value column mapping is required.';
+    if (!wiz.cfg['col.ea']) return 'Effect allele (A1) column mapping is required.';
+    if (!wiz.cfg['col.nea']) return 'Other allele (A2) column mapping is required.';
+  }
+  return null;
 }
 
-function sanitizeJsonText(text) {
-  return text
-    .replace(/,\s*,/g, ',')
-    .replace(/,\s*,/g, ',')
-    .replace(/\[\s*,/g, '[')
-    .replace(/,\s*\]/g, ']');
+// ── Step renderers ───────────────────────────────
+
+function wizRenderBasics(c) {
+  var isEdit = wiz.mode === 'edit';
+  var name = wiz.cfg._name || '';
+  var desc = wiz.cfg._desc || '';
+  var id = wiz.cfg._id || '';
+  c.innerHTML =
+    '<div class="wiz-field"><label>Project name</label>'
+    + '<input data-wiz-key="_name" value="' + escAttr(name) + '" placeholder="My GWAS Study" oninput="wizAutoSlug(this)">'
+    + '</div>'
+    + '<div class="wiz-field"><label>Description (optional)</label>'
+    + '<input data-wiz-key="_desc" value="' + escAttr(desc) + '" placeholder="Brief description">'
+    + '</div>'
+    + '<div class="wiz-field"><label>Project ID</label>'
+    + '<input data-wiz-key="_id" value="' + escAttr(id) + '" placeholder="my-gwas-study" ' + (isEdit ? 'disabled' : '') + '>'
+    + '<div class="hint">Folder name under projects/. Lowercase, no spaces.</div>'
+    + '</div>';
 }
 
-function sanitizeLdMatrix(data) {
-  if (!data || !data.ld_triangle || !data.ld_triangle.matrix) return;
-  const m = data.ld_triangle.matrix;
-  const N = data.ld_triangle.snp_count || data.ld_triangle.snps.length;
-  for (let i = 0; i < m.length; i++) {
-    if (!m[i]) continue;
-    if (m[i].length > N) {
-      // Row is a sparse array from double-comma serialization bug.
-      // Extract only actually-present values (skip holes), not by index.
-      const dense = [];
-      for (let j = 0; j < m[i].length && dense.length < N; j++) {
-        if (j in m[i]) dense.push(m[i][j]);
+function wizAutoSlug(el) {
+  if (wiz.mode === 'edit') return;
+  var slug = el.value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  var idField = document.querySelector('[data-wiz-key="_id"]');
+  if (idField && !idField.disabled) idField.value = slug;
+  wiz.cfg._name = el.value;
+  wiz.cfg._id = slug;
+}
+
+function wizRenderFiles(c) {
+  var cfg = wiz.cfg;
+  c.innerHTML =
+    wizFileField('GWAS summary statistics', 'gwas.file', cfg['gwas.file'] || '')
+    + wizFileField('Loci definition file', 'loci.file', cfg['loci.file'] || '')
+    + wizFileField('GFF3 gene annotation', 'gff3.file', cfg['gff3.file'] || '')
+    + wizFileField('Reference panel (PLINK prefix)', 'ref.panel.path', cfg['ref.panel.path'] || '')
+    + '<div class="hint" style="margin-top:-0.5rem">Select any of .bed/.bim/.fam — the prefix is inferred.</div>';
+}
+
+function wizFileField(label, key, val) {
+  return '<div class="wiz-field"><label>' + label + '</label>'
+    + '<div class="file-row">'
+    + '<input data-wiz-key="' + key + '" value="' + escAttr(val) + '" placeholder="path/to/file">'
+    + '<button class="btn btn-secondary" onclick="wizPickFile(\'' + key + '\')">Browse</button>'
+    + '</div></div>';
+}
+
+function wizPickFile(key) {
+  fetch(API + '/pick-file')
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (!d.path) return;
+      var val = d.path;
+      if (key === 'ref.panel.path') {
+        val = val.replace(/\.(bed|bim|fam)$/i, '');
       }
-      m[i] = dense;
-    }
-  }
+      var el = document.querySelector('[data-wiz-key="' + key + '"]');
+      if (el) el.value = val;
+      wiz.cfg[key] = val;
+      if (key === 'gwas.file') wizLoadColumns(val);
+    })
+    .catch(function(e) {
+      alert('File picker unavailable. Please type the path manually in the input field.');
+    });
 }
 
-async function loadLocus(idx) {
-  if (locusCache.has(idx)) return locusCache.get(idx);
-  let data = null;
-  // Try HTTP server — fetch raw text so we can sanitize double-comma artifacts
-  try {
-    const res = await fetchWithTimeout(`${SERVER}/locus/${idx}`, 2000);
-    if (res.ok) {
-      const raw = await res.text();
-      data = JSON.parse(sanitizeJsonText(raw));
-    }
-  } catch(e) {}
-  // Fallback to .js (parsed by the browser — sanitize sparse arrays in memory)
-  if (!data) {
-    try {
-      await loadScript(`${DATA_DIR}/locus_${idx}.js`);
-      data = window.LOCUS_DATA && window.LOCUS_DATA[idx];
-      if (data) sanitizeLdMatrix(data);
-    } catch(e) {}
-  }
-  if (data) {
-    // Assertion: verify LD matrix integrity after sanitization
-    const tri = data.ld_triangle;
-    if (tri && tri.snps && tri.matrix) {
-      const N = tri.snps.length;
-      if (tri.matrix.length !== N)
-        console.error(`[LD] Locus ${idx}: matrix has ${tri.matrix.length} rows but ${N} SNPs`);
-      for (let r = 0; r < Math.min(3, tri.matrix.length); r++) {
-        if (tri.matrix[r] && tri.matrix[r].length !== N)
-          console.error(`[LD] Locus ${idx}: row ${r} has ${tri.matrix[r].length} cols, expected ${N}`);
-      }
-    }
-    locusCache.set(idx, data);
-  }
-  return data;
+function wizLoadColumns(path, cb) {
+  fetch(API + '/api/peek-file-header?path=' + encodeURIComponent(path))
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      wiz.gwasColumns = d.columns || [];
+      if (wiz.gwasColumns.length > 0) wizAutoMap();
+      if (cb) cb();
+    })
+    .catch(function() { wiz.gwasColumns = []; if (cb) cb(); });
 }
 
-function fetchWithTimeout(url, ms) {
-  const ctrl = new AbortController();
-  setTimeout(() => ctrl.abort(), ms);
-  return fetch(url, {signal: ctrl.signal});
-}
-
-// ═══════════════════════════════════════════════════════════════
-// Bootstrap
-// ═══════════════════════════════════════════════════════════════
-let _skipLoading = false;
-function skipLoading() {
-  _skipLoading = true;
-  document.getElementById('loading-overlay').style.display = 'none';
-}
-
-async function init() {
-  const overlay = document.getElementById('loading-overlay');
-  // Hide overlay immediately — only show if server is running but pipeline not done
-  overlay.style.display = 'none';
-
-  let manifestOk = false;
-  try { manifest = await loadManifest(); manifestOk = true; } catch(e) {}
-
-  if (!manifestOk) {
-    // Check if the Java server is running at all
-    let serverUp = false;
-    try {
-      const r = await fetchWithTimeout(`${SERVER}/progress`, 3000);
-      serverUp = r && r.ok;
-    } catch(e) {}
-
-    if (serverUp) {
-      // Server is up but pipeline is still running — show loading overlay and poll
-      _skipLoading = false;
-      overlay.style.display = 'flex';
-
-      while (!_skipLoading && !manifestOk) {
-        try {
-          const r = await fetchWithTimeout(`${SERVER}/progress`, 3000);
-          if (r && r.ok) {
-            const p = await r.json();
-            document.getElementById('loading-phase').textContent = p.phase || 'Processing…';
-            document.getElementById('loading-sub').textContent   =
-              p.total > 0 ? `Locus ${p.locus} / ${p.total}` : '';
-            document.getElementById('loading-fill').style.width  = (p.pct || 0) + '%';
-            document.getElementById('loading-count').textContent =
-              p.total > 0 ? `${p.pct || 0}% complete` : '';
-            if (p.done) {
-              try { manifest = await loadManifest(); rebuildLociOrder(); manifestOk = true; } catch(e2) {}
-            }
-          }
-        } catch(e) {}
-        if (!manifestOk) await new Promise(r => setTimeout(r, 2000));
-      }
-      overlay.style.display = 'none';
+function wizAutoMap() {
+  var cols = wiz.gwasColumns.map(function(c) { return c.toLowerCase(); });
+  function findMatch(aliases) {
+    for (var i = 0; i < aliases.length; i++) {
+      var idx = cols.indexOf(aliases[i]);
+      if (idx >= 0) return wiz.gwasColumns[idx];
     }
+    return '';
   }
+  if (!wiz.cfg['col.chr'])    wiz.cfg['col.chr']    = findMatch(COL_ALIASES.chr);
+  if (!wiz.cfg['col.pos'])    wiz.cfg['col.pos']    = findMatch(COL_ALIASES.pos);
+  if (!wiz.cfg['col.pvalue']) wiz.cfg['col.pvalue'] = findMatch(COL_ALIASES.pvalue);
+  if (!wiz.cfg['col.ea'])     wiz.cfg['col.ea']     = findMatch(COL_ALIASES.ea);
+  if (!wiz.cfg['col.nea'])    wiz.cfg['col.nea']    = findMatch(COL_ALIASES.nea);
+  if (!wiz.cfg['col.rsid'])   wiz.cfg['col.rsid']   = findMatch(OPT_ALIASES.rsid);
+  if (!wiz.cfg['col.beta'])   wiz.cfg['col.beta']   = findMatch(OPT_ALIASES.beta);
+  if (!wiz.cfg['col.or'])     wiz.cfg['col.or']     = findMatch(OPT_ALIASES.or);
+  if (!wiz.cfg['col.se'])     wiz.cfg['col.se']     = findMatch(OPT_ALIASES.se);
+  if (!wiz.cfg['col.n'])      wiz.cfg['col.n']      = findMatch(OPT_ALIASES.n);
+  if (!wiz.cfg['col.maf'])    wiz.cfg['col.maf']    = findMatch(OPT_ALIASES.maf);
+  if (!wiz.cfg['col.info'])   wiz.cfg['col.info']   = findMatch(OPT_ALIASES.info);
+}
 
-  if (!manifestOk) {
-    document.getElementById('panels-container').innerHTML =
-      `<div style="padding:48px;text-align:center;color:#94a3b8">
-        <strong style="color:#f87171">Could not load manifest</strong><br><br>
-        Run the Java backend first:<br>
-        <code>java -cp bin Main --config config.properties</code><br><br>
-        Then open <code>output/index.html</code> (or the server URL printed by the tool).
-      </div>`;
-    document.getElementById('nav-counter').textContent = 'Error';
+function wizRenderColumns(c) {
+  if (wiz.gwasColumns.length === 0 && wiz.cfg['gwas.file']) {
+    c.innerHTML = '<p>Loading columns from GWAS file…</p>';
+    wizLoadColumns(wiz.cfg['gwas.file'], function() { wizRenderColumns(c); });
     return;
   }
 
-  rebuildLociOrder();
-  document.getElementById('cfg-total').textContent = lociOrder.length;
-  document.getElementById('range-to').value = lociOrder.length;
+  var opts = '<option value="">— not mapped —</option>' + wiz.gwasColumns.map(function(col) {
+    return '<option value="' + escAttr(col) + '">' + esc(col) + '</option>';
+  }).join('');
 
-  setupSearch();
-  setupToggles();
-  setupNav();
-  setupPdfDialog();
+  function colSelect(label, key, required) {
+    var val = wiz.cfg[key] || '';
+    var selected = opts.replace('value="' + escAttr(val) + '"', 'value="' + escAttr(val) + '" selected');
+    var cls = required ? 'wiz-field wiz-col-required' : 'wiz-field wiz-col-optional';
+    return '<div class="' + cls + '"><label>' + label + (required ? ' *' : '') + '</label>'
+      + '<select data-wiz-key="' + key + '">' + selected + '</select></div>';
+  }
 
-  // Load and render genome skyline (non-blocking)
-  loadSkyline().then(() => { renderSkyline(); updateSkylineHighlights(); });
-
-  renderViewport(false);
-  // Preload next batch
-  preload(currentStart + VISIBLE);
+  c.innerHTML =
+    '<div class="wiz-section-title">Required columns</div>'
+    + '<div class="wiz-col-grid">'
+    + colSelect('Chromosome', 'col.chr', true)
+    + colSelect('Position', 'col.pos', true)
+    + colSelect('P-value', 'col.pvalue', true)
+    + colSelect('Effect allele (A1)', 'col.ea', true)
+    + colSelect('Other allele (A2)', 'col.nea', true)
+    + '</div>'
+    + '<div class="wiz-section-title">Optional columns</div>'
+    + '<div class="wiz-col-grid">'
+    + colSelect('rsID', 'col.rsid', false)
+    + colSelect('Variant ID', 'col.varid', false)
+    + colSelect('Beta', 'col.beta', false)
+    + colSelect('Odds Ratio', 'col.or', false)
+    + colSelect('Standard Error', 'col.se', false)
+    + colSelect('Sample size (N)', 'col.n', false)
+    + colSelect('MAF', 'col.maf', false)
+    + colSelect('Info score', 'col.info', false)
+    + '</div>';
 }
 
-// ═══════════════════════════════════════════════════════════════
-// Viewport rendering
-// ═══════════════════════════════════════════════════════════════
-async function renderViewport(animate) {
-  const container = document.getElementById('panels-container');
-
-  if (animate) {
-    container.classList.add('transitioning');
-    await new Promise(r => setTimeout(r, 200));
-  }
-
-  container.innerHTML = '';
-
-  // Clamp currentStart
-  currentStart = Math.max(0, Math.min(currentStart, lociOrder.length - VISIBLE));
-
-  const endPos = Math.min(currentStart + VISIBLE, lociOrder.length);
-  for (let pos = currentStart; pos < endPos; pos++) {
-    const idx = lociOrder[pos];
-    const entry  = manifest.loci.find(l => l.index === idx);
-    const panel  = makePanelShell(entry || {index: idx, locus_name:'Locus '+idx, chr:'?', start:0, end:0});
-    container.appendChild(panel);
-    loadLocus(idx).then(data => { if (data) fillPanel(data, panel); });
-  }
-
-  updateNavUI();
-  updateSkylineHighlights();
-
-  if (animate) {
-    container.classList.remove('transitioning');
-  }
-
-  // Preload next + prev not yet cached
-  if (currentStart + VISIBLE < lociOrder.length) preload(lociOrder[currentStart + VISIBLE]);
-  if (currentStart > 0) preload(lociOrder[currentStart - 1]);
+function wizRenderParams(c) {
+  var cfg = wiz.cfg;
+  c.innerHTML =
+    '<div class="wiz-section-title">Locus parameters</div>'
+    + '<div class="wiz-field"><label>Locus padding (bp)</label>'
+    + '<input type="number" data-wiz-key="locus.padding" value="' + (cfg['locus.padding'] || 200000) + '">'
+    + '<div class="hint">Display window padding added each side of each locus. Default: 200,000 bp.</div></div>'
+    + '<div class="wiz-field"><label>Max SNPs per locus</label>'
+    + '<input type="number" data-wiz-key="max.snps.per.locus" value="' + (cfg['max.snps.per.locus'] || 5000) + '">'
+    + '<div class="hint">Loci with more SNPs are downsampled. Default: 5,000.</div></div>'
+    + '<div class="wiz-section-title">LD computation</div>'
+    + '<div class="wiz-field"><label><input type="checkbox" data-wiz-key="ld.enabled" '
+    + (cfg['ld.enabled'] === true || cfg['ld.enabled'] === 'true' ? 'checked' : '')
+    + '> Enable LD computation</label>'
+    + '<div class="hint">Requires a reference panel (PLINK .bed/.bim/.fam).</div></div>'
+    + '<div class="wiz-field"><label>LD triangle boundary (SNPs each side)</label>'
+    + '<input type="number" data-wiz-key="ld.triangle.boundary" value="' + (cfg['ld.triangle.boundary'] || 100) + '">'
+    + '</div>'
+    + '<div class="wiz-field"><label>Parallel LD jobs</label>'
+    + '<input type="number" data-wiz-key="ld.parallel.jobs" value="' + (cfg['ld.parallel.jobs'] || 4) + '">'
+    + '</div>'
+    + '<div class="wiz-section-title">Reference panel</div>'
+    + '<div class="wiz-field"><label>Population label</label>'
+    + '<input data-wiz-key="ref.panel.population" value="' + escAttr(cfg['ref.panel.population'] || 'EUR') + '">'
+    + '<div class="hint">Shown in UI headers (e.g. EUR, EAS, AFR).</div></div>';
 }
 
-function preload(idx) {
-  if (idx >= 1 && idx <= manifest.total_loci && !locusCache.has(idx)) {
-    loadLocus(idx); // fire-and-forget
-  }
-}
-
-function makePanelShell(entry) {
-  const d = document.createElement('div');
-  d.className = 'locus-panel';
-  d.id = `panel-${entry.index}`;
-  d.innerHTML = `
-    <div class="locus-header">
-      <div class="lh-title">${entry.locus_name}  —  Chr${entry.chr}:${fmtN(entry.start)}–${fmtN(entry.end)}</div>
-      <div class="lh-ops">
-        <button class="lh-op-btn lh-split-btn" data-idx="${entry.index}" title="Split this locus">Split</button>
-      </div>
-      <div class="lh-genes"></div>
-      <div class="lh-top">Loading…</div>
-    </div>
-    <div class="plot-loading">Loading data…</div>`;
-  d.querySelector('.lh-split-btn').addEventListener('click', () => {
-    const data = locusCache.get(entry.index);
-    if (data) showSplitDialog(data);
-    else alert('Locus data not loaded yet.');
-  });
-  return d;
-}
-
-function fillPanel(data, panelEl) {
-  panelEl.querySelector('.plot-loading')?.remove();
-
-  // Update header
-  const genes = (data.nearest_genes || []).join(', ');
-  panelEl.querySelector('.lh-genes').textContent = genes ? `Nearest: ${genes}` : '';
-  if (data.top_snp) {
-    panelEl.querySelector('.lh-top').innerHTML =
-      `Top SNP: <strong>${data.top_snp.id}</strong>&nbsp; p = ${fmtP(data.top_snp.pvalue)}`;
-  } else {
-    panelEl.querySelector('.lh-top').textContent = 'No SNPs';
-  }
-
-  const hasSnps  = data.gwas_snps && data.gwas_snps.length > 0;
-  const hasGenes = data.genes && data.genes.length > 0;
-  // hasLdData = any SNP (including top SNP) has an r2 value; used to decide whether to render LD bar section
-  const hasLdData = hasSnps;
-  // hasRealLD = at least one NON-top SNP has real r2 (not just the top-SNP fallback r2=1)
-  const hasRealLD = hasSnps && data.gwas_snps.some(s => {
-    const r = snpR2(s);
-    return r >= 0 && r <= 1 && (!data.top_snp || s.id !== data.top_snp.id);
-  });
-  const hasLdTri  = !!(data.ld_triangle && data.ld_triangle.snps && data.ld_triangle.matrix);
-
-  if (!hasRealLD) {
-    panelEl.insertAdjacentHTML('beforeend',
-      `<div class="warning-banner">⚠ No LD data — re-run pipeline with ld.enabled=true + ref.panel in config</div>`);
-  }
-
-  // Shared x scale
-  const totalW  = Math.max(panelEl.clientWidth - 28, 400);
-  const xRange  = [MARGIN.left, totalW - MARGIN.right];
-  let   xScale  = d3.scaleLinear().domain([data.padded_start, data.padded_end]).range(xRange);
-
-  // ── Overview density strip ──
-  const ovWrap = div('overview-wrap');
-  panelEl.appendChild(ovWrap);
-  renderOverviewDensity(ovWrap, data, totalW + MARGIN.right);
-
-  // ── B: Context sketch ──
-  const ctxWrap = div('ctx-wrap ctx-section' + (showCtx ? '' : ' hidden'));
-  panelEl.appendChild(ctxWrap);
-  renderContextSketch(ctxWrap, data, totalW + MARGIN.right);
-
-  // ── Gene biotype filter ──
-  const allBiotypes = new Set();
-  if (hasGenes) data.genes.forEach(g => allBiotypes.add(geneBiotype(g)));
-  const visibleBiotypes = new Set(allBiotypes);
-
-  let gfBar = null;
-  if (hasGenes) {
-    gfBar = div('gene-filter genes-section' + (showGenes ? '' : ' hidden'));
-    const totalGenes = data.genes.length;
-    const mkChk = (id, label, bt, checked) => {
-      const lbl = document.createElement('label');
-      const inp = document.createElement('input');
-      inp.type = 'checkbox'; inp.checked = checked; inp.id = id;
-      inp.setAttribute('data-bt', bt);
-      lbl.appendChild(inp);
-      lbl.appendChild(document.createTextNode(' ' + label));
-      return lbl;
-    };
-    gfBar.appendChild(mkChk('gf-pc-'+data.locus_index,'Protein-coding','protein_coding',true));
-    const ncTypes = [...allBiotypes].filter(b => b !== 'protein_coding');
-    ncTypes.forEach(bt => {
-      const nice = bt === 'lncRNA' ? 'lncRNA' : bt === 'other' ? 'Other non-coding' : bt;
-      gfBar.appendChild(mkChk('gf-'+bt+'-'+data.locus_index, nice, bt, true));
-    });
-    const btnAll = document.createElement('button');
-    btnAll.className = 'gf-quick'; btnAll.textContent = 'All';
-    btnAll.addEventListener('click', () => { gfBar.querySelectorAll('input[data-bt]').forEach(i => i.checked = true); applyFilter(); });
-    gfBar.appendChild(btnAll);
-    const btnPC = document.createElement('button');
-    btnPC.className = 'gf-quick'; btnPC.textContent = 'Protein-coding only';
-    btnPC.addEventListener('click', () => { gfBar.querySelectorAll('input[data-bt]').forEach(i => { i.checked = i.dataset.bt === 'protein_coding'; }); applyFilter(); });
-    gfBar.appendChild(btnPC);
-
-    // Separator + exonic SNP highlight toggle
-    const sep = document.createElement('span');
-    sep.className = 'gf-sep';
-    gfBar.appendChild(sep);
-    const exLbl = document.createElement('label');
-    exLbl.style.cssText = 'display:flex;align-items:center;gap:4px;cursor:pointer;font-weight:600;color:#7c3aed';
-    const exInp = document.createElement('input');
-    exInp.type = 'checkbox'; exInp.id = 'gf-exonic-' + data.locus_index;
-    exLbl.appendChild(exInp);
-    exLbl.appendChild(document.createTextNode('Exonic SNPs'));
-    gfBar.appendChild(exLbl);
-    exInp.addEventListener('change', () => {
-      const svg = plotWrap.querySelector('.main-svg');
-      if (svg) svg.classList.toggle('exonic-mode', exInp.checked);
-    });
-
-    const countSpan = document.createElement('span');
-    countSpan.className = 'gf-count';
-    gfBar.appendChild(countSpan);
-    panelEl.appendChild(gfBar);
-  }
-
-  // ── Plot wrapper (C + D + E share one SVG) ──
-  const plotWrap = div('plot-wrap');
-  const dlBtn = document.createElement('button');
-  dlBtn.className = 'dl-png-btn'; dlBtn.textContent = '↓ PNG';
-  dlBtn.addEventListener('click', () => downloadPng(panelEl, data.locus_name));
-  plotWrap.appendChild(dlBtn);
-  panelEl.appendChild(plotWrap);
-
-  const svgW = totalW + MARGIN.right;
-  let geneRows = [];
-  let svgH, yScale;
-
-  function buildSvg() {
-    // Remove previous SVG + LD triangle (but keep dlBtn)
-    plotWrap.querySelectorAll('.main-svg, .ldt-scroll-outer').forEach(el => el.remove());
-    plotWrap.querySelectorAll('.connector-overlay').forEach(el => el.remove());
-
-    // Filter genes
-    const visGenes = hasGenes && showGenes
-      ? data.genes.filter(g => visibleBiotypes.has(geneBiotype(g)))
-      : [];
-    geneRows = visGenes.length ? layoutGenes(visGenes, xScale) : [];
-
-    // Update count (genes + exonic SNPs)
-    if (gfBar) {
-      const cs = gfBar.querySelector('.gf-count');
-      if (cs) {
-        const exIntervals = buildExonIntervals(data.genes);
-        const exCount = (data.gwas_snps || []).filter(s => isExonic(s.pos, exIntervals)).length;
-        cs.textContent = `${visGenes.length}/${data.genes.length} genes · ${exCount} exonic SNPs`;
-      }
-    }
-
-    const nRows    = geneRows.length;
-    const geneH    = nRows > 0 ? nRows * GENE_ROW + 16 : 0;
-    const ldTrackH = showLd && hasLdData ? LD_H + 16 : 0;
-    svgH = MARGIN.top + PLOT_H + MARGIN.bottom + geneH + ldTrackH + 4;
-
-    const svg = d3.select(plotWrap).append('svg')
-      .attr('class', 'main-svg')
-      .attr('viewBox', `0 0 ${svgW} ${svgH}`)
-      .attr('preserveAspectRatio', 'xMidYMid meet');
-
-    // ── C: Manhattan ──
-    const yMax = hasSnps
-      ? Math.max(GW_SIG + 2, d3.max(data.gwas_snps, s => s.neg_log10_p) + 1)
-      : GW_SIG + 3;
-    yScale = d3.scaleLinear().domain([0, yMax]).range([MARGIN.top + PLOT_H, MARGIN.top]);
-
-    const gMH = svg.append('g').attr('class', 'mh-group');
-    renderManhattan(gMH, data, xScale, yScale);
-
-    const xAxisG = svg.append('g').attr('class','axis')
-      .attr('transform', `translate(0,${MARGIN.top + PLOT_H})`)
-      .call(d3.axisBottom(xScale).ticks(8).tickFormat(d => fmtBp(d)));
-    xAxisG.select('.domain').remove();
-
-    let curY = MARGIN.top + PLOT_H + MARGIN.bottom;
-
-    // ── D: Gene track (filtered + repacked) ──
-    if (visGenes.length > 0) {
-      const gGene = svg.append('g')
-        .attr('class', 'gene-group-root genes-section')
-        .attr('transform', `translate(0,${curY})`);
-      renderGeneTrack(gGene, visGenes, geneRows, xScale, nRows * GENE_ROW + 16);
-      curY += geneH;
-    }
-
-    // ── E: LD bar track ──
-    if (showLd && hasLdData) {
-      const gLd = svg.append('g')
-        .attr('class', 'ld-section')
-        .attr('transform', `translate(0,${curY})`);
-      renderLdTrack(gLd, data.gwas_snps, xScale, LD_H, data.top_snp);
-      curY += ldTrackH;
-    }
-
-    // ── Scroll-wheel zoom ──
-    const xBase = d3.scaleLinear().domain([data.padded_start, data.padded_end]).range(xRange);
-    const zoom = d3.zoom().scaleExtent([1, 500])
-      .translateExtent([[xRange[0], -Infinity],[xRange[1], Infinity]])
-      .on('zoom', ({transform}) => {
-        xScale = transform.rescaleX(xBase);
-        xAxisG.call(d3.axisBottom(xScale).ticks(8).tickFormat(d => fmtBp(d)));
-        xAxisG.select('.domain').remove();
-        redrawOnZoom(svg, data, xScale, yScale, geneRows, visGenes,
-          visGenes.length > 0 && showGenes, hasLdData && showLd);
-        if (hasLdTri) {
-          const scrollW = plotWrap.querySelector('.ldt-inner-scroll');
-          if (scrollW) requestAnimationFrame(() =>
-            drawConnectors(plotWrap, data.ld_triangle, data, xScale, yScale,
-                           svgW, svgH, scrollW, scrollW._cs || (data.ld_triangle.cell_size_px || LDT_CELL_PX_DEFAULT)));
-        }
-      });
-    svg.call(zoom);
-
-    // Reapply exonic-mode if checkbox is checked
-    const exChk = gfBar && gfBar.querySelector('#gf-exonic-' + data.locus_index);
-    if (exChk && exChk.checked) svg.node().classList.add('exonic-mode');
-
-    return svg;
-  }
-
-  function applyFilter() {
-    visibleBiotypes.clear();
-    if (gfBar) gfBar.querySelectorAll('input[type=checkbox]').forEach(i => {
-      if (i.checked) visibleBiotypes.add(i.dataset.bt);
-    });
-    buildSvg();
-    // Rebuild LD triangle connectors
-    if (hasLdTri) {
-      plotWrap.querySelectorAll('.ldt-scroll-outer').forEach(el => el.remove());
-      const ldtDiv = div('ldt-scroll-outer ldt-section' + (showLdTri ? '' : ' hidden'));
-      plotWrap.appendChild(ldtDiv);
-      renderLdTriangle(ldtDiv, data.ld_triangle, data, xScale, yScale, svgW, svgH, plotWrap);
-    }
-  }
-
-  if (gfBar) {
-    gfBar.querySelectorAll('input[type=checkbox]').forEach(i =>
-      i.addEventListener('change', applyFilter));
-  }
-
-  buildSvg();
-
-  // ── F: LD triangle heatmap (separate scrollable panel below main SVG) ──
-  if (showLdTri && hasLdTri) {
-    const ldtDiv = div('ldt-scroll-outer ldt-section' + (showLdTri ? '' : ' hidden'));
-    plotWrap.appendChild(ldtDiv);
-    renderLdTriangle(ldtDiv, data.ld_triangle, data, xScale, yScale, svgW, svgH, plotWrap);
-  }
-
-  // ── LD legend ──
-  if (hasRealLD) {
-    const leg = div('ld-legend');
-    LD_LEGEND.forEach(([label, col]) => {
-      leg.innerHTML += `<span class="ld-swatch" style="background:${col}"></span>${label}&nbsp;&nbsp;`;
-    });
-    panelEl.appendChild(leg);
-  }
-
-  // Handle toggle visibility via data attribute
-  panelEl.dataset.hasLd    = hasLdData ? '1' : '0';
-  panelEl.dataset.hasGenes = hasGenes  ? '1' : '0';
-}
-
-// ═══════════════════════════════════════════════════════════════
-// Panel B — Context sketch (schematic, not to scale)
-// ═══════════════════════════════════════════════════════════════
-function renderContextSketch(wrap, data, totalW) {
-  const ctx = data.locus_context || {};
-  const svg = d3.select(wrap).append('svg')
-    .attr('viewBox', `0 0 ${totalW} ${CTX_H}`)
-    .attr('preserveAspectRatio', 'xMidYMid meet');
-
-  const y      = CTX_H / 2;
-  const boxW   = 120;
-  const gap    = 60;
-  const totalBoxW = 3 * boxW + 2 * gap;
-  const startX = (totalW - totalBoxW) / 2;
-
-  // Three equal-width rectangles — resolve start/end from manifest when missing
-  const boxes = [
-    {x: startX,              ref: resolveRef(ctx.prev_locus), isCurrent: false, side: 'left'},
-    {x: startX + boxW + gap, ref: null,                        isCurrent: true,  side: null},
-    {x: startX + 2*(boxW+gap), ref: resolveRef(ctx.next_locus), isCurrent: false, side: 'right'}
+function wizRenderPreview(c) {
+  var cfg = wiz.cfg;
+  var rows = [
+    ['Project ID', cfg._id],
+    ['Name', cfg._name],
+    ['Description', cfg._desc || '(none)'],
+    ['GWAS file', cfg['gwas.file']],
+    ['Loci file', cfg['loci.file']],
+    ['GFF3 file', cfg['gff3.file']],
+    ['Reference panel', cfg['ref.panel.path'] || '(none)'],
+    ['Population', cfg['ref.panel.population'] || 'EUR'],
+    ['Columns (required)', [cfg['col.chr'], cfg['col.pos'], cfg['col.pvalue'], cfg['col.ea'], cfg['col.nea']].join(', ')],
+    ['Columns (optional)', [cfg['col.rsid'], cfg['col.beta'], cfg['col.or'], cfg['col.se'], cfg['col.n'], cfg['col.maf'], cfg['col.info']].filter(Boolean).join(', ') || '(none)'],
+    ['Locus padding', (cfg['locus.padding'] || 200000) + ' bp'],
+    ['LD enabled', cfg['ld.enabled'] === true || cfg['ld.enabled'] === 'true' ? 'Yes' : 'No']
   ];
-
-  // Connecting lines
-  svg.append('line')
-    .attr('x1', startX + boxW).attr('x2', startX + boxW + gap)
-    .attr('y1', y).attr('y2', y)
-    .attr('stroke','#cbd5e1').attr('stroke-width',1.5);
-  svg.append('line')
-    .attr('x1', startX + 2*boxW + gap).attr('x2', startX + 2*(boxW+gap))
-    .attr('y1', y).attr('y2', y)
-    .attr('stroke','#cbd5e1').attr('stroke-width',1.5);
-
-  boxes.forEach(b => {
-    const bx = b.x, bw = boxW, bh = 20;
-    if (b.isCurrent) {
-      // Current locus — filled red
-      svg.append('rect').attr('x',bx).attr('y',y-bh/2)
-        .attr('width',bw).attr('height',bh).attr('rx',3)
-        .attr('fill','#E41A1C').attr('opacity',.85);
-      svg.append('text').attr('x',bx+bw/2).attr('y',y+5)
-        .attr('text-anchor','middle').attr('font-size',10).attr('font-weight','bold')
-        .attr('fill','#fff').text(data.locus_name);
-      // Coords below
-      svg.append('text').attr('x',bx+bw/2).attr('y',y+bh/2+12)
-        .attr('text-anchor','middle').attr('font-size',9).attr('fill','#64748b')
-        .text(`Chr${data.chr}:${fmtBp(data.start)}–${fmtBp(data.end)}`);
-    } else if (b.ref) {
-      // Neighbour locus — outlined grey
-      svg.append('rect').attr('x',bx).attr('y',y-bh/2)
-        .attr('width',bw).attr('height',bh).attr('rx',3)
-        .attr('fill','none').attr('stroke','#94a3b8').attr('stroke-width',1.5);
-      svg.append('text').attr('x',bx+bw/2).attr('y',y+4)
-        .attr('text-anchor','middle').attr('font-size',9).attr('fill','#64748b')
-        .text(`Locus ${b.ref.index}`);
-      // Coords below (cross-chromosome: show only "Chr N" label)
-      const diffChr = b.ref.distance_bp > 1e15;
-      const coordLabel = diffChr
-        ? `Chr${b.ref.chr}`
-        : `Chr${b.ref.chr}:${fmtBp(b.ref.start)}–${fmtBp(b.ref.end)}`;
-      svg.append('text').attr('x',bx+bw/2).attr('y',y+bh/2+12)
-        .attr('text-anchor','middle').attr('font-size',8).attr('fill','#94a3b8')
-        .text(coordLabel);
-      // Distance label in gap
-      const distLabel = diffChr ? 'diff chr' : fmtDist(b.ref.distance_bp);
-      const gapMidX = b.side === 'left'
-        ? startX + boxW + gap / 2
-        : startX + 2*boxW + gap + gap / 2;
-      svg.append('text').attr('x',gapMidX).attr('y',y-bh/2-4)
-        .attr('text-anchor','middle').attr('font-size',9).attr('fill','#94a3b8')
-        .text(distLabel);
-      // Arrow
-      const arrowX = b.side === 'left' ? gapMidX - 6 : gapMidX + 6;
-      svg.append('text').attr('x',arrowX).attr('y',y+3)
-        .attr('text-anchor','middle').attr('font-size',11).attr('fill','#cbd5e1')
-        .text(b.side === 'left' ? '◀' : '▶');
-    } else {
-      // No neighbour — placeholder
-      svg.append('rect').attr('x',bx).attr('y',y-bh/2)
-        .attr('width',bw).attr('height',bh).attr('rx',3)
-        .attr('fill','none').attr('stroke','#e2e8f0').attr('stroke-width',1)
-        .attr('stroke-dasharray','4,3');
-      svg.append('text').attr('x',bx+bw/2).attr('y',y+4)
-        .attr('text-anchor','middle').attr('font-size',9).attr('fill','#cbd5e1')
-        .text(b.side === 'left' ? '▕ (start)' : '(end) ▏');
-    }
-  });
+  c.innerHTML = '<table class="wiz-summary-table">'
+    + rows.map(function(r) { return '<tr><td>' + esc(r[0]) + '</td><td>' + esc(String(r[1] || '')) + '</td></tr>'; }).join('')
+    + '</table>';
 }
 
-// ═══════════════════════════════════════════════════════════════
-// Overview density strip  (above context sketch)
-// ═══════════════════════════════════════════════════════════════
-function renderOverviewDensity(wrap, data, totalW) {
-  const snps = data.gwas_snps;
-  if (!snps || !snps.length) return;
-
-  const topPos  = data.top_snp ? data.top_snp.pos : Math.round((+data.start + +data.end) / 2);
-  const winHalf = 1_000_000;
-  const xMin    = topPos - winHalf;
-  const xMax    = topPos + winHalf;
-
-  // Bin SNPs → max -log10(p) per bin
-  const bins    = new Array(OV_BINS).fill(0);
-  const binSize = (xMax - xMin) / OV_BINS;
-  snps.forEach(s => {
-    if (s.pos < xMin || s.pos > xMax) return;
-    const bi = Math.min(OV_BINS - 1, Math.floor((s.pos - xMin) / binSize));
-    if (s.neg_log10_p > bins[bi]) bins[bi] = s.neg_log10_p;
-  });
-
-  const yMax  = Math.max(OV_THRESH_BLUE + 1.2, d3.max(bins) + 0.5);
-  const mL    = MARGIN.left, mR = MARGIN.right, mT = 6, mB = 16;
-  const plotW = totalW - mL - mR;
-  const plotH = OV_H - mT - mB;
-
-  const xSc = d3.scaleLinear().domain([xMin, xMax]).range([mL, mL + plotW]);
-  const ySc = d3.scaleLinear().domain([0, yMax]).range([mT + plotH, mT]);
-
-  const svgSel = d3.select(wrap).append('svg')
-    .attr('viewBox', `0 0 ${totalW} ${OV_H}`)
-    .attr('preserveAspectRatio', 'xMidYMid meet');
-
-  // Clip path
-  const clipId = 'ov-clip-' + (data.locus_index || Math.random().toString(36).slice(2));
-  svgSel.append('defs').append('clipPath').attr('id', clipId)
-    .append('rect').attr('x', mL).attr('y', mT).attr('width', plotW).attr('height', plotH);
-
-  // ── Highlighted locus regions ──
-  const ctx     = data.locus_context || {};
-  const prevRef = resolveRef(ctx.prev_locus);
-  const nextRef = resolveRef(ctx.next_locus);
-
-  const drawRegion = (start, end, color, opacity) => {
-    const s = +start, e = +end;
-    if (!isFinite(s) || !isFinite(e)) return;
-    const rx1 = Math.max(xSc(s), mL);
-    const rx2 = Math.min(xSc(e), mL + plotW);
-    if (rx2 <= rx1) return;
-    svgSel.append('rect')
-      .attr('x', rx1).attr('y', mT)
-      .attr('width', rx2 - rx1).attr('height', plotH)
-      .attr('fill', color).attr('opacity', opacity);
-  };
-  // Previous and next loci — muted indigo
-  if (prevRef) drawRegion(prevRef.start, prevRef.end, '#6366f1', 0.15);
-  if (nextRef) drawRegion(nextRef.start, nextRef.end, '#6366f1', 0.15);
-
-  // Current locus — draggable region with handles
-  let curStart = +data.start, curEnd = +data.end;
-  const locRect = svgSel.append('rect').attr('class','locus-drag-region')
-    .attr('y', mT).attr('height', plotH)
-    .attr('fill', '#E41A1C').attr('opacity', 0.18);
-  const handleW = 4, handleColor = '#b91c1c';
-  const leftHandle = svgSel.append('rect').attr('class','locus-handle-left')
-    .attr('y', mT).attr('width', handleW).attr('height', plotH)
-    .attr('fill', handleColor).attr('opacity', 0.7).attr('cursor','ew-resize');
-  const rightHandle = svgSel.append('rect').attr('class','locus-handle-right')
-    .attr('y', mT).attr('width', handleW).attr('height', plotH)
-    .attr('fill', handleColor).attr('opacity', 0.7).attr('cursor','ew-resize');
-  const leftLabel = svgSel.append('text').attr('class','locus-label-left')
-    .attr('y', mT + plotH + 13).attr('font-size', 7).attr('fill', '#991b1b')
-    .attr('text-anchor','middle');
-  const rightLabel = svgSel.append('text').attr('class','locus-label-right')
-    .attr('y', mT + plotH + 13).attr('font-size', 7).attr('fill', '#991b1b')
-    .attr('text-anchor','middle');
-
-  function updateLocusRegion() {
-    const rx1 = Math.max(xSc(curStart), mL), rx2 = Math.min(xSc(curEnd), mL + plotW);
-    locRect.attr('x', rx1).attr('width', Math.max(0, rx2 - rx1));
-    leftHandle.attr('x', rx1 - handleW / 2);
-    rightHandle.attr('x', rx2 - handleW / 2);
-    leftLabel.attr('x', rx1).text(fmtBp(curStart));
-    rightLabel.attr('x', rx2).text(fmtBp(curEnd));
-  }
-  updateLocusRegion();
-
-  // Show/hide update button in the locus header
-  function toggleUpdateBtn() {
-    const changed = curStart !== +data.start || curEnd !== +data.end;
-    const panel = wrap.closest('.locus-panel');
-    if (!panel) return;
-    let btn = panel.querySelector('.locus-update-btn');
-    if (changed && !btn) {
-      btn = document.createElement('button');
-      btn.className = 'locus-update-btn';
-      btn.textContent = 'Update Locus';
-      btn.addEventListener('click', () => {
-        triggerLocusUpdate(data.locus_index, curStart, curEnd, +data.start, +data.end, btn);
-      });
-      const titleEl = panel.querySelector('.lh-title');
-      if (titleEl) titleEl.after(btn);
-    } else if (!changed && btn) {
-      btn.remove();
-    } else if (changed && btn) {
-      // Update click handler with latest boundaries
-      btn.replaceWith(btn.cloneNode(true));
-      btn = panel.querySelector('.locus-update-btn');
-      btn.addEventListener('click', () => {
-        triggerLocusUpdate(data.locus_index, curStart, curEnd, +data.start, +data.end, btn);
-      });
-    }
-  }
-
-  // Drag behavior for handles
-  function makeDrag(side) {
-    return d3.drag().on('drag', (ev) => {
-      const bp = Math.round(xSc.invert(ev.x));
-      if (side === 'left') {
-        curStart = Math.max(xMin, Math.min(bp, curEnd - 1000));
-      } else {
-        curEnd = Math.min(xMax, Math.max(bp, curStart + 1000));
-      }
-      updateLocusRegion();
-    }).on('end', () => {
-      toggleUpdateBtn();
-    });
-  }
-  leftHandle.call(makeDrag('left'));
-  rightHandle.call(makeDrag('right'));
-
-  // ── Plot border ──
-  svgSel.append('rect')
-    .attr('x', mL).attr('y', mT)
-    .attr('width', plotW).attr('height', plotH)
-    .attr('fill', 'none').attr('stroke', '#e5e7eb').attr('stroke-width', 1);
-
-  // ── Threshold lines ──
-  svgSel.append('line')
-    .attr('x1', mL).attr('x2', mL + plotW)
-    .attr('y1', ySc(OV_THRESH_BLUE)).attr('y2', ySc(OV_THRESH_BLUE))
-    .attr('stroke', '#3b82f6').attr('stroke-width', 1).attr('stroke-dasharray', '4,3');
-  svgSel.append('line')
-    .attr('x1', mL).attr('x2', mL + plotW)
-    .attr('y1', ySc(OV_THRESH_GREEN)).attr('y2', ySc(OV_THRESH_GREEN))
-    .attr('stroke', '#22c55e').attr('stroke-width', 1).attr('stroke-dasharray', '4,3');
-
-  // Threshold labels (right edge, outside clip)
-  svgSel.append('text').attr('x', mL + plotW + 2).attr('y', ySc(OV_THRESH_BLUE) + 3)
-    .attr('font-size', 8).attr('fill', '#3b82f6').text('5×10⁻⁸');
-  svgSel.append('text').attr('x', mL + plotW + 2).attr('y', ySc(OV_THRESH_GREEN) + 3)
-    .attr('font-size', 8).attr('fill', '#22c55e').text('5×10⁻⁵');
-
-  // ── Density area + line (clipped) ──
-  const g = svgSel.append('g').attr('clip-path', `url(#${clipId})`);
-
-  const area = d3.area()
-    .x((d, i) => xSc(xMin + (i + 0.5) * binSize))
-    .y0(ySc(0)).y1(d => ySc(Math.max(0, d)))
-    .curve(d3.curveBasis);
-
-  const line = d3.line()
-    .x((d, i) => xSc(xMin + (i + 0.5) * binSize))
-    .y(d => ySc(Math.max(0, d)))
-    .curve(d3.curveBasis);
-
-  g.append('path').datum(bins)
-    .attr('fill', '#6366f1').attr('opacity', 0.22).attr('d', area);
-  g.append('path').datum(bins)
-    .attr('fill', 'none').attr('stroke', '#4f46e5').attr('stroke-width', 1.3).attr('d', line);
-
-  // Top SNP vertical marker
-  if (data.top_snp) {
-    g.append('line')
-      .attr('x1', xSc(data.top_snp.pos)).attr('x2', xSc(data.top_snp.pos))
-      .attr('y1', mT).attr('y2', mT + plotH)
-      .attr('stroke', '#7c3aed').attr('stroke-width', 1.5)
-      .attr('stroke-dasharray', '3,2').attr('opacity', 0.8);
-  }
-
-  // ── X-axis (minimal) ──
-  svgSel.append('g').attr('class', 'axis')
-    .attr('transform', `translate(0,${mT + plotH})`)
-    .call(d3.axisBottom(xSc).ticks(6).tickFormat(d => fmtBp(d)))
-    .select('.domain').remove();
-
-  // ── Y-axis label ──
-  svgSel.append('text')
-    .attr('transform', 'rotate(-90)')
-    .attr('x', -(mT + plotH / 2)).attr('y', 10)
-    .attr('text-anchor', 'middle').attr('font-size', 8).attr('fill', '#94a3b8')
-    .text('−log₁₀P');
-}
-
-// ═══════════════════════════════════════════════════════════════
-// Panel C — Manhattan plot
-// ═══════════════════════════════════════════════════════════════
-function renderManhattan(g, data, xScale, yScale) {
-  const snps  = data.gwas_snps || [];
-  const topId = data.top_snp ? data.top_snp.id : null;
-  const x1 = xScale.range()[0], x2 = xScale.range()[1];
-
-  // Locus boundary highlight
-  const lx1 = Math.max(xScale(data.start), x1);
-  const lx2 = Math.min(xScale(data.end), x2);
-  if (lx2 > lx1) {
-    g.append('rect').attr('class','locus-region')
-      .attr('x', lx1).attr('y', yScale.range()[1])
-      .attr('width', lx2 - lx1).attr('height', yScale.range()[0] - yScale.range()[1])
-      .attr('fill','#fef9c3').attr('opacity', 0.5);
-  }
-
-  // Y axis
-  g.append('g').attr('class','axis').attr('transform',`translate(${MARGIN.left},0)`)
-    .call(d3.axisLeft(yScale).ticks(5));
-  g.append('text').attr('transform','rotate(-90)')
-    .attr('x',-(MARGIN.top + PLOT_H/2)).attr('y',13)
-    .attr('text-anchor','middle').attr('font-size',10).attr('fill','#6b7280')
-    .text('−log₁₀(P)');
-
-  // Significance lines
-  const gwY = yScale(GW_SIG), sugY = yScale(SUG_SIG);
-  g.append('line').attr('class','gw-line')
-    .attr('x1',x1).attr('x2',x2).attr('y1',gwY).attr('y2',gwY)
-    .attr('stroke','#dc2626').attr('stroke-dasharray','6,4').attr('stroke-width',1);
-  g.append('text').attr('x',x2-4).attr('y',gwY-3)
-    .attr('text-anchor','end').attr('font-size',9).attr('fill','#dc2626').text('5×10⁻⁸');
-  g.append('line').attr('class','sug-line')
-    .attr('x1',x1).attr('x2',x2).attr('y1',sugY).attr('y2',sugY)
-    .attr('stroke','#3b82f6').attr('stroke-dasharray','4,3').attr('stroke-width',1);
-  g.append('text').attr('x',x2-4).attr('y',sugY-3)
-    .attr('text-anchor','end').attr('font-size',9).attr('fill','#3b82f6').text('1×10⁻⁵');
-
-  if (!snps.length) {
-    g.append('text').attr('x',(x1+x2)/2).attr('y',yScale(GW_SIG/2))
-      .attr('text-anchor','middle').attr('font-size',12).attr('fill','#cbd5e1')
-      .text('No SNPs in region'); return;
-  }
-
-  const tip = document.getElementById('tooltip');
-
-  // Regular SNP circles (tagged exonic/non-exonic for filter)
-  const _exons = buildExonIntervals(data.genes);
-  g.selectAll('.snp-circle')
-    .data(snps.filter(s => s.id !== topId))
-    .join('circle')
-    .attr('class', s => 'snp-circle' + (isExonic(s.pos, _exons) ? ' snp-exonic' : ''))
-    .attr('cx', s => xScale(s.pos)).attr('cy', s => yScale(s.neg_log10_p))
-    .attr('r', 3.5).attr('fill', s => ldColor(snpR2(s)))
-    .attr('stroke','#fff').attr('stroke-width',.4).attr('opacity',.92)
-    .on('mouseover',(ev,s) => showTip(tip,ev,s))
-    .on('mousemove',(ev)   => moveTip(tip,ev))
-    .on('mouseout', ()     => hideTip(tip));
-
-  // Top SNP — purple diamond, 1.5× larger
-  const top = snps.find(s => s.id === topId);
-  if (top) {
-    const tx = xScale(top.pos), ty = yScale(top.neg_log10_p), r = 8;
-    g.append('path').attr('class','top-snp-diamond')
-      .datum(top)
-      .attr('d',`M${tx},${ty-r} L${tx+r},${ty} L${tx},${ty+r} L${tx-r},${ty}Z`)
-      .attr('fill','#7c3aed').attr('stroke','#fff').attr('stroke-width',1.5)
-      .on('mouseover',(ev,s) => showTip(tip,ev,s))
-      .on('mousemove',(ev)   => moveTip(tip,ev))
-      .on('mouseout', ()     => hideTip(tip));
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════
-// Panel D — Gene track
-// ═══════════════════════════════════════════════════════════════
-function layoutGenes(genes, xScale) {
-  const sorted = [...genes].sort((a,b) => a.start - b.start);
-  const rows = [];
-  sorted.forEach(gene => {
-    let placed = false;
-    for (let r = 0; r < rows.length; r++) {
-      const last = rows[r][rows[r].length-1];
-      const labelPx = last.gene_name.length * 6.5;
-      if (xScale(gene.start) > xScale(last.end) + labelPx + 10) {
-        rows[r].push(gene); gene._row = r; placed = true; break;
-      }
-    }
-    if (!placed) { gene._row = rows.length; rows.push([gene]); }
-  });
-  return rows;
-}
-
-function renderGeneTrack(g, genes, rows, xScale, trackH) {
-  g.append('line').attr('x1',MARGIN.left).attr('x2',xScale.range()[1])
-    .attr('y1',0).attr('y2',0).attr('stroke','#e5e7eb').attr('stroke-width',1);
-  g.append('text').attr('x',8).attr('y',14).attr('font-size',9).attr('fill','#94a3b8')
-    .text('Genes');
-
-  const tip = document.getElementById('tooltip');
-  genes.forEach(gene => {
-    const row   = gene._row || 0;
-    const gy    = 18 + row * GENE_ROW;
-    const gx1   = xScale(gene.start), gx2 = xScale(gene.end);
-    const coding = gene.transcripts && gene.transcripts.some(t =>
-      t.transcript_type === 'protein_coding');
-    const gColor = coding ? '#2171B5' : '#238B45';
-    const tx = canonicalTx(gene);
-
-    const gg = g.append('g').attr('class','gene-gfx').datum(gene);
-    // Label
-    gg.append('text').attr('x',Math.max(gx1,MARGIN.left)).attr('y',gy-3)
-      .attr('font-size',10).attr('font-style','italic').attr('font-weight','600')
-      .attr('fill',gColor).text(gene.gene_name);
-
-    if (!tx) {
-      drawIntron(gg, gx1, gx2, gy+8, gColor, gene.strand);
-      return;
-    }
-    // Intron backbone
-    drawIntron(gg, xScale(tx.start), xScale(tx.end), gy+8, gColor, tx.strand);
-    // Exons
-    tx.exons.forEach(e => {
-      const w = Math.max(1, xScale(e.end)-xScale(e.start));
-      gg.append('rect').attr('x',xScale(e.start)).attr('y',gy+4)
-        .attr('width',w).attr('height',8).attr('fill',gColor).attr('opacity',.65);
-    });
-    // CDS (taller, full opacity)
-    tx.cds.forEach(c => {
-      const w = Math.max(1, xScale(c.end)-xScale(c.start));
-      gg.append('rect').attr('x',xScale(c.start)).attr('y',gy+2)
-        .attr('width',w).attr('height',12).attr('fill',gColor);
-    });
-    // UTRs (shorter, outlined)
-    tx.utrs.forEach(u => {
-      const w = Math.max(1, xScale(u.end)-xScale(u.start));
-      gg.append('rect').attr('x',xScale(u.start)).attr('y',gy+6)
-        .attr('width',w).attr('height',4)
-        .attr('fill',gColor).attr('opacity',.4);
-    });
-    // Hover target
-    gg.append('rect')
-      .attr('x',Math.max(gx1,MARGIN.left)).attr('y',gy-5)
-      .attr('width',Math.max(1,gx2-Math.max(gx1,MARGIN.left))).attr('height',24)
-      .attr('fill','transparent')
-      .on('mouseover',(ev,d) => {
-        tip.querySelector('.tt-id').textContent   = d.gene_name;
-        tip.querySelector('.tt-pos').textContent  = d.gene_id;
-        tip.querySelector('.tt-pval').textContent = tx.transcript_type;
-        tip.querySelector('.tt-r2').textContent   =
-          `Chr${d.chr}:${fmtN(d.start)}–${fmtN(d.end)} (${d.strand})`;
-        tip.style.display = 'block'; moveTip(tip,ev);
-      })
-      .on('mousemove',(ev) => moveTip(tip,ev))
-      .on('mouseout', ()   => hideTip(tip));
-  });
-}
-
-function drawIntron(g, x1, x2, y, color, strand) {
-  g.append('line').attr('x1',x1).attr('x2',x2).attr('y1',y).attr('y2',y)
-    .attr('stroke',color).attr('stroke-width',1.5).attr('opacity',.5);
-  const dir = strand === '-' ? -1 : 1;
-  for (let ax = x1 + 40; ax < x2 - 6; ax += 50) {
-    g.append('path')
-      .attr('d',`M${ax},${y-3} L${ax+4*dir},${y} L${ax},${y+3}`)
-      .attr('fill','none').attr('stroke',color).attr('stroke-width',1).attr('opacity',.6);
-  }
-}
-
-function canonicalTx(gene) {
-  if (!gene.transcripts || !gene.transcripts.length) return null;
-  const coding = gene.transcripts.filter(t => t.transcript_type === 'protein_coding');
-  const pool   = coding.length ? coding : gene.transcripts;
-  return pool.reduce((b,t) => (!b || t.end-t.start > b.end-b.start) ? t : b, null);
-}
-
-function buildExonIntervals(genes) {
-  const intervals = [];
-  if (!genes) return intervals;
-  genes.forEach(g => {
-    if (!g.transcripts) return;
-    g.transcripts.forEach(tx => {
-      if (tx.transcript_type !== 'protein_coding') return;
-      (tx.exons || []).forEach(e => intervals.push([+e.start, +e.end]));
-      (tx.cds || []).forEach(e => intervals.push([+e.start, +e.end]));
-    });
-  });
-  intervals.sort((a, b) => a[0] - b[0]);
-  // Merge overlapping
-  const merged = [];
-  for (const iv of intervals) {
-    if (merged.length && iv[0] <= merged[merged.length - 1][1]) {
-      merged[merged.length - 1][1] = Math.max(merged[merged.length - 1][1], iv[1]);
-    } else {
-      merged.push([iv[0], iv[1]]);
-    }
-  }
-  return merged;
-}
-
-function isExonic(pos, mergedExons) {
-  let lo = 0, hi = mergedExons.length - 1;
-  while (lo <= hi) {
-    const mid = (lo + hi) >> 1;
-    if (pos < mergedExons[mid][0]) hi = mid - 1;
-    else if (pos > mergedExons[mid][1]) lo = mid + 1;
-    else return true;
-  }
-  return false;
-}
-
-function geneBiotype(gene) {
-  if (!gene.transcripts || !gene.transcripts.length) return 'other';
-  if (gene.transcripts.some(t => t.transcript_type === 'protein_coding')) return 'protein_coding';
-  const types = new Set(gene.transcripts.map(t => t.transcript_type));
-  if (types.has('lncRNA') || types.has('lincRNA')) return 'lncRNA';
-  if (types.has('miRNA'))  return 'miRNA';
-  if (types.has('pseudogene') || [...types].some(t => t && t.includes('pseudogene'))) return 'pseudogene';
-  if (types.has('antisense')) return 'antisense';
-  return 'other';
-}
-
-// ═══════════════════════════════════════════════════════════════
-// Panel E — LD bar track
-// ═══════════════════════════════════════════════════════════════
-function renderLdTrack(g, snps, xScale, trackH, topSnp) {
-  g.append('line').attr('x1',MARGIN.left).attr('x2',xScale.range()[1])
-    .attr('y1',0).attr('y2',0).attr('stroke','#e5e7eb').attr('stroke-width',1);
-  g.append('text').attr('x',8).attr('y',14).attr('font-size',9).attr('fill','#94a3b8')
-    .text('LD r²');
-
-  const ldY = d3.scaleLinear().domain([0,1]).range([trackH,2]);
-  const ldSnps = snps.filter(s => snpR2(s) >= 0);
-  const barW = Math.max(1, (xScale.range()[1]-xScale.range()[0]) / (ldSnps.length||1) * 0.9);
-
-  ldSnps.forEach(s => {
-    const r2 = snpR2(s);
-    const bx = xScale(s.pos) - barW/2;
-    const by = ldY(r2);
-    const isTop = topSnp && s.id === topSnp.id;
-    g.append('rect').attr('x',bx).attr('y',by)
-      .attr('width',barW).attr('height',trackH - by + 2)
-      .attr('fill', ldColor(r2))
-      .attr('stroke', isTop ? '#7c3aed' : 'none')
-      .attr('stroke-width', isTop ? 1.5 : 0);
-  });
-
-  // Y axis
-  g.append('g').attr('class','axis').attr('transform',`translate(${MARGIN.left},0)`)
-    .call(d3.axisLeft(ldY).ticks(3).tickFormat(d3.format('.1f')));
-}
-
-// ═══════════════════════════════════════════════════════════════
-// Panel F — LD triangle heatmap (canvas-based, scrollable)
-// ═══════════════════════════════════════════════════════════════
-function renderLdTriangle(wrap, ldData, data, xScale, yScale, svgW, svgH, plotWrap) {
-  if (!ldData || !ldData.snps || !ldData.matrix) return;
-  const N = ldData.snp_count || ldData.snps.length;
-  if (N < 2) return;
-
-  // Auto-compute cell size to fill the available width (same content area as Manhattan plot)
-  const availW = svgW - MARGIN.left - MARGIN.right;
-  const autoCs = Math.max(3, Math.floor(availW / N));
-  let cs = autoCs;
-  let scaleType = 'continuous';
-  let showBlocks = true, closeBlockTops = false, shadeBlocks = false, labelBlocks = false;
-  const bp = {strongR2:0.70, recomR2:0.30, propThreshold:0.90, minInformPairs:3, minBlockSize:3};
-  let ldBlocks = detectLdBlocks(ldData.matrix, N, bp);
-
-  // ── Row 1: rendering controls ──
-  const hdr = div('ldt-header');
-  const csMax = Math.max(autoCs + 4, 16);
-  hdr.innerHTML =
-    `<span style="font-size:9px;color:#94a3b8;line-height:22px">LD r² (pairwise) · ${N} SNPs</span>` +
-    `<span style="font-size:9px;color:#64748b;margin-left:auto;display:flex;align-items:center;gap:8px">` +
-    `<label style="display:flex;align-items:center;gap:3px;cursor:pointer;font-size:9px">` +
-      `<input type="checkbox" class="ldt-haploview-chk"> Haploview</label>` +
-    `Cell&thinsp;<input type="range" min="3" max="${csMax}" value="${cs}" class="ldt-cell-slider" style="width:56px;cursor:pointer">` +
-    `<span class="ldt-cell-val">${cs}px</span></span>`;
-  wrap.appendChild(hdr);
-
-  // ── Row 2: block detection controls ──
-  const brow = div('ldt-header');
-  brow.style.flexWrap = 'wrap';
-  brow.innerHTML =
-    `<label style="display:flex;align-items:center;gap:3px;cursor:pointer;font-size:9px">` +
-      `<input type="checkbox" class="ldt-showblocks" checked> LD blocks</label>` +
-    `<label style="font-size:9px;display:flex;align-items:center;gap:2px">Strong r²≥` +
-      `<input type="range" min="0.3" max="1.0" step="0.05" value="0.70" class="ldt-strong" style="width:48px">` +
-      `<span class="ldt-strong-val">0.70</span></label>` +
-    `<label style="font-size:9px;display:flex;align-items:center;gap:2px">Recom r²≤` +
-      `<input type="range" min="0.0" max="0.7" step="0.05" value="0.30" class="ldt-recom" style="width:48px">` +
-      `<span class="ldt-recom-val">0.30</span></label>` +
-    `<label style="font-size:9px;display:flex;align-items:center;gap:2px">Prop≥` +
-      `<input type="range" min="0.5" max="1.0" step="0.05" value="0.90" class="ldt-prop" style="width:48px">` +
-      `<span class="ldt-prop-val">90%</span></label>` +
-    `<label style="font-size:9px;display:flex;align-items:center;gap:2px">Min` +
-      `<input type="number" min="2" max="20" value="3" class="ldt-minblk" ` +
-      `style="width:36px;padding:1px 3px;border:1px solid #d1d5db;border-radius:3px;font-size:9px"></label>` +
-    `<label style="display:flex;align-items:center;gap:3px;cursor:pointer;font-size:9px">` +
-      `<input type="checkbox" class="ldt-closetops"> Tops</label>` +
-    `<label style="display:flex;align-items:center;gap:3px;cursor:pointer;font-size:9px">` +
-      `<input type="checkbox" class="ldt-shade"> Shade</label>` +
-    `<label style="display:flex;align-items:center;gap:3px;cursor:pointer;font-size:9px">` +
-      `<input type="checkbox" class="ldt-labels"> Labels</label>`;
-  wrap.appendChild(brow);
-
-  // ── Block status line ──
-  const bstat = div('');
-  Object.assign(bstat.style, {fontSize:'9px', color:'#64748b', padding:'0 14px 4px'});
-  wrap.appendChild(bstat);
-
-  function updateBlockStatus() {
-    if (!showBlocks || ldBlocks.length === 0) {
-      bstat.textContent = showBlocks ? 'No blocks detected' : '';
-      return;
-    }
-    const largest = Math.max(...ldBlocks.map(b => b.snpCount));
-    const d = ldBlocks[0].diag;
-    bstat.textContent = `${ldBlocks.length} blocks · largest ${largest} SNPs` +
-      ` · block 1: ${d.strong}S/${d.recom}R/${d.uninform}U prop=${(d.prop*100).toFixed(0)}%`;
-  }
-  updateBlockStatus();
-
-  // ── Scrollable container (canvas + axis share horizontal scroll) ──
-  const scrollWrap = div('ldt-inner-scroll');
-  Object.assign(scrollWrap.style, {overflowX:'auto', overflowY:'hidden', position:'relative'});
-  wrap.appendChild(scrollWrap);
-
-  const triInner = div('ldt-tri-inner');
-  Object.assign(triInner.style, {
-    display:'inline-block', verticalAlign:'top',
-    paddingLeft: MARGIN.left + 'px', paddingRight: MARGIN.right + 'px'
-  });
-  scrollWrap.appendChild(triInner);
-
-  const canvas = document.createElement('canvas');
-  canvas.className = 'ldt-triangle-canvas';
-  canvas.style.display = 'block';
-  triInner.appendChild(canvas);
-
-  const axisSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  axisSvg.style.display = 'block';
-  triInner.appendChild(axisSvg);
-
-  // ── Legend SVG (fixed right, outside scroll) ──
-  wrap.style.position = 'relative';
-  const legSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  Object.assign(legSvg.style, {
-    position:'absolute', right:'6px', top:'28px',
-    width:'22px', height:'120px', zIndex:'2', pointerEvents:'none'
-  });
-  wrap.appendChild(legSvg);
-
-  // ── Build / rebuild triangle ──
-  function buildTri(cellPx) {
-    scrollWrap._cs  = cellPx;
-    canvas._cellPx  = cellPx;
-    drawLdTriangle(canvas, ldData.snps, ldData.matrix, cellPx, scaleType,
-      showBlocks ? ldBlocks : null, {closeBlockTops, shadeBlocks, labelBlocks});
-    drawTriangleAxis(axisSvg, ldData.snps, cellPx);
-    drawLdLegend(legSvg, scaleType);
-    // Center the triangle when it's narrower than the available area
-    const triW = N * cellPx;
-    const containerW = scrollWrap.clientWidth - MARGIN.left - MARGIN.right;
-    if (triW < containerW) {
-      const pad = MARGIN.left + Math.floor((containerW - triW) / 2);
-      triInner.style.paddingLeft = pad + 'px';
-    } else {
-      triInner.style.paddingLeft = MARGIN.left + 'px';
-    }
-  }
-
-  function redetect() {
-    ldBlocks = showBlocks ? detectLdBlocks(ldData.matrix, N, bp) : [];
-    updateBlockStatus();
-    buildTri(scrollWrap._cs || cs);
-  }
-  buildTri(cs);
-
-  // ── Hover interaction on canvas ──
-  initTriangleHover(canvas, ldData.snps, ldData.matrix, plotWrap);
-
-  // ── Initial connector draw (after browser layout) ──
-  requestAnimationFrame(() => requestAnimationFrame(() =>
-    drawConnectors(plotWrap, ldData, data, xScale, yScale, svgW, svgH, scrollWrap, cs)
-  ));
-
-  // ── Redraw connectors on horizontal scroll ──
-  scrollWrap.addEventListener('scroll', () =>
-    requestAnimationFrame(() =>
-      drawConnectors(plotWrap, ldData, data, xScale, yScale, svgW, svgH, scrollWrap, scrollWrap._cs || cs)
-    )
-  );
-
-  // ── Row 1 controls ──
-  hdr.querySelector('.ldt-cell-slider').addEventListener('input', function() {
-    cs = +this.value;
-    hdr.querySelector('.ldt-cell-val').textContent = cs + 'px';
-    buildTri(cs);
-    requestAnimationFrame(() => requestAnimationFrame(() =>
-      drawConnectors(plotWrap, ldData, data, xScale, yScale, svgW, svgH, scrollWrap, cs)
-    ));
-  });
-  hdr.querySelector('.ldt-haploview-chk').addEventListener('change', function() {
-    scaleType = this.checked ? 'haploview' : 'continuous';
-    buildTri(scrollWrap._cs || cs);
-  });
-
-  // ── Row 2 controls — block detection ──
-  brow.querySelector('.ldt-showblocks').addEventListener('change', function() {
-    showBlocks = this.checked; redetect();
-  });
-  brow.querySelector('.ldt-strong').addEventListener('input', function() {
-    bp.strongR2 = +this.value;
-    brow.querySelector('.ldt-strong-val').textContent = (+this.value).toFixed(2);
-    redetect();
-  });
-  brow.querySelector('.ldt-recom').addEventListener('input', function() {
-    bp.recomR2 = +this.value;
-    brow.querySelector('.ldt-recom-val').textContent = (+this.value).toFixed(2);
-    redetect();
-  });
-  brow.querySelector('.ldt-prop').addEventListener('input', function() {
-    bp.propThreshold = +this.value;
-    brow.querySelector('.ldt-prop-val').textContent = Math.round(+this.value * 100) + '%';
-    redetect();
-  });
-  brow.querySelector('.ldt-minblk').addEventListener('input', function() {
-    bp.minBlockSize = Math.max(2, +this.value || 2);
-    redetect();
-  });
-  brow.querySelector('.ldt-closetops').addEventListener('change', function() {
-    closeBlockTops = this.checked; buildTri(scrollWrap._cs || cs);
-  });
-  brow.querySelector('.ldt-shade').addEventListener('change', function() {
-    shadeBlocks = this.checked; buildTri(scrollWrap._cs || cs);
-  });
-  brow.querySelector('.ldt-labels').addEventListener('change', function() {
-    labelBlocks = this.checked; buildTri(scrollWrap._cs || cs);
-  });
-}
-
-// ─────────────────────────────────────────────────────────────
-// LD block detection — Gabriel-style proportion-based rule
-// ─────────────────────────────────────────────────────────────
-function classifyPairs(matrix, a, b, strongR2, recomR2) {
-  let strong = 0, recom = 0, uninform = 0, sum = 0, cnt = 0;
-  for (let i = a; i <= b; i++) {
-    for (let j = i + 1; j <= b; j++) {
-      const v = matrix[i] ? matrix[i][j] : NaN;
-      if (v == null || isNaN(v)) { uninform++; continue; }
-      sum += v; cnt++;
-      if (v >= strongR2) strong++;
-      else if (v <= recomR2) recom++;
-      else uninform++;
-    }
-  }
-  const inform = strong + recom;
-  const prop = inform > 0 ? strong / inform : 0;
-  return { strong, recom, uninform, inform, prop, sum, cnt,
-           meanR2: cnt > 0 ? sum / cnt : 0 };
-}
-
-function detectLdBlocks(matrix, N, params) {
-  const { strongR2, recomR2, propThreshold, minInformPairs, minBlockSize } = params;
-  const blocks = [];
-  let a = 0;
-  while (a < N) {
-    let bestB = a, bestDiag = null;
-    for (let b = a + 1; b < N; b++) {
-      const diag = classifyPairs(matrix, a, b, strongR2, recomR2);
-      if (diag.inform >= minInformPairs && diag.prop >= propThreshold) {
-        bestB = b;
-        bestDiag = diag;
-      } else if (bestB > a) {
-        break;
-      }
-    }
-    const size = bestB - a + 1;
-    if (size >= minBlockSize && bestDiag) {
-      blocks.push({
-        startIdx: a, endIdx: bestB, snpCount: size,
-        meanR2: bestDiag.meanR2,
-        diag: bestDiag
-      });
-      a = bestB + 1;
-    } else {
-      a++;
-    }
-  }
-  return blocks;
-}
-
-// ─────────────────────────────────────────────────────────────
-// Draw block outlines on canvas
-// ─────────────────────────────────────────────────────────────
-function drawBlockOutlines(ctx, blocks, cellSize, {closeTops, shade, labels, highlightIdx}) {
-  const half = cellSize / 2;
-  ctx.save();
-  ctx.setLineDash([]);
-
-  for (let bi = 0; bi < blocks.length; bi++) {
-    const {startIdx: a, endIdx: b, snpCount, meanR2} = blocks[bi];
-    const isHi = (bi === highlightIdx);
-
-    const lx = (a + 0.5) * cellSize, ly = 0;
-    const rx = (b + 0.5) * cellSize, ry = 0;
-    const ax = (a + b + 1) * half,   ay = (b - a) * half;
-
-    if (shade) {
-      ctx.fillStyle = 'rgba(0,0,0,0.04)';
-      ctx.beginPath();
-      ctx.moveTo(lx, ly); ctx.lineTo(rx, ry); ctx.lineTo(ax, ay);
-      ctx.closePath(); ctx.fill();
-    }
-
-    ctx.strokeStyle = isHi ? '#E65C00' : '#1a1a2e';
-    ctx.lineWidth   = isHi ? 3.0 : 2.0;
-    ctx.lineJoin    = 'round';
-    ctx.beginPath();
-    ctx.moveTo(lx, ly);
-    ctx.lineTo(ax, ay);
-    ctx.lineTo(rx, ry);
-    if (closeTops) ctx.closePath();
-    ctx.stroke();
-
-    if (labels) {
-      const d = blocks[bi].diag;
-      const txt = d
-        ? `${snpCount} SNPs · r̄²${meanR2.toFixed(2)} · ${d.strong}S/${d.recom}R/${d.uninform}U ${(d.prop*100).toFixed(0)}%`
-        : `${snpCount} SNPs · r̄² ${meanR2.toFixed(2)}`;
-      ctx.font = '9px -apple-system, BlinkMacSystemFont, sans-serif';
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      const tw = ctx.measureText(txt).width;
-      const lx2 = ax, ly2 = ay + 10;
-      ctx.fillStyle = 'rgba(255,255,255,0.88)';
-      ctx.fillRect(lx2 - tw / 2 - 3, ly2 - 6, tw + 6, 12);
-      ctx.fillStyle = '#1a1a2e';
-      ctx.fillText(txt, lx2, ly2);
-    }
-  }
-  ctx.restore();
-}
-
-// ─────────────────────────────────────────────────────────────
-// Triangle canvas renderer — filled diamonds, NO stroke
-// Base at TOP (y=0), apex at BOTTOM
-// ─────────────────────────────────────────────────────────────
-function drawLdTriangle(canvas, snps, matrix, cellSize, scaleType, blocks, blockOpts) {
-  const N = snps.length;
-  if (N < 2) return;
-
-  const dpr  = window.devicePixelRatio || 1;
-  const half = cellSize / 2;
-  const logW = N * cellSize;
-  const logH = Math.ceil((N - 1) * cellSize / 2) + cellSize;
-
-  canvas.width  = logW * dpr;
-  canvas.height = logH * dpr;
-  canvas.style.width  = logW + 'px';
-  canvas.style.height = logH + 'px';
-
-  const ctx = canvas.getContext('2d');
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.clearRect(0, 0, logW, logH);
-
-  for (let i = 0; i < N; i++) {
-    const row = matrix[i];
-    if (!row) continue;
-    for (let j = i + 1; j < N; j++) {
-      let v = row[j];
-      if (v === undefined || v === null || isNaN(v)) v = null;
-
-      const cx = (i + j + 1) * half;
-      const cy = (j - i) * half;
-
-      ctx.fillStyle = r2Color(v, scaleType);
-      ctx.beginPath();
-      ctx.moveTo(cx,        cy - half);
-      ctx.lineTo(cx + half, cy);
-      ctx.lineTo(cx,        cy + half);
-      ctx.lineTo(cx - half, cy);
-      ctx.closePath();
-      ctx.fill();
-    }
-  }
-
-  const k = snps.findIndex(s => s.is_top_snp);
-  if (k >= 0) {
-    const lineX = (k + 0.5) * cellSize;
-    ctx.save();
-    ctx.setLineDash([4, 3]);
-    ctx.strokeStyle = '#7B2D8B';
-    ctx.lineWidth = 1.4;
-    ctx.beginPath();
-    ctx.moveTo(lineX, 0);
-    ctx.lineTo(lineX, logH);
-    ctx.stroke();
-    ctx.restore();
-  }
-
-  if (blocks && blocks.length > 0) {
-    const bo = blockOpts || {};
-    drawBlockOutlines(ctx, blocks, cellSize, {
-      closeTops: bo.closeBlockTops || false,
-      shade: bo.shadeBlocks || false,
-      labels: bo.labelBlocks || false,
-      highlightIdx: -1
-    });
-  }
-}
-
-// r² → fill color
-function r2Color(r2, scaleType) {
-  if (r2 === null || r2 === undefined || isNaN(r2)) return '#D0D0D0';
-  const v = Math.max(0, Math.min(1, r2));
-  if (scaleType === 'haploview') {
-    if (v >= 0.8) return '#B20000';
-    if (v >= 0.6) return '#E05C00';
-    if (v >= 0.4) return '#F5A623';
-    if (v >= 0.2) return '#F5E642';
-    return '#F9F9F9';
-  }
-  // Continuous: white (r²=0) → deep red (r²=1)
-  const g = Math.round(255 * (1 - v));
-  const b = Math.round(255 * (1 - v));
-  return `rgb(255,${g},${b})`;
-}
-
-// X-axis below the triangle canvas
-function drawTriangleAxis(axisSvg, snps, cellSize) {
-  const N = snps.length;
-  axisSvg.setAttribute('width',  N * cellSize);
-  axisSvg.setAttribute('height', LDT_AXIS_H);
-  axisSvg.innerHTML = '';
-  const k = snps.findIndex(s => s.is_top_snp);
-  snps.forEach((snp, i) => {
-    const x       = (i + 0.5) * cellSize;
-    const isTop   = (i === k);
-    const isTick  = (i % 10 === 0) || isTop;
-    const isLabel = (i % 20 === 0) || isTop;
-    if (!isTick) return;
-    const tick = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-    tick.setAttribute('x1', x); tick.setAttribute('y1', 0);
-    tick.setAttribute('x2', x); tick.setAttribute('y2', isTop ? 10 : 5);
-    tick.setAttribute('stroke',       isTop ? '#7B2D8B' : '#94a3b8');
-    tick.setAttribute('stroke-width', isTop ? '1.5' : '0.8');
-    axisSvg.appendChild(tick);
-    if (!isLabel) return;
-    const mb  = fmtBp(snp.pos);
-    const lbl = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-    lbl.setAttribute('x', x);
-    lbl.setAttribute('y', 22);
-    lbl.setAttribute('text-anchor', 'middle');
-    lbl.setAttribute('font-size',   '8px');
-    lbl.setAttribute('fill',        isTop ? '#7B2D8B' : '#64748b');
-    if (isTop) lbl.setAttribute('font-weight', 'bold');
-    lbl.textContent = isTop ? (snp.id && snp.id !== snp.bim_id ? snp.id : mb) : mb;
-    axisSvg.appendChild(lbl);
-  });
-}
-
-// Vertical color legend (r²=1 at top → r²=0 at bottom)
-function drawLdLegend(legendSvg, scaleType) {
-  legendSvg.innerHTML = '';
-  const H = 100, steps = 40;
-  const stepH = H / steps;
-  for (let s = 0; s < steps; s++) {
-    const r = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-    r.setAttribute('x', 0); r.setAttribute('y', s * stepH);
-    r.setAttribute('width', 10); r.setAttribute('height', stepH + 0.5);
-    r.setAttribute('fill',   r2Color(1 - s / steps, scaleType));
-    r.setAttribute('stroke', 'none');
-    legendSvg.appendChild(r);
-  }
-  // Border
-  const border = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-  border.setAttribute('x', 0); border.setAttribute('y', 0);
-  border.setAttribute('width', 10); border.setAttribute('height', H);
-  border.setAttribute('fill', 'none'); border.setAttribute('stroke', '#aaa');
-  border.setAttribute('stroke-width', '0.5');
-  legendSvg.appendChild(border);
-  [['1.0', 4], ['0.5', H / 2], ['0.0', H]].forEach(([txt, y]) => {
-    const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-    t.setAttribute('x', 12); t.setAttribute('y', y);
-    t.setAttribute('font-size', '8px'); t.setAttribute('fill', '#64748b');
-    t.setAttribute('dominant-baseline', 'middle');
-    t.textContent = txt;
-    legendSvg.appendChild(t);
-  });
-}
-
-// Hover on canvas: hit-test cells, show tooltip, highlight connectors
-function initTriangleHover(canvas, snps, matrix, plotWrap) {
-  const N = snps.length;
-
-  canvas.addEventListener('mousemove', (e) => {
-    const cellPx = canvas._cellPx || LDT_CELL_PX_DEFAULT;
-    const half   = cellPx / 2;
-    const rect   = canvas.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
-
-    // Narrow row search: k = j-i ≈ my / half
-    const kEst = Math.round(my / half);
-    const kMin = Math.max(0, kEst - 1);
-    const kMax = Math.min(N - 1, kEst + 1);
-
-    let hitI = -1, hitJ = -1;
-    outer:
-    for (let k = kMin; k <= kMax; k++) {
-      for (let i = 0; i + k < N; i++) {
-        const j  = i + k;
-        const cx = (i + j + 1) * half;
-        const cy = k * half;
-        if (Math.abs(mx - cx) + Math.abs(my - cy) <= half + 0.5) {
-          hitI = i; hitJ = j; break outer;
-        }
-      }
-    }
-
-    const tip = document.getElementById('tooltip');
-    if (hitI >= 0) {
-      const snpI = snps[hitI], snpJ = snps[hitJ];
-      const r2   = (matrix[hitI] && matrix[hitI][hitJ] != null) ? matrix[hitI][hitJ] : null;
-      tip.querySelector('.tt-id').textContent   = `${snpI.id}  ×  ${snpJ.id}`;
-      tip.querySelector('.tt-pos').textContent  = `${fmtBp(snpI.pos)}  /  ${fmtBp(snpJ.pos)}`;
-      tip.querySelector('.tt-pval').textContent = `Δpos = ${fmtBp(Math.abs(snpJ.pos - snpI.pos))}`;
-      tip.querySelector('.tt-r2').textContent   = r2 != null ? `r² = ${r2.toFixed(3)}` : 'r² = N/A';
-      tip.style.display = 'block';
-      tip.style.left = (e.clientX + 14) + 'px';
-      tip.style.top  = (e.clientY - 32) + 'px';
-      highlightConnectors(plotWrap, [hitI, hitJ]);
-    } else {
-      hideTip(tip);
-      resetConnectors(plotWrap);
-    }
-  });
-
-  canvas.addEventListener('mouseleave', () => {
-    hideTip(document.getElementById('tooltip'));
-    resetConnectors(plotWrap);
-  });
-}
-
-// ═══════════════════════════════════════════════════════════════
-// Connector lines: LD triangle ↔ Manhattan  (overlay SVG)
-// ═══════════════════════════════════════════════════════════════
-function drawConnectors(plotWrap, ldData, data, xScale, yScale, svgW, svgH, scrollWrap, cs) {
-  if (!ldData || !ldData.snps || !scrollWrap) return;
-
-  // Get or create the absolute-positioned overlay SVG
-  let overlay = plotWrap.querySelector('.connector-overlay');
-  if (!overlay) {
-    overlay = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    overlay.setAttribute('class', 'connector-overlay');
-    Object.assign(overlay.style, {
-      position: 'absolute', top: '0', left: '0',
-      pointerEvents: 'none', zIndex: '5', overflow: 'visible'
-    });
-    plotWrap.appendChild(overlay);
-  }
-
-  const plotRect = plotWrap.getBoundingClientRect();
-  if (!plotRect.width) return;
-  overlay.setAttribute('width',  plotRect.width);
-  overlay.setAttribute('height', plotRect.height);
-
-  const mainSvgEl = plotWrap.querySelector('.main-svg');
-  if (!mainSvgEl) { while (overlay.firstChild) overlay.removeChild(overlay.firstChild); return; }
-  const mainRect = mainSvgEl.getBoundingClientRect();
-
-  // viewBox → screen-px (preserveAspectRatio xMidYMid meet)
-  const scaleU = Math.min(mainRect.width / svgW, mainRect.height / svgH);
-  const vbOffX = mainRect.left - plotRect.left + (mainRect.width  - svgW * scaleU) / 2;
-  const vbOffY = mainRect.top  - plotRect.top  + (mainRect.height - svgH * scaleU) / 2;
-  function vbPx(vbX, vbY) { return [vbOffX + vbX * scaleU, vbOffY + vbY * scaleU]; }
-
-  const triRect    = scrollWrap.getBoundingClientRect();
-  const scrollLeft = scrollWrap.scrollLeft;
-  const triLeft    = triRect.left - plotRect.left;
-  const triTop     = triRect.top  - plotRect.top;
-
-  const panelCBotVB = MARGIN.top + PLOT_H;   // viewBox y of Manhattan bottom
-
-  const posToNlp = {};
-  (data.gwas_snps || []).forEach(s => { posToNlp[s.pos] = s.neg_log10_p; });
-
-  while (overlay.firstChild) overlay.removeChild(overlay.firstChild);
-
-  ldData.snps.forEach((snp, i) => {
-    const mxVB = xScale(snp.pos);
-    if (mxVB < xScale.range()[0] - 10 || mxVB > xScale.range()[1] + 10) return;
-
-    const nlp   = posToNlp[snp.pos];
-    const myVB  = (nlp != null) ? yScale(nlp) : panelCBotVB;
-    const isTop = snp.is_top_snp;
-
-    const [mx,  my]    = vbPx(mxVB, myVB);
-    const [mcbx, mcby] = vbPx(mxVB, panelCBotVB);
-
-    // Triangle base x: scroll container left + left padding + cell center - scroll
-    const canvas = scrollWrap.querySelector('canvas');
-    const canvasRect = canvas ? canvas.getBoundingClientRect() : triRect;
-    const triBaseX = (canvasRect.left - plotRect.left)
-                   + (i + 0.5) * cs
-                   - scrollLeft;
-    const triBaseY = triTop;
-
-    const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    p.setAttribute('class', `conn-line conn-${i}${isTop ? ' conn-top' : ''}`);
-    p.setAttribute('d',     `M${mx},${my} L${mcbx},${mcby} L${triBaseX},${triBaseY}`);
-    p.setAttribute('fill',  'none');
-    p.setAttribute('stroke',           isTop ? '#7B2D8B' : '#999999');
-    p.setAttribute('stroke-width',     isTop ? '1.2'    : '0.7');
-    p.setAttribute('stroke-dasharray', isTop ? '4,2'    : '3,3');
-    p.setAttribute('opacity',          isTop ? '0.85'   : '0.4');
-    overlay.appendChild(p);
-  });
-}
-
-function highlightConnectors(plotWrap, activeRanks) {
-  const overlay = plotWrap.querySelector('.connector-overlay');
-  if (!overlay) return;
-  overlay.querySelectorAll('.conn-line').forEach(el => {
-    const m = (el.getAttribute('class') || '').match(/conn-(\d+)/);
-    if (!m) return;
-    if (activeRanks.includes(+m[1])) {
-      el.setAttribute('stroke',       '#E65C00');
-      el.setAttribute('stroke-width', '1.5');
-      el.setAttribute('opacity',      '1.0');
-    } else {
-      el.setAttribute('opacity', '0.08');
-    }
-  });
-}
-
-function resetConnectors(plotWrap) {
-  const overlay = plotWrap.querySelector('.connector-overlay');
-  if (!overlay) return;
-  overlay.querySelectorAll('.conn-line').forEach(el => {
-    const isTop = el.classList.contains('conn-top');
-    el.setAttribute('stroke',           isTop ? '#7B2D8B' : '#999999');
-    el.setAttribute('stroke-width',     isTop ? '1.2'    : '0.7');
-    el.setAttribute('opacity',          isTop ? '0.85'   : '0.4');
-  });
-}
-
-// ═══════════════════════════════════════════════════════════════
-// Zoom redraw
-// ═══════════════════════════════════════════════════════════════
-function redrawOnZoom(svg, data, newX, yScale, geneRows, visGenes, doGenes, doLd) {
-  const x1 = newX.range()[0], x2 = newX.range()[1];
-
-  // SNP circles — x only (y scale unchanged)
-  svg.selectAll('.snp-circle').attr('cx', s => newX(s.pos));
-
-  // Top SNP diamond — recompute path from bound datum + unchanged yScale
-  svg.selectAll('.top-snp-diamond').each(function(s) {
-    if (!s) return;
-    const tx = newX(s.pos), ty = yScale(s.neg_log10_p), r = 8;
-    d3.select(this).attr('d', `M${tx},${ty-r} L${tx+r},${ty} L${tx},${ty+r} L${tx-r},${ty}Z`);
-  });
-
-  // Locus boundary highlight
-  const lr = svg.select('.locus-region');
-  if (!lr.empty()) {
-    const lx1 = Math.max(newX(data.start), x1);
-    const lx2 = Math.min(newX(data.end), x2);
-    if (lx2 > lx1) {
-      lr.attr('x', lx1).attr('width', lx2 - lx1).attr('display', null);
-    } else {
-      lr.attr('display', 'none');
-    }
-  }
-
-  // Significance lines
-  svg.select('.gw-line').attr('x1',x1).attr('x2',x2);
-  svg.select('.sug-line').attr('x1',x1).attr('x2',x2);
-
-  // Gene track — clear and redraw with new x-scale
-  if (doGenes) {
-    const gGene = svg.select('.gene-group-root');
-    gGene.selectAll('*').remove();
-    renderGeneTrack(gGene, visGenes, geneRows, newX, geneRows.length * GENE_ROW + 16);
-  }
-
-  // LD bar track — clear and redraw with new x-scale
-  if (doLd) {
-    const gLd = svg.select('.ld-section');
-    gLd.selectAll('*').remove();
-    renderLdTrack(gLd, data.gwas_snps, newX, LD_H, data.top_snp);
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════
-// Tooltip
-// ═══════════════════════════════════════════════════════════════
-function showTip(tip, ev, s) {
-  tip.querySelector('.tt-id').textContent   = s.id;
-  tip.querySelector('.tt-pos').textContent  = `Chr${s.chr}:${fmtN(s.pos)}`;
-  tip.querySelector('.tt-pval').textContent = `P = ${s.pvalue.toExponential(3)}`;
-  const _r2 = snpR2(s);
-  tip.querySelector('.tt-r2').textContent   =
-    _r2 >= 0 ? `r² = ${_r2.toFixed(3)}` : 'r² = N/A';
-  tip.style.display = 'block'; moveTip(tip, ev);
-}
-function moveTip(tip, ev) {
-  tip.style.left = (ev.clientX + 14) + 'px';
-  tip.style.top  = (ev.clientY - 32) + 'px';
-}
-function hideTip(tip) { tip.style.display = 'none'; }
-
-// ═══════════════════════════════════════════════════════════════
-// Navigation
-// ═══════════════════════════════════════════════════════════════
-function setupNav() {
-  document.getElementById('prev-btn').addEventListener('click', () => {
-    if (currentStart > 0) { currentStart--; renderViewport(true); }
-  });
-  document.getElementById('next-btn').addEventListener('click', () => {
-    if (currentStart + VISIBLE < lociOrder.length) { currentStart++; renderViewport(true); }
-  });
-}
-
-function updateNavUI() {
-  const endPos = Math.min(currentStart + VISIBLE, lociOrder.length);
-  const showFrom = currentStart + 1;
-  const showTo = endPos;
-  document.getElementById('nav-counter').textContent =
-    `Showing loci ${showFrom}–${showTo} of ${lociOrder.length}`;
-  document.getElementById('prev-btn').disabled = currentStart <= 0;
-  document.getElementById('next-btn').disabled = currentStart + VISIBLE >= lociOrder.length;
-}
-
-// ═══════════════════════════════════════════════════════════════
-// Search
-// ═══════════════════════════════════════════════════════════════
-function setupSearch() {
-  const input = document.getElementById('search-input');
-  const dd    = document.getElementById('search-dropdown');
-
-  input.addEventListener('input', () => {
-    const q = input.value.trim().toLowerCase();
-    dd.innerHTML = '';
-    if (!q) { dd.style.display = 'none'; return; }
-
-    const hits = [];
-    manifest.loci.forEach(entry => {
-      const nameMatch  = entry.locus_name.toLowerCase().includes(q);
-      const geneMatch  = (entry.nearest_genes||[]).some(g => g.toLowerCase().includes(q));
-      const snpMatch   = entry.top_snp && entry.top_snp.toLowerCase().includes(q);
-      const idxMatch   = String(entry.index).includes(q);
-      if (nameMatch || geneMatch || snpMatch || idxMatch) hits.push(entry);
-    });
-
-    if (!hits.length) { dd.style.display = 'none'; return; }
-    hits.slice(0,12).forEach(entry => {
-      const item = document.createElement('div');
-      item.className = 'search-item';
-      item.innerHTML =
-        `<div class="si-name">${entry.locus_name}</div>
-         <div class="si-sub">${(entry.nearest_genes||[]).join(', ')} &nbsp;|&nbsp; ${entry.top_snp||'—'}</div>`;
-      item.addEventListener('click', () => {
-        // Jump to the locus: navigate viewport to show it
-        const idx = entry.index;
-        const pos = lociOrder.indexOf(idx);
-        if (pos >= 0) currentStart = Math.max(0, Math.min(pos, lociOrder.length - VISIBLE));
-        renderViewport(true);
-        dd.style.display = 'none';
-        input.value = '';
-      });
-      dd.appendChild(item);
-    });
-    dd.style.display = 'block';
-  });
-
-  document.addEventListener('click', e => {
-    if (!document.getElementById('search-wrap').contains(e.target)) {
-      dd.style.display = 'none';
-    }
-  });
-}
-
-// ═══════════════════════════════════════════════════════════════
-// Toggle buttons
-// ═══════════════════════════════════════════════════════════════
-function setupToggles() {
-  function tog(id, getter, setter, sectionClass) {
-    document.getElementById(id).addEventListener('click', function() {
-      this.classList.toggle('active');
-      setter(this.classList.contains('active'));
-      // Show/hide matching sections in rendered panels
-      document.querySelectorAll('.' + sectionClass).forEach(el => {
-        el.classList.toggle('hidden', !getter());
-      });
-    });
-  }
-  tog('toggle-ctx',   () => showCtx,   v => { showCtx   = v; }, 'ctx-section');
-  tog('toggle-genes', () => showGenes, v => { showGenes = v; }, 'genes-section');
-  tog('toggle-ld',    () => showLd,    v => { showLd    = v; }, 'ld-section');
-  tog('toggle-ldt',   () => showLdTri, v => { showLdTri = v; }, 'ldt-section');
-}
-
-// ═══════════════════════════════════════════════════════════════
-// PNG download
-// ═══════════════════════════════════════════════════════════════
-function downloadPng(panelEl, name) {
-  html2canvas(panelEl, {scale:2, useCORS:true}).then(canvas => {
-    const a = document.createElement('a');
-    a.href = canvas.toDataURL('image/png');
-    a.download = (name||'locus').replace(/\s+/g,'_') + '.png';
-    a.click();
-  });
-}
-
-// ═══════════════════════════════════════════════════════════════
-// PDF Export
-// ═══════════════════════════════════════════════════════════════
-function setupPdfDialog() {
-  const cfgModal  = document.getElementById('pdf-config-modal');
-  const progModal = document.getElementById('pdf-progress-modal');
-
-  document.getElementById('export-pdf-btn').addEventListener('click', () => {
-    cfgModal.classList.add('open');
-  });
-  document.getElementById('pdf-cfg-close').addEventListener('click',  () => cfgModal.classList.remove('open'));
-  document.getElementById('pdf-cfg-cancel').addEventListener('click', () => cfgModal.classList.remove('open'));
-
-  // Custom range row — only show when "custom" is selected
-  document.querySelectorAll('input[name="loci-range"]').forEach(r =>
-    r.addEventListener('change', () => {
-      document.getElementById('custom-range-row').style.opacity =
-        r.value === 'custom' ? '1' : '.4';
-    })
-  );
-
-  // Folder Browse button — calls Java server
-  document.getElementById('cfg-browse').addEventListener('click', async () => {
-    try {
-      const res = await fetchWithTimeout(`${SERVER}/pick-folder`, 60000);
-      if (res.ok) {
-        const j = await res.json();
-        if (j.path) document.getElementById('cfg-folder').value = j.path;
-      }
-    } catch(e) {
-      showToast('Folder picker unavailable — PDF will be saved to browser downloads');
-    }
-  });
-
-  // Start export
-  document.getElementById('pdf-cfg-start').addEventListener('click', () => {
-    cfgModal.classList.remove('open');
-    const cfg = readPdfConfig();
-    progModal.classList.add('open');
-    pdfCancelled = false;
-    runPdfExport(cfg).finally(() => progModal.classList.remove('open'));
-  });
-
-  document.getElementById('pdf-cancel-btn').addEventListener('click', () => {
-    pdfCancelled = true;
-  });
-}
-
-function readPdfConfig() {
-  const rangeType = document.querySelector('input[name="loci-range"]:checked').value;
-  let lociList;
-  if (rangeType === 'all') {
-    lociList = lociOrder.slice();
-  } else if (rangeType === 'view') {
-    const endPos = Math.min(currentStart + VISIBLE, lociOrder.length);
-    lociList = lociOrder.slice(currentStart, endPos);
-  } else {
-    const from = parseInt(document.getElementById('range-from').value) || 1;
-    const to   = parseInt(document.getElementById('range-to').value)   || lociOrder.length;
-    lociList = lociOrder.slice(Math.max(0, from - 1), to);
-  }
-  return {
-    lociList,
-    lociPerPage: parseInt(document.querySelector('input[name="loci-per-page"]:checked').value),
-    orientation: document.querySelector('input[name="orientation"]:checked').value,
-    pageSize:    document.getElementById('page-size').value,
-    inclCtx:     document.getElementById('cfg-ctx').checked,
-    inclPlot:    document.getElementById('cfg-plot').checked,
-    inclGenes:   document.getElementById('cfg-genes').checked,
-    inclLd:      document.getElementById('cfg-ld').checked,
-    filename:    document.getElementById('cfg-filename').value || 'gwas_loci_plots.pdf',
-    folder:      document.getElementById('cfg-folder').value.trim()
-  };
-}
-
-async function runPdfExport(cfg) {
-  const { jsPDF } = window.jspdf;
-  const pdf = new jsPDF({
-    orientation: cfg.orientation,
-    unit: 'mm',
-    format: cfg.pageSize
-  });
-  const pageW = cfg.orientation === 'landscape' ? 297 : 210;
-  const pageH = cfg.orientation === 'landscape' ? 210 : 297;
-  const margin = 8;
-  const slotH  = (pageH - (cfg.lociPerPage + 1) * margin) / cfg.lociPerPage;
-  const slotW  = pageW - 2 * margin;
-
-  let slotIdx = 0;
-  const total = cfg.lociList.length;
-  const times = [];
-
-  for (let i = 0; i < total; i++) {
-    if (pdfCancelled) { showToast('Export cancelled'); return; }
-    const idx = cfg.lociList[i];
-    updateProgress(i+1, total, idx, times);
-
-    // Ensure data is loaded
-    const data = await loadLocus(idx);
-    if (!data) { slotIdx++; continue; }
-
-    // Build temp render div
-    const tmp = document.createElement('div');
-    tmp.style.cssText = 'position:fixed;top:-9999px;left:0;width:960px;background:#fff;';
-    document.body.appendChild(tmp);
-    tmp.appendChild(makePanelShell(manifest.loci.find(l=>l.index===idx) || {index:idx,locus_name:'Locus '+idx,chr:'?',start:0,end:0}));
-    const panelEl = tmp.firstChild;
-    fillPanel(data, panelEl);
-    // Respect track toggles from dialog
-    if (!cfg.inclCtx)   panelEl.querySelector('.ctx-section')?.remove();
-    if (!cfg.inclGenes) panelEl.querySelector('.genes-section')?.remove();
-    if (!cfg.inclLd)    panelEl.querySelector('.ld-section')?.remove();
-
-    await new Promise(r => setTimeout(r, 50)); // let browser layout settle
-
-    const t0 = Date.now();
-    try {
-      const canvas = await html2canvas(panelEl, {scale:1.5, useCORS:true});
-      const imgData = canvas.toDataURL('image/png');
-      const pageSlot = slotIdx % cfg.lociPerPage;
-      if (pageSlot === 0 && slotIdx > 0) pdf.addPage();
-      const yPos = margin + pageSlot * (slotH + margin);
-      pdf.addImage(imgData, 'PNG', margin, yPos, slotW, slotH, undefined, 'FAST');
-    } catch(e) { console.warn('html2canvas error locus', idx, e); }
-
-    times.push(Date.now() - t0);
-    document.body.removeChild(tmp);
-    slotIdx++;
-  }
-
-  // Save
-  updateProgress(total, total, -1, times);
-  document.getElementById('progress-msg').textContent = 'Done! Saving file…';
-  await new Promise(r => setTimeout(r, 400));
-
-  if (cfg.folder) {
-    try {
-      const pdfData = pdf.output('datauristring');
-      const r = await fetch(`${SERVER}/save-pdf`, {
-        method: 'POST',
-        headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({filename: cfg.filename, folder: cfg.folder, data: pdfData})
-      });
-      if (r.ok) { showToast(`PDF saved to ${cfg.folder}/${cfg.filename}`); return; }
-    } catch(e) {}
-  }
-  pdf.save(cfg.filename);
-  showToast('PDF download started');
-}
-
-function updateProgress(done, total, currentIdx, times) {
-  const pct = total > 0 ? (done / total * 100) : 0;
-  document.getElementById('progress-fill').style.width  = pct + '%';
-  document.getElementById('progress-count').textContent = `${done} / ${total}`;
-  const entry = currentIdx > 0 ? manifest.loci.find(l=>l.index===currentIdx) : null;
-  document.getElementById('progress-msg').textContent =
-    currentIdx > 0 ? `Rendering ${entry ? entry.locus_name : 'Locus '+currentIdx}…` : 'Finalising…';
-  if (times.length > 2) {
-    const avg = times.reduce((a,b)=>a+b,0) / times.length;
-    const rem = Math.round((total - done) * avg / 1000);
-    document.getElementById('progress-eta').textContent = `~${rem}s remaining`;
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════
-// Utilities
-// ═══════════════════════════════════════════════════════════════
-function div(cls) { const d = document.createElement('div'); d.className = cls; return d; }
-
-// Patch a locus_context ref whose start/end may be missing (old JSON files).
-// Falls back to manifest which always carries start/end for every locus.
-function resolveRef(ref) {
-  if (!ref) return null;
-  if (isFinite(+ref.start) && isFinite(+ref.end)) return ref;
-  const entry = manifest && manifest.loci.find(l => l.index === ref.index);
-  if (!entry) return ref;
-  return Object.assign({}, ref, {start: entry.start, end: entry.end,
-                                  chr: ref.chr || entry.chr});
-}
-
-function showToast(msg, ms=3000) {
-  const t = document.getElementById('toast');
-  t.textContent = msg; t.style.display = 'block'; t.style.opacity = '1';
-  setTimeout(() => {
-    t.style.opacity = '0'; setTimeout(() => { t.style.display='none'; }, 400);
-  }, ms);
-}
-
-function fmtP(p) { return p == null || isNaN(p) ? '' : p.toExponential(2); }
-function fmtN(n) { return (+n).toLocaleString(); }
-function fmtBp(b) {
-  b = +b;
-  if (b >= 1e6) return (b/1e6).toFixed(2)+' Mb';
-  if (b >= 1e3) return (b/1e3).toFixed(1)+' kb';
-  return b.toLocaleString();
-}
-function fmtDist(b) {
-  b = +b;
-  if (b >= 1e6) return (b/1e6).toFixed(1)+' Mb';
-  if (b >= 1e3) return (b/1e3).toFixed(0)+' kb';
-  return b+' bp';
-}
-
-// ═══════════════════════════════════════════════════════════════
-// Genome-wide skyline panel
-// ═══════════════════════════════════════════════════════════════
-const SKY_H = 130, SKY_ML = 40, SKY_MR = 16, SKY_MT = 6, SKY_MB = 18;
-let _skyData = null, _skyRendered = false;
-
-async function loadSkyline() {
-  try {
-    const res = await fetchWithTimeout(`${SERVER}/data/genome_skyline.json`, 2000);
-    if (res.ok) { _skyData = await res.json(); return; }
-  } catch(e) {}
-  try {
-    await loadScript(`${DATA_DIR}/genome_skyline.js`);
-    if (window.GENOME_SKYLINE) _skyData = window.GENOME_SKYLINE;
-  } catch(e) {}
-}
-
-function renderSkyline() {
-  if (!_skyData) return;
-  _skyRendered = true;
-  const sd = _skyData;
-  const svg = d3.select('#sky-svg');
-  svg.selectAll('*').remove();
-
-  const W = document.getElementById('genome-skyline').clientWidth - 32;
-  const plotW = W - SKY_ML - SKY_MR;
-  const plotH = SKY_H - SKY_MT - SKY_MB;
-  svg.attr('width', W).attr('height', SKY_H);
-
-  // Determine which chromosomes contain visible loci
-  const activeChrSet = new Set();
-  const visibleIndices = new Set();
-  if (manifest && lociOrder.length) {
-    const endPos = Math.min(currentStart + VISIBLE, lociOrder.length);
-    for (let pos = currentStart; pos < endPos; pos++) {
-      const idx = lociOrder[pos];
-      visibleIndices.add(idx);
-      const entry = manifest.loci.find(l => l.index === idx);
-      if (entry) activeChrSet.add(String(entry.chr));
-    }
-  }
-
-  // Build weighted piecewise x-scale: active chromosomes get 50% of plotW, rest get 50%
-  const activeLen = sd.chromosomes.filter(c => activeChrSet.has(c.chr))
-    .reduce((s, c) => s + c.length, 0);
-  const inactiveLen = sd.chromosomes.filter(c => !activeChrSet.has(c.chr))
-    .reduce((s, c) => s + c.length, 0);
-
-  const activeW  = activeChrSet.size > 0 && inactiveLen > 0 ? plotW * 0.5 : (activeChrSet.size > 0 ? plotW : 0);
-  const inactiveW = inactiveLen > 0 ? plotW - activeW : 0;
-
-  // Compute per-chromosome pixel offset and width
-  const chrLayout = [];
-  let px = SKY_ML;
-  sd.chromosomes.forEach(c => {
-    const isActive = activeChrSet.has(c.chr);
-    const pool = isActive ? activeLen : inactiveLen;
-    const poolW = isActive ? activeW : inactiveW;
-    const w = pool > 0 ? (c.length / pool) * poolW : 0;
-    chrLayout.push({ ...c, px, pw: w, active: isActive });
-    px += w;
-  });
-
-  // Build a piecewise scale: genome cumulative position → pixel
-  function xSc(cumPos) {
-    for (const cl of chrLayout) {
-      if (cumPos >= cl.offset && cumPos <= cl.offset + cl.length) {
-        const frac = (cumPos - cl.offset) / cl.length;
-        return cl.px + frac * cl.pw;
-      }
-    }
-    return SKY_ML;
-  }
-  // Inverse for click-to-navigate
-  xSc.invert = function(pixel) {
-    for (const cl of chrLayout) {
-      if (pixel >= cl.px && pixel <= cl.px + cl.pw) {
-        const frac = cl.pw > 0 ? (pixel - cl.px) / cl.pw : 0;
-        return cl.offset + frac * cl.length;
-      }
-    }
-    return 0;
-  };
-
-  const genomeLen = sd.genome_length;
-  const binSize = genomeLen / sd.bin_count;
-  const gwSig = -Math.log10(5e-8);
-  const yMax = Math.min(50, Math.max(gwSig + 3, d3.max(sd.bins, d => d[1]) + 1));
-  const ySc = d3.scaleLinear().domain([0, yMax]).range([SKY_MT + plotH, SKY_MT]);
-
-  // Alternating chromosome density colors: dark green / blue
-  const chrDensityColors = ['#166534', '#1e40af'];
-
-  // Chromosome shading
-  chrLayout.forEach((c, i) => {
-    svg.append('rect')
-      .attr('x', c.px).attr('y', SKY_MT)
-      .attr('width', c.pw).attr('height', plotH)
-      .attr('fill', i % 2 === 0 ? '#ffffff' : '#f0f1f4');
-  });
-
-  // Chromosome labels
-  chrLayout.forEach(c => {
-    if (c.pw < 8) return;
-    svg.append('text')
-      .attr('x', c.px + c.pw / 2).attr('y', SKY_MT + plotH + 13)
-      .attr('text-anchor', 'middle').attr('font-size', c.active ? '10px' : '8px')
-      .attr('fill', c.active ? '#1e293b' : '#94a3b8')
-      .attr('font-weight', c.active ? '700' : '500')
-      .text(c.chr);
-  });
-
-  // Significance line
-  svg.append('line')
-    .attr('x1', SKY_ML).attr('x2', SKY_ML + plotW)
-    .attr('y1', ySc(gwSig)).attr('y2', ySc(gwSig))
-    .attr('stroke', '#dc2626').attr('stroke-width', 1)
-    .attr('stroke-dasharray', '6,3').attr('opacity', 0.7);
-  svg.append('text')
-    .attr('x', SKY_ML - 3).attr('y', ySc(gwSig) + 3)
-    .attr('text-anchor', 'end').attr('font-size', '8px').attr('fill', '#dc2626')
-    .text('5e-8');
-
-  // Y-axis
-  svg.append('text')
-    .attr('transform', 'rotate(-90)')
-    .attr('x', -(SKY_MT + plotH / 2)).attr('y', 11)
-    .attr('text-anchor', 'middle').attr('font-size', '9px').attr('fill', '#64748b')
-    .text('-log₁₀(P)');
-  ySc.ticks(4).forEach(t => {
-    svg.append('line')
-      .attr('x1', SKY_ML - 3).attr('x2', SKY_ML)
-      .attr('y1', ySc(t)).attr('y2', ySc(t))
-      .attr('stroke', '#94a3b8').attr('stroke-width', 0.5);
-    svg.append('text')
-      .attr('x', SKY_ML - 5).attr('y', ySc(t) + 3)
-      .attr('text-anchor', 'end').attr('font-size', '8px').attr('fill', '#94a3b8')
-      .text(t);
-  });
-
-  // Density curve — per-chromosome with alternating colors
-  const allBins = new Float64Array(sd.bin_count);
-  sd.bins.forEach(b => { allBins[b[0]] = b[1]; });
-
-  const area = d3.area()
-    .x((d, i) => xSc((i + 0.5) * binSize))
-    .y0(ySc(0)).y1(d => ySc(Math.min(d, yMax)))
-    .curve(d3.curveMonotoneX);
-  const line = d3.line()
-    .x((d, i) => xSc((i + 0.5) * binSize))
-    .y(d => ySc(Math.min(d, yMax)))
-    .curve(d3.curveMonotoneX);
-
-  // Draw density per chromosome with clip rects for alternating colors
-  chrLayout.forEach((c, i) => {
-    const col = chrDensityColors[i % 2];
-    const clipId = 'sky-chr-clip-' + i;
-    svg.append('defs').append('clipPath').attr('id', clipId)
-      .append('rect').attr('x', c.px).attr('y', SKY_MT)
-      .attr('width', c.pw).attr('height', plotH);
-    const g = svg.append('g').attr('clip-path', `url(#${clipId})`);
-    g.append('path').datum(allBins)
-      .attr('fill', col).attr('opacity', 0.25).attr('d', area);
-    g.append('path').datum(allBins)
-      .attr('fill', 'none').attr('stroke', col).attr('stroke-width', 1.5).attr('d', line);
-  });
-
-  // Plot border
-  svg.append('rect')
-    .attr('x', SKY_ML).attr('y', SKY_MT)
-    .attr('width', plotW).attr('height', plotH)
-    .attr('fill', 'none').attr('stroke', '#cbd5e1').attr('stroke-width', 1);
-
-  // Loci highlights
-  if (manifest) {
-    const allHL = [];
-    manifest.loci.forEach(entry => {
-      const ci = sd.chromosomes.findIndex(c => c.chr === String(entry.chr));
-      if (ci < 0) return;
-      const chrOff = sd.chromosomes[ci].offset;
-      const x1 = xSc(chrOff + entry.start);
-      const x2 = xSc(chrOff + entry.end);
-      const xMid = (x1 + x2) / 2;
-      const w = Math.max(4, x2 - x1);
-      allHL.push({ entry, x1, x2, xMid, w, active: visibleIndices.has(entry.index) });
-    });
-
-    // Non-active yellow
-    allHL.filter(h => !h.active).forEach(h => {
-      svg.append('rect')
-        .attr('x', h.x1 - (h.w - (h.x2 - h.x1)) / 2).attr('y', SKY_MT)
-        .attr('width', h.w).attr('height', plotH)
-        .attr('fill', '#fef9c3').attr('opacity', 0.6).attr('rx', 1);
-    });
-
-    // Active red
-    allHL.filter(h => h.active).forEach((h, hi) => {
-      svg.append('rect')
-        .attr('x', h.x1 - (h.w - (h.x2 - h.x1)) / 2).attr('y', SKY_MT)
-        .attr('width', h.w).attr('height', plotH)
-        .attr('fill', '#fecaca').attr('opacity', 0.7).attr('rx', 1);
-      svg.append('line')
-        .attr('x1', h.xMid).attr('x2', h.xMid)
-        .attr('y1', SKY_MT).attr('y2', SKY_MT + plotH)
-        .attr('stroke', '#b91c1c').attr('stroke-width', 1.5);
-
-      const labelY = SKY_MT + 10 + (hi % 2) * 12;
-      const name = h.entry.locus_name || ('Locus ' + h.entry.index);
-      const genes = (h.entry.nearest_genes || []).slice(0, 2).join(', ');
-      const label = genes ? `${name} (${genes})` : name;
-      svg.append('rect')
-        .attr('x', h.xMid - 2).attr('y', labelY - 8)
-        .attr('width', label.length * 5 + 6).attr('height', 11)
-        .attr('fill', '#fff1f2').attr('rx', 2).attr('opacity', 0.92);
-      svg.append('text')
-        .attr('x', h.xMid + 1).attr('y', labelY)
-        .attr('font-size', '8px').attr('font-weight', '700')
-        .attr('fill', '#991b1b')
-        .text(label);
-    });
-  }
-
-  // Click-to-navigate + drag-to-create-locus
-  const skyEl = document.getElementById('genome-skyline');
-  let _dragStart = null, _dragRect = null;
-
-  // Helper: find chromosome from cumulative genome position
-  function cumPosToChr(cumPos) {
-    for (const c of sd.chromosomes) {
-      if (cumPos >= c.offset && cumPos <= c.offset + c.length)
-        return { chr: c.chr, localPos: Math.round(cumPos - c.offset) };
-    }
-    return null;
-  }
-
-  skyEl.onmousedown = (e) => {
-    const svgRect = document.getElementById('sky-svg').getBoundingClientRect();
-    const mx = e.clientX - svgRect.left;
-    if (mx < SKY_ML || mx > SKY_ML + plotW) return;
-    _dragStart = { x: mx, clientX: e.clientX };
-
-    // Create selection rectangle
-    if (_dragRect) _dragRect.remove();
-    _dragRect = svg.append('rect').attr('class','sky-select-rect')
-      .attr('x', mx).attr('y', SKY_MT).attr('width', 0).attr('height', plotH)
-      .attr('fill', '#3b82f6').attr('opacity', 0.2)
-      .attr('stroke', '#2563eb').attr('stroke-width', 1).attr('stroke-dasharray', '4,2');
-  };
-
-  skyEl.onmousemove = (e) => {
-    if (!_dragStart || !_dragRect) return;
-    const svgRect = document.getElementById('sky-svg').getBoundingClientRect();
-    const mx = Math.max(SKY_ML, Math.min(e.clientX - svgRect.left, SKY_ML + plotW));
-    const x1 = Math.min(_dragStart.x, mx), x2 = Math.max(_dragStart.x, mx);
-    _dragRect.attr('x', x1).attr('width', x2 - x1);
-  };
-
-  skyEl.onmouseup = (e) => {
-    if (!_dragStart) return;
-    const dragDist = Math.abs(e.clientX - _dragStart.clientX);
-    const svgRect = document.getElementById('sky-svg').getBoundingClientRect();
-    const mx = e.clientX - svgRect.left;
-
-    if (_dragRect) _dragRect.remove();
-    _dragRect = null;
-
-    if (dragDist < 8) {
-      // Click — navigate to nearest locus
-      _dragStart = null;
-      if (!manifest) return;
-      const cumX = xSc.invert(mx);
-      let bestDist = Infinity, bestIdx = -1;
-      manifest.loci.forEach(loc => {
-        const ci = sd.chromosomes.findIndex(c => c.chr === String(loc.chr));
-        if (ci < 0) return;
-        const mid = sd.chromosomes[ci].offset + (loc.start + loc.end) / 2;
-        const d = Math.abs(mid - cumX);
-        if (d < bestDist) { bestDist = d; bestIdx = loc.index; }
-      });
-      if (bestIdx > 0) {
-        const pos = lociOrder.indexOf(bestIdx);
-        if (pos >= 0) {
-          currentStart = Math.max(0, Math.min(pos, lociOrder.length - VISIBLE));
-          renderViewport(true);
-        }
-      }
-    } else {
-      // Drag — create new locus
-      const x1 = Math.min(_dragStart.x, mx), x2 = Math.max(_dragStart.x, mx);
-      const cum1 = xSc.invert(x1), cum2 = xSc.invert(x2);
-      const info1 = cumPosToChr(cum1), info2 = cumPosToChr(cum2);
-      _dragStart = null;
-      if (!info1 || !info2) return;
-      if (info1.chr !== info2.chr) {
-        alert('Selection must be within a single chromosome.');
-        return;
-      }
-      const selStart = Math.min(info1.localPos, info2.localPos);
-      const selEnd = Math.max(info1.localPos, info2.localPos);
-      const nextIdx = manifest ? manifest.total_loci + 1 : 1;
-      showCreateLocusDialog(info1.chr, selStart, selEnd, 'Locus ' + nextIdx);
-    }
-  };
-
-  skyEl.onmouseleave = () => {
-    if (_dragRect) _dragRect.remove();
-    _dragRect = null;
-    _dragStart = null;
-  };
-}
-
-function updateSkylineHighlights() {
-  renderSkyline();
-}
-
-// ═══════════════════════════════════════════════════════════════
-// Create new locus dialog
-// ═══════════════════════════════════════════════════════════════
-function showCreateLocusDialog(chr, start, end, defaultName) {
-  const prev = document.getElementById('create-locus-dialog');
-  if (prev) prev.remove();
-
-  const dlg = document.createElement('div');
-  dlg.id = 'create-locus-dialog';
-  dlg.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;' +
-    'background:rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center;z-index:9999';
-
-  const box = document.createElement('div');
-  box.style.cssText = 'background:#fff;border-radius:10px;padding:24px 32px;width:380px;' +
-    'box-shadow:0 8px 32px rgba(0,0,0,0.18);font-family:system-ui,sans-serif';
-
-  box.innerHTML =
-    '<h3 style="margin:0 0 16px;font-size:16px;color:#1e293b">Create New Locus</h3>' +
-    '<div style="display:grid;grid-template-columns:80px 1fr;gap:8px 12px;align-items:center;font-size:13px">' +
-      '<label style="color:#475569;font-weight:600">Name</label>' +
-      '<input id="cl-name" type="text" value="' + defaultName + '" style="padding:4px 8px;border:1px solid #d1d5db;border-radius:4px;font-size:13px">' +
-      '<label style="color:#475569;font-weight:600">Chromosome</label>' +
-      '<input id="cl-chr" type="text" value="' + chr + '" style="padding:4px 8px;border:1px solid #d1d5db;border-radius:4px;font-size:13px;background:#f1f5f9" readonly>' +
-      '<label style="color:#475569;font-weight:600">Start</label>' +
-      '<input id="cl-start" type="number" value="' + start + '" style="padding:4px 8px;border:1px solid #d1d5db;border-radius:4px;font-size:13px">' +
-      '<label style="color:#475569;font-weight:600">End</label>' +
-      '<input id="cl-end" type="number" value="' + end + '" style="padding:4px 8px;border:1px solid #d1d5db;border-radius:4px;font-size:13px">' +
-    '</div>' +
-    '<p style="margin:12px 0 0;font-size:11px;color:#94a3b8">Region: chr' + chr + ':' + fmtN(start) + '–' + fmtN(end) + ' (' + fmtDist(end - start) + ')</p>' +
-    '<p style="margin:8px 0 16px;font-size:12px;color:#64748b">' +
-    'This will stream GWAS data, compute LD, and add the locus to the viewer. May take 5–15 seconds.</p>' +
-    '<div style="display:flex;gap:10px;justify-content:flex-end">' +
-      '<button id="cl-cancel" style="padding:6px 16px;border:1px solid #d1d5db;border-radius:6px;background:#fff;cursor:pointer;font-size:13px;color:#475569">Cancel</button>' +
-      '<button id="cl-confirm" style="padding:6px 16px;border:none;border-radius:6px;background:#1e40af;color:#fff;cursor:pointer;font-size:13px;font-weight:600">Create Locus</button>' +
-    '</div>';
-
-  dlg.appendChild(box);
-  document.body.appendChild(dlg);
-
-  document.getElementById('cl-cancel').onclick = () => dlg.remove();
-  dlg.onclick = (e) => { if (e.target === dlg) dlg.remove(); };
-
-  document.getElementById('cl-confirm').onclick = async () => {
-    const btn = document.getElementById('cl-confirm');
-    btn.textContent = 'Creating…';
-    btn.disabled = true;
-    btn.style.opacity = '0.6';
-
-    const locusName = document.getElementById('cl-name').value.trim();
-    const locChr    = document.getElementById('cl-chr').value.trim();
-    const locStart  = parseInt(document.getElementById('cl-start').value);
-    const locEnd    = parseInt(document.getElementById('cl-end').value);
-
-    if (isNaN(locStart) || isNaN(locEnd) || locEnd <= locStart) {
-      alert('Invalid start/end positions.');
-      btn.textContent = 'Create Locus'; btn.disabled = false; btn.style.opacity = '';
-      return;
-    }
-
-    try {
-      const res = await fetch(SERVER + '/api/create-locus', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ chr: locChr, start: locStart, end: locEnd, locus_name: locusName })
-      });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({error:'Server error'}));
-        alert('Create failed: ' + (err.error || 'Unknown error'));
-        btn.textContent = 'Create Locus'; btn.disabled = false; btn.style.opacity = '';
-        return;
-      }
-
-      // Server returns updated manifest
-      const newManifest = await res.json();
-      manifest = newManifest;
-      rebuildLociOrder();
-
-      // Navigate to the new locus (last in the list)
-      currentStart = Math.max(0, lociOrder.length - VISIBLE);
-
-      // Update UI
-      document.getElementById('cfg-total').textContent = lociOrder.length;
-      document.getElementById('range-to').value = lociOrder.length;
-
-      dlg.remove();
-      renderViewport(true);
-
-    } catch (e) {
-      alert('Create failed: ' + e.message);
-      btn.textContent = 'Create Locus'; btn.disabled = false; btn.style.opacity = '';
-    }
-  };
-}
-
-// ═══════════════════════════════════════════════════════════════
-// Split locus dialog
-// ═══════════════════════════════════════════════════════════════
-function showSplitDialog(data) {
-  const prev = document.getElementById('split-locus-dialog');
-  if (prev) prev.remove();
-
-  const dlg = document.createElement('div');
-  dlg.id = 'split-locus-dialog';
-  dlg.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;' +
-    'background:rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;z-index:9999';
-
-  const box = document.createElement('div');
-  box.style.cssText = 'background:#fff;border-radius:12px;padding:24px 28px;width:620px;max-height:90vh;' +
-    'overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,0.2);font-family:system-ui,sans-serif';
-
-  const locStart = +data.start, locEnd = +data.end;
-  const nextBase = manifest ? manifest.total_loci + 1 : 1;
-
-  // State: list of split regions
-  const splitRegions = [];
-
-  box.innerHTML =
-    '<h3 style="margin:0 0 4px;font-size:16px;color:#1e293b">Split Locus ' + data.locus_index + '</h3>' +
-    '<p style="margin:0 0 12px;font-size:12px;color:#64748b">Chr' + data.chr + ':' + fmtN(locStart) + '–' + fmtN(locEnd) +
-    ' &nbsp;·&nbsp; Drag on the density plot to define sub-regions, or add manually below.</p>' +
-    '<div id="split-density-wrap" style="border:1px solid #e2e8f0;border-radius:6px;overflow:hidden;margin-bottom:12px"></div>' +
-    '<div style="display:flex;gap:8px;margin-bottom:12px">' +
-      '<input id="split-start" type="number" placeholder="Start" style="flex:1;padding:4px 8px;border:1px solid #d1d5db;border-radius:4px;font-size:12px">' +
-      '<input id="split-end" type="number" placeholder="End" style="flex:1;padding:4px 8px;border:1px solid #d1d5db;border-radius:4px;font-size:12px">' +
-      '<button id="split-add-btn" style="padding:4px 12px;border:none;border-radius:4px;background:#1e40af;color:#fff;font-size:12px;font-weight:600;cursor:pointer">+ Add</button>' +
-    '</div>' +
-    '<div id="split-regions-list" style="margin-bottom:12px"></div>' +
-    '<div id="split-validation" style="margin-bottom:12px"></div>' +
-    '<div style="display:flex;gap:10px;justify-content:flex-end;align-items:center">' +
-      '<button id="split-validate-btn" style="padding:6px 14px;border:1px solid #2563eb;border-radius:6px;background:#eff6ff;cursor:pointer;font-size:12px;color:#1e40af;font-weight:600" disabled>Validate LD</button>' +
-      '<span style="flex:1"></span>' +
-      '<button id="split-cancel" style="padding:6px 16px;border:1px solid #d1d5db;border-radius:6px;background:#fff;cursor:pointer;font-size:13px;color:#475569">Cancel</button>' +
-      '<button id="split-confirm" style="padding:6px 16px;border:none;border-radius:6px;background:#b91c1c;color:#fff;cursor:pointer;font-size:13px;font-weight:600" disabled>Split Locus</button>' +
-    '</div>';
-
-  dlg.appendChild(box);
-  document.body.appendChild(dlg);
-
-  // ── Draw density plot ──
-  const snps = data.gwas_snps || [];
-  const dWrap = document.getElementById('split-density-wrap');
-  const dW = 564, dH = 100, dML = 40, dMR = 10, dMT = 6, dMB = 18;
-  const dPlotW = dW - dML - dMR, dPlotH = dH - dMT - dMB;
-
-  const dBins = 200;
-  const binSize = (locEnd - locStart) / dBins;
-  const bins = new Array(dBins).fill(0);
-  snps.forEach(s => {
-    if (s.pos < locStart || s.pos > locEnd) return;
-    const bi = Math.min(dBins - 1, Math.floor((s.pos - locStart) / binSize));
-    if (s.neg_log10_p > bins[bi]) bins[bi] = s.neg_log10_p;
-  });
-  const dYMax = Math.max(OV_THRESH_BLUE + 1.2, d3.max(bins) + 0.5);
-
-  const dSvg = d3.select(dWrap).append('svg')
-    .attr('width', dW).attr('height', dH).style('display', 'block');
-  const dXSc = d3.scaleLinear().domain([locStart, locEnd]).range([dML, dML + dPlotW]);
-  const dYSc = d3.scaleLinear().domain([0, dYMax]).range([dMT + dPlotH, dMT]);
-
-  // Background
-  dSvg.append('rect').attr('x', dML).attr('y', dMT)
-    .attr('width', dPlotW).attr('height', dPlotH)
-    .attr('fill', '#f8fafc');
-
-  // Significance line
-  dSvg.append('line').attr('x1', dML).attr('x2', dML + dPlotW)
-    .attr('y1', dYSc(OV_THRESH_BLUE)).attr('y2', dYSc(OV_THRESH_BLUE))
-    .attr('stroke', '#dc2626').attr('stroke-width', 1).attr('stroke-dasharray', '4,3');
-
-  // Density
-  const dArea = d3.area()
-    .x((d, i) => dXSc(locStart + (i + 0.5) * binSize))
-    .y0(dYSc(0)).y1(d => dYSc(Math.min(d, dYMax)))
-    .curve(d3.curveBasis);
-  dSvg.append('path').datum(bins)
-    .attr('fill', '#6366f1').attr('opacity', 0.25).attr('d', dArea);
-  const dLine = d3.line()
-    .x((d, i) => dXSc(locStart + (i + 0.5) * binSize))
-    .y(d => dYSc(Math.min(d, dYMax)))
-    .curve(d3.curveBasis);
-  dSvg.append('path').datum(bins)
-    .attr('fill', 'none').attr('stroke', '#4338ca').attr('stroke-width', 1.3).attr('d', dLine);
-
-  // X axis
-  dSvg.append('g').attr('class', 'axis')
-    .attr('transform', `translate(0,${dMT + dPlotH})`)
-    .call(d3.axisBottom(dXSc).ticks(6).tickFormat(d => fmtBp(d)))
-    .select('.domain').remove();
-
-  // Regions overlay group (drawn on top)
-  const regionsG = dSvg.append('g').attr('class', 'split-regions-overlay');
-
-  // Border
-  dSvg.append('rect').attr('x', dML).attr('y', dMT)
-    .attr('width', dPlotW).attr('height', dPlotH)
-    .attr('fill', 'none').attr('stroke', '#cbd5e1').attr('stroke-width', 1);
-
-  // ── Drag-to-select on density ──
-  let dragStart = null, dragRect = null;
-
-  dSvg.on('mousedown', (e) => {
-    const svgRect = dWrap.querySelector('svg').getBoundingClientRect();
-    const mx = e.clientX - svgRect.left;
-    if (mx < dML || mx > dML + dPlotW) return;
-    dragStart = mx;
-    dragRect = dSvg.append('rect')
-      .attr('x', mx).attr('y', dMT).attr('width', 0).attr('height', dPlotH)
-      .attr('fill', '#3b82f6').attr('opacity', 0.15)
-      .attr('stroke', '#2563eb').attr('stroke-width', 1).attr('stroke-dasharray', '3,2');
-  });
-
-  dSvg.on('mousemove', (e) => {
-    if (!dragStart || !dragRect) return;
-    const svgRect = dWrap.querySelector('svg').getBoundingClientRect();
-    const mx = Math.max(dML, Math.min(e.clientX - svgRect.left, dML + dPlotW));
-    const x1 = Math.min(dragStart, mx), x2 = Math.max(dragStart, mx);
-    dragRect.attr('x', x1).attr('width', x2 - x1);
-  });
-
-  dSvg.on('mouseup', (e) => {
-    if (!dragStart) return;
-    const svgRect = dWrap.querySelector('svg').getBoundingClientRect();
-    const mx = Math.max(dML, Math.min(e.clientX - svgRect.left, dML + dPlotW));
-    if (dragRect) dragRect.remove();
-    dragRect = null;
-    const dist = Math.abs(mx - dragStart);
-    if (dist < 5) { dragStart = null; return; }
-    const bp1 = Math.round(dXSc.invert(Math.min(dragStart, mx)));
-    const bp2 = Math.round(dXSc.invert(Math.max(dragStart, mx)));
-    dragStart = null;
-    addRegion(Math.max(locStart, bp1), Math.min(locEnd, bp2));
-  });
-
-  // ── Region management ──
-  function addRegion(start, end) {
-    if (end <= start) return;
-    const idx = splitRegions.length;
-    const name = data.locus_name ? data.locus_name + ' (' + String.fromCharCode(65 + idx) + ')' :
-      'Locus ' + (nextBase + idx);
-    splitRegions.push({ name, start, end });
-    renderRegionsList();
-    renderRegionsOverlay();
-    updateConfirmBtn();
-  }
-
-  function removeRegion(idx) {
-    splitRegions.splice(idx, 1);
-    renderRegionsList();
-    renderRegionsOverlay();
-    updateConfirmBtn();
-  }
-
-  const regionColors = ['#2563eb', '#059669', '#d97706', '#7c3aed', '#dc2626', '#0891b2'];
-
-  function renderRegionsOverlay() {
-    regionsG.selectAll('*').remove();
-    splitRegions.forEach((r, i) => {
-      const x1 = dXSc(r.start), x2 = dXSc(r.end);
-      const col = regionColors[i % regionColors.length];
-      regionsG.append('rect')
-        .attr('x', x1).attr('y', dMT).attr('width', x2 - x1).attr('height', dPlotH)
-        .attr('fill', col).attr('opacity', 0.15)
-        .attr('stroke', col).attr('stroke-width', 1.5);
-      regionsG.append('text')
-        .attr('x', (x1 + x2) / 2).attr('y', dMT + 12)
-        .attr('text-anchor', 'middle').attr('font-size', '9px')
-        .attr('font-weight', '700').attr('fill', col)
-        .text(String.fromCharCode(65 + i));
-    });
-  }
-
-  function renderRegionsList() {
-    const list = document.getElementById('split-regions-list');
-    if (!splitRegions.length) {
-      list.innerHTML = '<p style="font-size:12px;color:#94a3b8;margin:0;text-align:center">No regions defined yet. Drag on the plot or use the inputs above.</p>';
-      return;
-    }
-    list.innerHTML = splitRegions.map((r, i) => {
-      const col = regionColors[i % regionColors.length];
-      return '<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:#f8fafc;border-radius:4px;margin-bottom:4px">' +
-        '<span style="width:18px;height:18px;border-radius:3px;background:' + col + ';color:#fff;' +
-        'font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center">' +
-        String.fromCharCode(65 + i) + '</span>' +
-        '<input type="text" value="' + r.name.replace(/"/g, '&quot;') + '" data-ri="' + i + '" class="split-name-input" ' +
-        'style="flex:1;padding:3px 6px;border:1px solid #d1d5db;border-radius:3px;font-size:12px">' +
-        '<span style="font-size:11px;color:#475569;white-space:nowrap">' + fmtN(r.start) + ' – ' + fmtN(r.end) + '</span>' +
-        '<span style="font-size:10px;color:#94a3b8">(' + fmtDist(r.end - r.start) + ')</span>' +
-        '<button data-ri="' + i + '" class="split-rm-btn" style="border:none;background:none;color:#dc2626;' +
-        'cursor:pointer;font-size:14px;font-weight:700;padding:0 4px" title="Remove">×</button>' +
-        '</div>';
-    }).join('');
-
-    list.querySelectorAll('.split-name-input').forEach(inp => {
-      inp.addEventListener('change', () => {
-        splitRegions[+inp.dataset.ri].name = inp.value;
-      });
-    });
-    list.querySelectorAll('.split-rm-btn').forEach(btn => {
-      btn.addEventListener('click', () => removeRegion(+btn.dataset.ri));
-    });
-  }
-
-  function updateConfirmBtn() {
-    const enough = splitRegions.length >= 2;
-    document.getElementById('split-confirm').disabled = !enough;
-    document.getElementById('split-validate-btn').disabled = !enough;
-    // Clear validation when regions change
-    document.getElementById('split-validation').innerHTML = '';
-  }
-
-  renderRegionsList();
-
-  // Validate LD button
-  document.getElementById('split-validate-btn').addEventListener('click', async () => {
-    const vBtn = document.getElementById('split-validate-btn');
-    const vDiv = document.getElementById('split-validation');
-    vBtn.textContent = 'Checking…';
-    vBtn.disabled = true;
-
-    // Read final names
-    document.querySelectorAll('.split-name-input').forEach(inp => {
-      splitRegions[+inp.dataset.ri].name = inp.value;
-    });
-
-    try {
-      const res = await fetch(SERVER + '/api/validate-split', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({
-          locus_index: data.locus_index,
-          regions: splitRegions.map(r => ({ name: r.name, start: r.start, end: r.end }))
-        })
-      });
-      const vr = await res.json();
-
-      if (vr.valid) {
-        vDiv.innerHTML = '<div style="padding:8px 12px;background:#f0fdf4;border:1px solid #bbf7d0;' +
-          'border-radius:6px;font-size:12px;color:#166534;font-weight:600">' +
-          '&#10003; Validation passed — no cross-region LD above r² = ' + vr.split_ld_threshold +
-          ', min distance ' + fmtN(vr.split_min_distance_bp) + ' bp met.</div>';
-      } else {
-        let html = '<div style="padding:8px 12px;background:#fef2f2;border:1px solid #fecaca;' +
-          'border-radius:6px;font-size:12px;color:#991b1b">';
-        html += '<div style="font-weight:700;margin-bottom:4px">&#9888; Validation warnings</div>';
-        vr.warnings.forEach(w => {
-          html += '<div style="margin-bottom:2px">• ' + w + '</div>';
-        });
-        if (vr.ld_violations && vr.ld_violations.length > 0) {
-          html += '<div style="margin-top:6px;font-size:11px;color:#7f1d1d">';
-          html += '<table style="width:100%;border-collapse:collapse;font-size:11px">';
-          html += '<tr style="border-bottom:1px solid #fecaca"><th style="text-align:left;padding:2px 4px">SNP A</th>' +
-            '<th style="text-align:left;padding:2px 4px">SNP B</th>' +
-            '<th style="text-align:left;padding:2px 4px">r²</th>' +
-            '<th style="text-align:left;padding:2px 4px">Regions</th></tr>';
-          vr.ld_violations.slice(0, 10).forEach(v => {
-            const colA = regionColors[v.region_a % regionColors.length];
-            const colB = regionColors[v.region_b % regionColors.length];
-            html += '<tr><td style="padding:2px 4px">' + v.snp_a + '</td>' +
-              '<td style="padding:2px 4px">' + v.snp_b + '</td>' +
-              '<td style="padding:2px 4px;font-weight:700">' + v.r2.toFixed(3) + '</td>' +
-              '<td style="padding:2px 4px">' +
-              '<span style="color:' + colA + ';font-weight:700">' + String.fromCharCode(65 + v.region_a) + '</span>' +
-              ' ↔ <span style="color:' + colB + ';font-weight:700">' + String.fromCharCode(65 + v.region_b) + '</span></td></tr>';
-          });
-          if (vr.ld_violations.length > 10) {
-            html += '<tr><td colspan="4" style="padding:2px 4px;color:#94a3b8">… and ' +
-              (vr.ld_violations.length - 10) + ' more</td></tr>';
-          }
-          html += '</table></div>';
-        }
-        html += '</div>';
-        vDiv.innerHTML = html;
-      }
-    } catch (e) {
-      vDiv.innerHTML = '<div style="padding:6px 12px;background:#fef2f2;border:1px solid #fecaca;' +
-        'border-radius:6px;font-size:12px;color:#991b1b">Validation failed: ' + e.message + '</div>';
-    }
-
-    vBtn.textContent = 'Validate LD';
-    vBtn.disabled = splitRegions.length < 2;
-  });
-
-  // Manual add button
-  document.getElementById('split-add-btn').addEventListener('click', () => {
-    const s = parseInt(document.getElementById('split-start').value);
-    const e = parseInt(document.getElementById('split-end').value);
-    if (isNaN(s) || isNaN(e) || e <= s) { alert('Invalid start/end.'); return; }
-    addRegion(s, e);
-    document.getElementById('split-start').value = '';
-    document.getElementById('split-end').value = '';
-  });
-
-  // Cancel
-  document.getElementById('split-cancel').onclick = () => dlg.remove();
-  dlg.onclick = (e) => { if (e.target === dlg) dlg.remove(); };
-
-  // Confirm
-  document.getElementById('split-confirm').onclick = async () => {
-    const btn = document.getElementById('split-confirm');
-    btn.textContent = 'Splitting…';
-    btn.disabled = true;
-    btn.style.opacity = '0.6';
-
-    // Read final names from inputs
-    document.querySelectorAll('.split-name-input').forEach(inp => {
-      splitRegions[+inp.dataset.ri].name = inp.value;
-    });
-
-    try {
-      const res = await fetch(SERVER + '/api/split-locus', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({
-          locus_index: data.locus_index,
-          regions: splitRegions.map(r => ({ name: r.name, start: r.start, end: r.end }))
-        })
-      });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({error:'Server error'}));
-        alert('Split failed: ' + (err.error || 'Unknown error'));
-        btn.textContent = 'Split Locus'; btn.disabled = false; btn.style.opacity = '';
-        return;
-      }
-
-      const newManifest = await res.json();
-      manifest = newManifest;
-      rebuildLociOrder();
-      locusCache.delete(data.locus_index);
-      document.getElementById('cfg-total').textContent = lociOrder.length;
-      document.getElementById('range-to').value = lociOrder.length;
-
-      // Navigate to first new locus
-      const firstNew = newManifest.loci[newManifest.loci.length - splitRegions.length];
-      if (firstNew) {
-        const pos = lociOrder.indexOf(firstNew.index);
-        if (pos >= 0) currentStart = Math.max(0, Math.min(pos, lociOrder.length - VISIBLE));
-      }
-
-      dlg.remove();
-      renderViewport(true);
-
-    } catch (e) {
-      alert('Split failed: ' + e.message);
-      btn.textContent = 'Split Locus'; btn.disabled = false; btn.style.opacity = '';
-    }
-  };
-}
-
-// ═══════════════════════════════════════════════════════════════
-// Locus boundary update — inline server call
-// ═══════════════════════════════════════════════════════════════
-async function triggerLocusUpdate(locusIndex, newStart, newEnd, origStart, origEnd, btn) {
-  btn.textContent = 'Updating…';
-  btn.disabled = true;
-  btn.style.opacity = '0.6';
+async function wizSubmit() {
+  var cfg = wiz.cfg;
+  var id = cfg._id;
+  var configBody = {};
+  var keys = ['gwas.file','loci.file','gff3.file','ref.panel.path','ref.panel.population',
+    'col.chr','col.pos','col.pvalue','col.rsid','col.varid','col.ea','col.nea',
+    'col.beta','col.or','col.se','col.n','col.maf','col.info','top.snp.file',
+    'locus.padding','ld.enabled','ld.triangle.boundary','ld.r2.threshold',
+    'ld.parallel.jobs','threads','max.snps.per.locus','split.ld.threshold','split.min.distance.bp'];
+  keys.forEach(function(k) { if (cfg[k] !== undefined) configBody[k] = cfg[k]; });
 
   try {
-    const res = await fetch(SERVER + '/api/update-locus', {
+    var resp = await fetch(API + '/api/project/' + encodeURIComponent(id) + '/config', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(configBody)
+    });
+    if (!resp.ok) throw new Error('Config save failed');
+
+    await fetch(API + '/api/projects/process', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({id: id})
+    });
+
+    wizClose();
+    loadProjects();
+  } catch (e) {
+    alert('Error: ' + e.message);
+  }
+}
+
+function escAttr(s) { return (s || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+
+async function reprocess(id) {
+  try {
+    await fetch(API + '/api/projects/process', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({locus_index: locusIndex, new_start: newStart, new_end: newEnd})
+      body: JSON.stringify({id: id})
     });
-
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({error: 'Server error'}));
-      alert('Update failed: ' + (err.error || 'Unknown error'));
-      btn.textContent = 'Update Locus';
-      btn.disabled = false;
-      btn.style.opacity = '';
-      return;
-    }
-
-    const newData = await res.json();
-    // Update caches
-    locusCache.set(locusIndex, newData);
-    if (window.LOCUS_DATA) window.LOCUS_DATA[locusIndex] = newData;
-
-    // Update manifest entry so header and skyline reflect new boundaries
-    if (manifest) {
-      const entry = manifest.loci.find(l => l.index === locusIndex);
-      if (entry) { entry.start = newStart; entry.end = newEnd; }
-    }
-
-    // Re-render the viewport
-    renderViewport(false);
-
+    loadProjects();
   } catch (e) {
-    alert('Update failed: ' + e.message);
-    btn.textContent = 'Update Locus';
-    btn.disabled = false;
-    btn.style.opacity = '';
+    alert('Failed to start processing: ' + e.message);
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-init();
+async function processAllStale() {
+  try {
+    await fetch(API + '/api/projects/process', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({all_stale: true})
+    });
+    loadProjects();
+  } catch (e) {
+    alert('Failed to start processing: ' + e.message);
+  }
+}
+
+function formatDate(iso) {
+  try {
+    var d = new Date(iso);
+    return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+  } catch (e) { return iso; }
+}
+
+function esc(s) {
+  if (!s) return '';
+  var d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+document.getElementById('version-label').textContent = 'v1.0.0';
+
+// ══════════════════════════════════════════════════════════
+//  rsID BADGE & RECOVERY UI
+// ══════════════════════════════════════════════════════════
+
+function rsidBadge(p) {
+  if (p.rsid_column_present) {
+    var rate = p.rsid_recovery_rate || '';
+    var info = rate ? ' <span style="font-size:0.72rem;color:#666">' + esc(rate) + '</span>' : '';
+    return '<span class="badge badge-ok">rsIDs present</span>' + info;
+  }
+  return '<span class="badge badge-stale">rsIDs missing</span> '
+    + '<button class="btn btn-primary" style="padding:0.2rem 0.6rem;font-size:0.75rem" '
+    + 'onclick="event.stopPropagation();rsidOpen(\'' + esc(p.id) + '\')">Add rsIDs</button>';
+}
+
+var rsidState = { projectId: null, pollTimer: null };
+
+function rsidOpen(projectId) {
+  rsidState.projectId = projectId;
+  document.getElementById('rsid-overlay').classList.add('open');
+  rsidRenderSource();
+}
+
+function rsidClose() {
+  document.getElementById('rsid-overlay').classList.remove('open');
+  if (rsidState.pollTimer) { clearInterval(rsidState.pollTimer); rsidState.pollTimer = null; }
+  loadProjects();
+}
+
+async function rsidRenderSource() {
+  var c = document.getElementById('rsid-content');
+  var gc;
+  try { gc = await (await fetch(API + '/api/global-config')).json(); } catch(e) { gc = {snp_databases:[]}; }
+
+  var p = projects.find(function(x) { return x.id === rsidState.projectId; });
+  var pName = p ? (p.name || p.id) : rsidState.projectId;
+
+  var dbOpts = gc.snp_databases.map(function(db) {
+    return '<option value="' + escAttr(db.id) + '">' + esc(db.label) + ' (' + esc(db.build) + ')</option>';
+  }).join('');
+  if (!dbOpts) dbOpts = '<option value="">No SNP databases configured</option>';
+
+  c.innerHTML =
+    '<p style="margin:0.75rem 0 0.5rem"><b>' + esc(pName) + '</b></p>'
+    + '<div class="wiz-field"><label>Source 1 — Local SNP database</label>'
+    + '<select id="rsid-snpdb">' + dbOpts + '</select></div>'
+    + '<div class="wiz-field"><label style="color:#888"><input type="checkbox" disabled> Source 2 — NCBI API fallback <span style="font-size:0.75rem">(coming soon)</span></label></div>'
+    + '<div style="display:flex;justify-content:flex-end;gap:0.5rem;margin-top:1rem">'
+    + '<button class="btn btn-secondary" onclick="rsidClose()">Cancel</button>'
+    + '<button class="btn btn-primary" onclick="rsidStart()" ' + (gc.snp_databases.length === 0 ? 'disabled' : '') + '>Process</button>'
+    + '</div>';
+}
+
+async function rsidStart() {
+  var snpDbId = document.getElementById('rsid-snpdb').value;
+  if (!snpDbId) { alert('Select a SNP database first.'); return; }
+
+  try {
+    await fetch(API + '/api/rsid-recover', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ project_id: rsidState.projectId, snp_database_id: snpDbId })
+    });
+  } catch(e) { alert('Failed: ' + e.message); return; }
+
+  rsidRenderProgress();
+}
+
+function rsidRenderProgress() {
+  var c = document.getElementById('rsid-content');
+  c.innerHTML = '<p style="margin:0.75rem 0"><b>Recovering rsIDs...</b></p>'
+    + '<div id="rsid-steps" style="font-size:0.85rem;line-height:1.8"></div>'
+    + '<div id="rsid-counters" style="font-size:0.82rem;color:#555;margin-top:0.75rem"></div>';
+
+  rsidState.pollTimer = setInterval(async function() {
+    try {
+      var r = await fetch(API + '/api/rsid-progress?project=' + encodeURIComponent(rsidState.projectId));
+      var d = await r.json();
+      var steps = ['Validate project & build', 'Load dbSNP regions', 'Match SNPs', 'NCBI fallback', 'Write output'];
+      var html = '';
+      for (var i = 0; i < steps.length; i++) {
+        var si = i + 1;
+        if (si < d.step_index) html += '<div style="color:#065f46">&#10003; Step ' + si + ': ' + steps[i] + '</div>';
+        else if (si === d.step_index) html += '<div style="color:#1e40af;font-weight:600">&#9656; Step ' + si + ': ' + esc(d.current_step)
+          + (d.total_loci > 0 ? ' (Locus ' + d.current_locus + '/' + d.total_loci + ')' : '') + '</div>';
+        else html += '<div style="color:#aaa">&#183; Step ' + si + ': ' + steps[i] + '</div>';
+      }
+      document.getElementById('rsid-steps').innerHTML = html;
+
+      var pctText = d.pct + '%';
+      document.getElementById('rsid-counters').innerHTML =
+        'Progress: <b>' + pctText + '</b> &nbsp; matched: ' + d.matched.toLocaleString()
+        + ' &middot; forward: ' + d.forward.toLocaleString()
+        + ' &middot; reverse: ' + d.reverse.toLocaleString()
+        + ' &middot; unmatched: ' + d.unmatched.toLocaleString();
+
+      if (d.done) {
+        clearInterval(rsidState.pollTimer);
+        rsidState.pollTimer = null;
+        if (d.error) rsidRenderError(d.error);
+        else rsidRenderResult(d);
+      }
+    } catch(e) {}
+  }, 500);
+}
+
+function rsidRenderResult(d) {
+  var c = document.getElementById('rsid-content');
+  c.innerHTML =
+    '<p style="margin:0.75rem 0;color:#065f46;font-weight:600;font-size:1.05rem">&#10003; rsID recovery complete</p>'
+    + '<table class="wiz-summary-table">'
+    + '<tr><td>Recovery rate</td><td><b>' + d.recovery_rate.toFixed(1) + '%</b> (' + d.matched.toLocaleString() + ' / ' + d.total_snps.toLocaleString() + ' SNPs)</td></tr>'
+    + '<tr><td>Forward orientation</td><td>' + d.forward.toLocaleString() + '</td></tr>'
+    + '<tr><td>Reverse orientation</td><td>' + d.reverse.toLocaleString() + '</td></tr>'
+    + '<tr><td>Unmatched</td><td>' + d.unmatched.toLocaleString() + '</td></tr>'
+    + '<tr><td>Output file</td><td style="word-break:break-all">' + esc(d.output_file) + '</td></tr>'
+    + '</table>'
+    + '<p style="margin-top:0.75rem;font-size:0.85rem;color:#555">Project config updated to use the new GWAS file with rsIDs. Reprocess to load rsIDs into the viewer.</p>'
+    + '<div style="display:flex;justify-content:flex-end;gap:0.5rem;margin-top:1rem">'
+    + '<button class="btn btn-secondary" onclick="rsidClose()">Later</button>'
+    + '<button class="btn btn-primary" onclick="rsidReprocessAndClose()">Reprocess now</button></div>';
+}
+
+async function rsidReprocessAndClose() {
+  var id = rsidState.projectId;
+  try {
+    await fetch(API + '/api/projects/process', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({id: id})
+    });
+  } catch(e) {}
+  rsidClose();
+}
+
+function rsidRenderError(err) {
+  var c = document.getElementById('rsid-content');
+  c.innerHTML = '<p style="color:#dc2626;font-weight:600;margin:0.75rem 0">Error: ' + esc(err) + '</p>'
+    + '<div style="display:flex;justify-content:flex-end;margin-top:1rem">'
+    + '<button class="btn btn-secondary" onclick="rsidClose()">Close</button></div>';
+}
+
+// ══════════════════════════════════════════════════════════
+//  RESOURCES & SETTINGS
+// ══════════════════════════════════════════════════════════
+
+async function loadResources() {
+  try {
+    var gc = await (await fetch(API + '/api/global-config')).json();
+    renderSnpDatabases(gc.snp_databases || []);
+    renderRefPanels(gc.reference_panels || []);
+  } catch(e) {}
+}
+
+function renderSnpDatabases(dbs) {
+  var el = document.getElementById('snpdb-list');
+  if (!dbs.length) { el.innerHTML = '<p style="color:#888;font-size:0.82rem">No SNP databases configured.</p>'; return; }
+  el.innerHTML = '<table style="width:100%;font-size:0.82rem;border-collapse:collapse">'
+    + '<tr style="border-bottom:1px solid #eee"><th style="text-align:left;padding:0.3rem">Label</th><th>Build</th><th>Chromosomes</th><th>Status</th><th></th></tr>'
+    + dbs.map(function(db) {
+      var status = db.valid ? '<span style="color:#065f46">&#10003;</span>' : '<span style="color:#dc2626">&#10007;</span>';
+      var chrCount = db.present_chromosomes || 0;
+      return '<tr style="border-bottom:1px solid #f5f5f5"><td style="padding:0.3rem">' + esc(db.label) + '</td><td>' + esc(db.build)
+        + '</td><td>' + chrCount + '/25</td><td>' + status + '</td>'
+        + '<td><button class="btn btn-secondary" style="padding:0.15rem 0.5rem;font-size:0.75rem" onclick="removeSnpDb(\'' + esc(db.id) + '\')">Remove</button></td></tr>';
+    }).join('') + '</table>';
+}
+
+function renderRefPanels(panels) {
+  var el = document.getElementById('refpanel-list');
+  if (!panels.length) { el.innerHTML = '<p style="color:#888;font-size:0.82rem">No reference panels configured.</p>'; return; }
+  el.innerHTML = '<table style="width:100%;font-size:0.82rem;border-collapse:collapse">'
+    + '<tr style="border-bottom:1px solid #eee"><th style="text-align:left;padding:0.3rem">Label</th><th>Population</th><th>Build</th><th>Status</th><th></th></tr>'
+    + panels.map(function(rp) {
+      var status = rp.valid ? '<span style="color:#065f46">&#10003;</span>' : '<span style="color:#dc2626">&#10007;</span>';
+      return '<tr style="border-bottom:1px solid #f5f5f5"><td style="padding:0.3rem">' + esc(rp.label) + '</td><td>' + esc(rp.population)
+        + '</td><td>' + esc(rp.build) + '</td><td>' + status + '</td>'
+        + '<td><button class="btn btn-secondary" style="padding:0.15rem 0.5rem;font-size:0.75rem" onclick="removeRefPanel(\'' + esc(rp.id) + '\')">Remove</button></td></tr>';
+    }).join('') + '</table>';
+}
+
+async function addSnpDatabase() {
+  var label = prompt('SNP database label (e.g. "dbSNP hg19"):');
+  if (!label) return;
+  var build = prompt('Genome build (hg19 or hg38):', 'hg19');
+  if (!build) return;
+  try {
+    var r = await fetch(API + '/pick-file');
+    var d = await r.json();
+    if (!d.path) return;
+    var folder = d.path.replace(/[/\\][^/\\]*$/, ''); // get parent folder
+    var id = label.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+    var gc = await (await fetch(API + '/api/global-config')).json();
+    if (!gc.snp_databases) gc.snp_databases = [];
+    gc.snp_databases.push({ id: id, label: label, build: build, folder: folder, file_pattern: '{chr}.vcf.gz' });
+    await fetch(API + '/api/global-config', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(gc) });
+    loadResources();
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+async function addRefPanel() {
+  var label = prompt('Reference panel label (e.g. "1000G EAS hg19"):');
+  if (!label) return;
+  var pop = prompt('Population (EAS, EUR, AFR, etc.):', 'EAS');
+  var build = prompt('Genome build:', 'hg19');
+  try {
+    var r = await fetch(API + '/pick-file');
+    var d = await r.json();
+    if (!d.path) return;
+    var plinkPath = d.path.replace(/\.(bed|bim|fam)$/i, '');
+    var id = label.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+    var gc = await (await fetch(API + '/api/global-config')).json();
+    if (!gc.reference_panels) gc.reference_panels = [];
+    gc.reference_panels.push({ id: id, label: label, population: pop, build: build, plink_path: plinkPath });
+    await fetch(API + '/api/global-config', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(gc) });
+    loadResources();
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+async function removeSnpDb(id) {
+  if (!confirm('Remove this SNP database?')) return;
+  var gc = await (await fetch(API + '/api/global-config')).json();
+  gc.snp_databases = (gc.snp_databases || []).filter(function(d) { return d.id !== id; });
+  await fetch(API + '/api/global-config', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(gc) });
+  loadResources();
+}
+
+async function removeRefPanel(id) {
+  if (!confirm('Remove this reference panel?')) return;
+  var gc = await (await fetch(API + '/api/global-config')).json();
+  gc.reference_panels = (gc.reference_panels || []).filter(function(p) { return p.id !== id; });
+  await fetch(API + '/api/global-config', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(gc) });
+  loadResources();
+}
+
+loadProjects();
+loadResources();
+setInterval(loadProjects, 10000);
 </script>
 </body>
 </html>

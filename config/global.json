@@ -1,0 +1,1 @@
+{"reference_panels":[],"snp_databases":[{"id":"dbsnp_hg19","label":"dbSNP (hg19)","build":"hg19","folder":"C:/Users/alsammana/Documents/DataResources/SNPdb/hg19","file_pattern":"{chr}.vcf.gz"}],"ncbi_api":{"enabled":false,"base_url":"","api_key":"","rate_limit_per_sec":3,"restrict_to_lead_snps":true}}

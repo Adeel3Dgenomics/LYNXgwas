@@ -28,3 +28,9 @@ Thumbs.db
 
 # Claude Code project config
 .claude/
+graphify-out/
+old/
+projects/
+output/
+image/
+graphify-out/

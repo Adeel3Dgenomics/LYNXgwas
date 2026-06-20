@@ -9,6 +9,14 @@ public class Snp {
     public String ea;
     public String nea;
 
+    // Optional GWAS columns — NaN means not configured/available
+    public double beta      = Double.NaN;
+    public double oddsRatio = Double.NaN;
+    public double se        = Double.NaN;
+    public double sampleN   = Double.NaN;
+    public double maf       = Double.NaN;
+    public double infoScore = Double.NaN;
+
     public Snp(String id, String chr, long pos, double pvalue, String ea, String nea) {
         this.id        = id;
         this.chr       = chr;

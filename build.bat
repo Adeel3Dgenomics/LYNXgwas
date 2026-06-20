@@ -1,7 +1,20 @@
 @echo off
-echo === Building GWAS Locus Visualization Tool v2 ===
+echo === Building LYNXgwas ===
 if not exist bin mkdir bin
-javac -d bin ^
+
+REM Build classpath for HTSJDK dependencies
+set "LIBCP="
+for %%f in (lib\*.jar) do call set "LIBCP=%%LIBCP%%;%%f"
+
+javac -d bin -cp "bin%LIBCP%" ^
+  src\rsid\DbSnpRecord.java ^
+  src\rsid\MatchResult.java ^
+  src\rsid\RsidMatcher.java ^
+  src\rsid\RsidRecovery.java ^
+  src\rsid\RsidDetector.java ^
+  src\rsid\GlobalConfig.java ^
+  src\rsid\RsidProgress.java ^
+  src\rsid\RsidPipeline.java ^
   src\Config.java ^
   src\Locus.java ^
   src\Snp.java ^
@@ -17,6 +30,7 @@ javac -d bin ^
   src\LdCalculator.java ^
   src\SnpAnnotator.java ^
   src\GenomeSkyline.java ^
+  src\ProjectMetadata.java ^
   src\JsonExporter.java ^
   src\LocusUpdater.java ^
   src\LocalServer.java ^
@@ -26,3 +40,23 @@ if %ERRORLEVEL% neq 0 (
     exit /b 1
 )
 echo [OK] Compiled to bin\
+
+echo Copying frontend assets to output\...
+if not exist output mkdir output
+if not exist output\assets mkdir output\assets
+
+copy /Y index.html output\index.html >nul 2>&1
+copy /Y viewer.html output\viewer.html >nul 2>&1
+copy /Y annotations.js output\annotations.js >nul 2>&1
+if exist output\annotations.js (
+    rem already copied from root
+) else (
+    rem annotations.js may only exist in output/ already
+)
+xcopy /Y /E /I assets output\assets >nul 2>&1
+if exist projects\config.properties.template (
+    if not exist output\projects mkdir output\projects
+    copy /Y projects\config.properties.template output\projects\config.properties.template >nul 2>&1
+)
+
+echo [OK] Build complete.

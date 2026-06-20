@@ -10,7 +10,6 @@ public class GwasParser {
     public static void parse(Config config, List<Locus> loci) throws IOException {
         if (loci.isEmpty()) return;
 
-        // Sort loci by (chrInt, paddedStart) to match GWAS file order
         List<Locus> sorted = new ArrayList<>(loci);
         sorted.sort(Comparator.comparingInt(Locus::chrInt).thenComparingLong(l -> l.paddedStart));
 
@@ -23,22 +22,29 @@ public class GwasParser {
             if (header == null) throw new IOException("GWAS file is empty");
 
             String[] cols = header.trim().split("\t");
-            int iChr    = colIdx(cols, config.colChr);
-            int iPos    = colIdx(cols, config.colPos);
-            int iPval   = colIdx(cols, config.colPvalue);
-            int iVarid  = config.colVarid.isEmpty() ? -1 : colIdx(cols, config.colVarid);
-            int iRsid   = config.colRsid.isEmpty()  ? -1 : colIdx(cols, config.colRsid);
-            int iEa     = colIdx(cols, config.colEa);
-            int iNea    = colIdx(cols, config.colNea);
+            String avail = String.join(", ", cols);
 
-            if (iChr < 0 || iPos < 0 || iPval < 0) {
-                throw new IOException("GWAS file missing required columns: "
-                    + config.colChr + ", " + config.colPos + ", " + config.colPvalue);
-            }
+            // Required columns — fail fast with clear error if not found
+            int iChr  = requireCol(cols, "col.chr",    config.colChr,    "chromosome", avail);
+            int iPos  = requireCol(cols, "col.pos",    config.colPos,    "position",   avail);
+            int iPval = requireCol(cols, "col.pvalue", config.colPvalue, "p-value",    avail);
+            int iEa   = requireCol(cols, "col.ea",     config.colEa,    "effect allele (A1)", avail);
+            int iNea  = requireCol(cols, "col.nea",    config.colNea,   "other allele (A2)",  avail);
 
-            // Active loci whose padded windows contain the current position
+            // Optional identity columns
+            int iVarid = optionalCol(cols, "col.varid", config.colVarid, "variant ID", avail);
+            int iRsid  = optionalCol(cols, "col.rsid",  config.colRsid,  "rsID",       avail);
+
+            // Optional GWAS statistic columns
+            int iBeta = optionalCol(cols, "col.beta", config.colBeta, "beta",             avail);
+            int iOr   = optionalCol(cols, "col.or",   config.colOr,   "odds ratio",       avail);
+            int iSe   = optionalCol(cols, "col.se",   config.colSe,   "standard error",   avail);
+            int iN    = optionalCol(cols, "col.n",    config.colN,    "sample size",       avail);
+            int iMaf  = optionalCol(cols, "col.maf",  config.colMaf,  "minor allele freq", avail);
+            int iInfo = optionalCol(cols, "col.info", config.colInfo, "imputation info",   avail);
+
             List<Locus> activeLoci = new ArrayList<>();
-            int nextLocusIdx = 0;         // pointer into sorted[]
+            int nextLocusIdx = 0;
             String currentChr = null;
 
             String line;
@@ -56,21 +62,18 @@ public class GwasParser {
                     pos  = Long.parseLong(f[iPos].trim());
                     pval = Double.parseDouble(f[iPval].trim());
                 } catch (NumberFormatException e) {
-                    continue; // skip malformed lines
+                    continue;
                 }
 
-                // On chromosome change, flush active loci and reset
                 if (!chr.equals(currentChr)) {
                     activeLoci.clear();
                     currentChr = chr;
-                    // Advance nextLocusIdx to first locus on this chromosome
                     while (nextLocusIdx < sorted.size()
                            && sorted.get(nextLocusIdx).chrInt() < Locus.chrToInt(chr)) {
                         nextLocusIdx++;
                     }
                 }
 
-                // Add new loci whose padded windows begin at or before current pos
                 while (nextLocusIdx < sorted.size()) {
                     Locus candidate = sorted.get(nextLocusIdx);
                     if (candidate.chrInt() != Locus.chrToInt(chr)) break;
@@ -79,19 +82,25 @@ public class GwasParser {
                     nextLocusIdx++;
                 }
 
-                // Remove loci whose padded windows ended before current pos
                 activeLoci.removeIf(l -> l.paddedEnd < pos);
-
                 if (activeLoci.isEmpty()) continue;
 
-                // Build SNP object
+                // Build SNP
                 String varid = (iVarid >= 0 && iVarid < f.length) ? f[iVarid].trim() : chr + ":" + pos;
                 String rsid  = (iRsid  >= 0 && iRsid  < f.length) ? f[iRsid].trim()  : "";
                 String id    = (!rsid.isEmpty() && !rsid.equals(".")) ? rsid : varid;
-                String ea    = (iEa  >= 0 && iEa  < f.length) ? f[iEa].trim()  : ".";
-                String nea   = (iNea >= 0 && iNea < f.length) ? f[iNea].trim() : ".";
+                String ea    = (iEa  < f.length) ? f[iEa].trim()  : ".";
+                String nea   = (iNea < f.length) ? f[iNea].trim() : ".";
 
                 Snp snp = new Snp(id, chr, pos, pval, ea, nea);
+
+                // Optional statistic columns
+                if (iBeta >= 0) snp.beta      = parseOptionalDouble(f, iBeta);
+                if (iOr   >= 0) snp.oddsRatio = parseOptionalDouble(f, iOr);
+                if (iSe   >= 0) snp.se        = parseOptionalDouble(f, iSe);
+                if (iN    >= 0) snp.sampleN   = parseOptionalDouble(f, iN);
+                if (iMaf  >= 0) snp.maf       = parseOptionalDouble(f, iMaf);
+                if (iInfo >= 0) snp.infoScore  = parseOptionalDouble(f, iInfo);
 
                 for (Locus locus : activeLoci) {
                     locus.snps.add(snp);
@@ -131,17 +140,51 @@ public class GwasParser {
             oversize > 0 ? " [" + oversize + " loci downsampled]" : "");
     }
 
-    // -----------------------------------------------------------------------
+    // ── Column validation ─────────────────────────────────────────────────
 
-    private static int colIdx(String[] cols, String name) {
+    private static int requireCol(String[] header, String configKey, String colName,
+                                  String description, String available) throws IOException {
+        int idx = colIdx(header, colName);
+        if (idx < 0) {
+            throw new IOException(String.format(
+                "Required GWAS column not found: %s (configured as %s='%s'). " +
+                "Available columns: [%s]", description, configKey, colName, available));
+        }
+        return idx;
+    }
+
+    private static int optionalCol(String[] header, String configKey, String colName,
+                                   String description, String available) throws IOException {
+        if (colName == null || colName.isEmpty()) return -1;
+        int idx = colIdx(header, colName);
+        if (idx < 0) {
+            throw new IOException(String.format(
+                "Optional GWAS column configured but not found in header: %s " +
+                "(configured as %s='%s'). Available columns: [%s]. " +
+                "Remove the mapping or correct the column name.",
+                description, configKey, colName, available));
+        }
+        return idx;
+    }
+
+    static int colIdx(String[] cols, String name) {
         for (int i = 0; i < cols.length; i++) {
             if (cols[i].trim().equalsIgnoreCase(name)) return i;
         }
         return -1;
     }
 
+    private static double parseOptionalDouble(String[] fields, int idx) {
+        if (idx >= fields.length) return Double.NaN;
+        String v = fields[idx].trim();
+        if (v.isEmpty() || v.equals(".") || v.equalsIgnoreCase("NA") || v.equalsIgnoreCase("nan"))
+            return Double.NaN;
+        try { return Double.parseDouble(v); }
+        catch (NumberFormatException e) { return Double.NaN; }
+    }
+
     /** Fast split on tab without regex overhead. */
-    private static String[] splitTab(String line) {
+    static String[] splitTab(String line) {
         int count = 1;
         for (int i = 0; i < line.length(); i++) if (line.charAt(i) == '\t') count++;
         String[] parts = new String[count];

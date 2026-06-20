@@ -1,10 +1,15 @@
 @echo off
 echo === Running LYNXgwas ===
-java -Xmx4g -cp bin Main --config config.properties %*
+
+REM Build classpath with lib dependencies
+set "CP=bin"
+for %%f in (lib\*.jar) do call set "CP=%%CP%%;%%f"
+
+java -Xmx4g -cp "%CP%" Main %*
 if %ERRORLEVEL% neq 0 (
     echo [FAIL] Run failed. See above for errors.
     exit /b 1
 )
 echo.
-echo Opening viewer...
-start output\index.html
+echo Opening home page...
+start http://localhost:8765/

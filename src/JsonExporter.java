@@ -78,6 +78,12 @@ public class JsonExporter {
                 j.kv("r2_with_index", s.r2);   // -1 = no LD data
                 j.kv("ea",           s.ea);
                 j.kv("nea",          s.nea);
+                if (!Double.isNaN(s.beta))      j.kv("beta", s.beta);
+                if (!Double.isNaN(s.oddsRatio)) j.kv("or",   s.oddsRatio);
+                if (!Double.isNaN(s.se))        j.kv("se",   s.se);
+                if (!Double.isNaN(s.sampleN))   j.kv("n",    s.sampleN);
+                if (!Double.isNaN(s.maf))       j.kv("maf",  s.maf);
+                if (!Double.isNaN(s.infoScore))  j.kv("info", s.infoScore);
             })));
 
             j.key("genes");

@@ -581,18 +581,27 @@ public class LocusUpdater {
             if (header == null) return;
 
             String[] cols = header.trim().split("\t");
-            int iChr   = colIdx(cols, config.colChr);
-            int iPos   = colIdx(cols, config.colPos);
-            int iPval  = colIdx(cols, config.colPvalue);
-            int iVarid = config.colVarid.isEmpty() ? -1 : colIdx(cols, config.colVarid);
-            int iRsid  = config.colRsid.isEmpty()  ? -1 : colIdx(cols, config.colRsid);
-            int iEa    = colIdx(cols, config.colEa);
-            int iNea   = colIdx(cols, config.colNea);
+            String avail = String.join(", ", cols);
+
+            int iChr  = GwasParser.colIdx(cols, config.colChr);
+            int iPos  = GwasParser.colIdx(cols, config.colPos);
+            int iPval = GwasParser.colIdx(cols, config.colPvalue);
+            int iEa   = GwasParser.colIdx(cols, config.colEa);
+            int iNea  = GwasParser.colIdx(cols, config.colNea);
+            int iVarid = config.colVarid.isEmpty() ? -1 : GwasParser.colIdx(cols, config.colVarid);
+            int iRsid  = config.colRsid.isEmpty()  ? -1 : GwasParser.colIdx(cols, config.colRsid);
+
+            int iBeta = config.colBeta.isEmpty() ? -1 : GwasParser.colIdx(cols, config.colBeta);
+            int iOr   = config.colOr.isEmpty()   ? -1 : GwasParser.colIdx(cols, config.colOr);
+            int iSe   = config.colSe.isEmpty()   ? -1 : GwasParser.colIdx(cols, config.colSe);
+            int iN    = config.colN.isEmpty()    ? -1 : GwasParser.colIdx(cols, config.colN);
+            int iMaf  = config.colMaf.isEmpty()  ? -1 : GwasParser.colIdx(cols, config.colMaf);
+            int iInfo = config.colInfo.isEmpty() ? -1 : GwasParser.colIdx(cols, config.colInfo);
 
             String line;
             while ((line = br.readLine()) != null) {
                 if (line.isEmpty()) continue;
-                String[] f = splitTab(line);
+                String[] f = GwasParser.splitTab(line);
                 if (f.length <= Math.max(iChr, Math.max(iPos, iPval))) continue;
 
                 String chr = f[iChr].trim();
@@ -610,29 +619,28 @@ public class LocusUpdater {
                 String varid = (iVarid >= 0 && iVarid < f.length) ? f[iVarid].trim() : chr + ":" + pos;
                 String rsid  = (iRsid  >= 0 && iRsid  < f.length) ? f[iRsid].trim()  : "";
                 String id    = (!rsid.isEmpty() && !rsid.equals(".")) ? rsid : varid;
-                String ea    = (iEa  >= 0 && iEa  < f.length) ? f[iEa].trim()  : ".";
-                String nea   = (iNea >= 0 && iNea < f.length) ? f[iNea].trim() : ".";
+                String ea    = (iEa  < f.length) ? f[iEa].trim()  : ".";
+                String nea   = (iNea < f.length) ? f[iNea].trim() : ".";
 
-                locus.snps.add(new Snp(id, chr, pos, pval, ea, nea));
+                Snp snp = new Snp(id, chr, pos, pval, ea, nea);
+                if (iBeta >= 0) snp.beta      = parseOptionalDouble(f, iBeta);
+                if (iOr   >= 0) snp.oddsRatio = parseOptionalDouble(f, iOr);
+                if (iSe   >= 0) snp.se        = parseOptionalDouble(f, iSe);
+                if (iN    >= 0) snp.sampleN   = parseOptionalDouble(f, iN);
+                if (iMaf  >= 0) snp.maf       = parseOptionalDouble(f, iMaf);
+                if (iInfo >= 0) snp.infoScore  = parseOptionalDouble(f, iInfo);
+
+                locus.snps.add(snp);
             }
         }
     }
 
-    private static int colIdx(String[] cols, String name) {
-        for (int i = 0; i < cols.length; i++)
-            if (cols[i].trim().equalsIgnoreCase(name)) return i;
-        return -1;
-    }
-
-    private static String[] splitTab(String line) {
-        int count = 1;
-        for (int i = 0; i < line.length(); i++) if (line.charAt(i) == '\t') count++;
-        String[] parts = new String[count];
-        int start = 0, idx = 0;
-        for (int i = 0; i < line.length(); i++) {
-            if (line.charAt(i) == '\t') { parts[idx++] = line.substring(start, i); start = i + 1; }
-        }
-        parts[idx] = line.substring(start);
-        return parts;
+    private static double parseOptionalDouble(String[] fields, int idx) {
+        if (idx >= fields.length) return Double.NaN;
+        String v = fields[idx].trim();
+        if (v.isEmpty() || v.equals(".") || v.equalsIgnoreCase("NA") || v.equalsIgnoreCase("nan"))
+            return Double.NaN;
+        try { return Double.parseDouble(v); }
+        catch (NumberFormatException e) { return Double.NaN; }
     }
 }
