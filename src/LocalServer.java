@@ -56,6 +56,80 @@ public class LocalServer {
         projectStates.put(projectId, ps);
     }
 
+    private ProjectState ensureProjectState(String projectId, String projectDir) {
+        ProjectState ps = projectStates.get(projectId);
+        if (ps != null && ps.config != null && ps.loci != null) return ps;
+        try {
+            Config cfg = Config.loadFromProject(projectDir);
+            GffParser gff = GffParser.parse(cfg);
+            List<Locus> loci = new ArrayList<>();
+            List<LocusOutput> outputs = new ArrayList<>();
+            // Reconstruct state from manifest + locus JSON files
+            File manifestFile = new File(projectDir, "data/manifest.json");
+            if (manifestFile.exists()) {
+                String mJson = new String(Files.readAllBytes(manifestFile.toPath()), "UTF-8");
+                List<Integer> indices = new ArrayList<>();
+                int lociArr = mJson.indexOf("\"loci\"");
+                if (lociArr >= 0) {
+                    int s = mJson.indexOf('[', lociArr);
+                    int e = mJson.lastIndexOf(']');
+                    if (s >= 0 && e > s) {
+                        String arr = mJson.substring(s + 1, e);
+                        int pos = 0;
+                        while (pos < arr.length()) {
+                            int ik = arr.indexOf("\"index\":", pos);
+                            if (ik < 0) break;
+                            int vs = ik + 8;
+                            while (vs < arr.length() && arr.charAt(vs) == ' ') vs++;
+                            int ve = vs;
+                            while (ve < arr.length() && Character.isDigit(arr.charAt(ve))) ve++;
+                            if (ve > vs) indices.add(Integer.parseInt(arr.substring(vs, ve)));
+                            pos = ve;
+                        }
+                    }
+                }
+                for (int idx : indices) {
+                    File lf = new File(projectDir, "data/locus_" + idx + ".json");
+                    if (!lf.exists()) continue;
+                    String json = new String(Files.readAllBytes(lf.toPath()), "UTF-8");
+                    String chr = extractStr(json, "chr");
+                    String startS = extractStr(json, "start");
+                    String endS = extractStr(json, "end");
+                    String id = extractStr(json, "id");
+                    if (chr == null || startS == null || endS == null) continue;
+                    Locus l = id != null
+                        ? new Locus(id, idx, chr, Long.parseLong(startS), Long.parseLong(endS), cfg.locusPadding)
+                        : new Locus(idx, chr, Long.parseLong(startS), Long.parseLong(endS), cfg.locusPadding);
+                    loci.add(l);
+                    LocusOutput lo = new LocusOutput();
+                    lo.id = l.id; lo.locusIndex = idx; lo.locusName = "Locus " + idx;
+                    lo.chr = chr; lo.start = l.start; lo.end = l.end;
+                    lo.paddedStart = l.paddedStart; lo.paddedEnd = l.paddedEnd;
+                    lo.nearestGenes = extractStringArray(json, "nearest_genes");
+                    lo.genes = gff.overlapping(chr, l.paddedStart, l.paddedEnd);
+                    outputs.add(lo);
+                }
+            }
+            loci.sort(Comparator.comparingInt(Locus::chrInt).thenComparingLong(l -> l.start));
+            outputs.sort(Comparator.comparingInt((LocusOutput o) -> Locus.chrToInt(o.chr))
+                .thenComparingLong(o -> o.start));
+            setProjectState(projectId, cfg, gff, loci, outputs);
+            System.out.printf("[Server] Lazy-loaded project state for '%s': %d loci%n", projectId, loci.size());
+            return projectStates.get(projectId);
+        } catch (Exception e) {
+            System.err.printf("[Server] Failed to lazy-load project '%s': %s%n", projectId, e.getMessage());
+            return null;
+        }
+    }
+
+    private LociMutationService ensureMutationService(ProjectState ps) {
+        if (ps.mutationService == null && ps.config != null && ps.gff != null
+                && ps.loci != null && ps.outputs != null) {
+            ps.mutationService = new LociMutationService(ps.config, ps.gff, ps.loci, ps.outputs);
+        }
+        return ps.mutationService;
+    }
+
     public LocalServer(String outputDir) throws IOException {
         this.outputDir  = outputDir;
         this.lastFolder = outputDir + "/plots";
@@ -309,6 +383,8 @@ public class LocalServer {
 
         if (action.equals("manifest")) {
             serveJson(ex, dataDir + "/manifest.json");
+        } else if (action.equals("genome-skyline")) {
+            serveJson(ex, dataDir + "/genome_skyline.json");
         } else if (action.startsWith("locus/")) {
             String n = action.substring("locus/".length()).replaceAll("\\D", "");
             serveJson(ex, dataDir + "/locus_" + n + ".json");
@@ -337,6 +413,8 @@ public class LocalServer {
             projectSplitLocus(ex, projectId, projectDir);
         } else if (action.equals("validate-split")) {
             projectValidateSplit(ex, projectId, projectDir);
+        } else if (action.equals("delete-locus")) {
+            projectDeleteLocus(ex, projectId, projectDir);
         } else if (action.equals("merge-loci")) {
             projectMergeLoci(ex, projectId, projectDir);
         } else if (action.equals("undo-mutation")) {
@@ -506,7 +584,7 @@ public class LocalServer {
         if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) {
             respond(ex, 405, "text/plain", "Method Not Allowed".getBytes()); return;
         }
-        ProjectState ps = projectStates.get(projectId);
+        ProjectState ps = ensureProjectState(projectId, projectDir);
         if (ps == null || ps.config == null || ps.gff == null || ps.loci == null) {
             respond(ex, 503, "application/json",
                 "{\"error\":\"Pipeline state not available. Process the project first.\"}".getBytes());
@@ -538,7 +616,7 @@ public class LocalServer {
         if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) {
             respond(ex, 405, "text/plain", "Method Not Allowed".getBytes()); return;
         }
-        ProjectState ps = projectStates.get(projectId);
+        ProjectState ps = ensureProjectState(projectId, projectDir);
         if (ps == null || ps.config == null || ps.gff == null || ps.loci == null || ps.outputs == null) {
             respond(ex, 503, "application/json",
                 "{\"error\":\"Pipeline state not available\"}".getBytes()); return;
@@ -570,7 +648,7 @@ public class LocalServer {
         if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) {
             respond(ex, 405, "text/plain", "Method Not Allowed".getBytes()); return;
         }
-        ProjectState ps = projectStates.get(projectId);
+        ProjectState ps = ensureProjectState(projectId, projectDir);
         if (ps == null || ps.config == null || ps.gff == null || ps.loci == null || ps.outputs == null) {
             respond(ex, 503, "application/json",
                 "{\"error\":\"Pipeline state not available. Process the project first.\"}".getBytes());
@@ -604,7 +682,7 @@ public class LocalServer {
         if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) {
             respond(ex, 405, "text/plain", "Method Not Allowed".getBytes()); return;
         }
-        ProjectState ps = projectStates.get(projectId);
+        ProjectState ps = ensureProjectState(projectId, projectDir);
         if (ps == null || ps.config == null || ps.loci == null) {
             respond(ex, 503, "application/json",
                 "{\"error\":\"Pipeline state not available\"}".getBytes()); return;
@@ -643,14 +721,52 @@ public class LocalServer {
         respond(ex, 200, "application/json", json.toString().getBytes());
     }
 
+    // POST /api/project/{id}/delete-locus
+    private void projectDeleteLocus(HttpExchange ex, String projectId,
+                                    String projectDir) throws IOException {
+        if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) {
+            respond(ex, 405, "text/plain", "Method Not Allowed".getBytes()); return;
+        }
+        ProjectState ps = ensureProjectState(projectId, projectDir);
+        if (ps == null) {
+            respond(ex, 503, "application/json",
+                "{\"error\":\"Pipeline state not available. Process the project first.\"}".getBytes()); return;
+        }
+        LociMutationService ms = ensureMutationService(ps);
+        if (ms == null) {
+            respond(ex, 503, "application/json",
+                "{\"error\":\"Pipeline state not available\"}".getBytes()); return;
+        }
+        String body = new String(readAll(ex.getRequestBody()), "UTF-8");
+        String idxStr = extractStr(body, "locus_index");
+        if (idxStr == null || idxStr.isEmpty()) {
+            respond(ex, 400, "application/json",
+                "{\"error\":\"locus_index required\"}".getBytes()); return;
+        }
+        int locusIndex = Integer.parseInt(idxStr);
+
+        LociMutationService.MutationResult mr = ms.delete(locusIndex);
+        if (mr.ok) {
+            respond(ex, 200, "application/json", mr.manifestJson.getBytes("UTF-8"));
+        } else {
+            respond(ex, 500, "application/json",
+                ("{\"error\":\"" + escJ(mr.error) + "\"}").getBytes());
+        }
+    }
+
     // POST /api/project/{id}/merge-loci
     private void projectMergeLoci(HttpExchange ex, String projectId,
                                   String projectDir) throws IOException {
         if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) {
             respond(ex, 405, "text/plain", "Method Not Allowed".getBytes()); return;
         }
-        ProjectState ps = projectStates.get(projectId);
-        if (ps == null || ps.mutationService == null) {
+        ProjectState ps = ensureProjectState(projectId, projectDir);
+        if (ps == null) {
+            respond(ex, 503, "application/json",
+                "{\"error\":\"Pipeline state not available. Process the project first.\"}".getBytes()); return;
+        }
+        LociMutationService ms = ensureMutationService(ps);
+        if (ms == null) {
             respond(ex, 503, "application/json",
                 "{\"error\":\"Pipeline state not available\"}".getBytes()); return;
         }
@@ -675,7 +791,7 @@ public class LocalServer {
         }
         String mergedName = extractStr(body, "merged_name");
 
-        LociMutationService.MutationResult mr = ps.mutationService.merge(indices, mergedName);
+        LociMutationService.MutationResult mr = ms.merge(indices, mergedName);
         if (mr.ok) {
             respond(ex, 200, "application/json", mr.manifestJson.getBytes("UTF-8"));
         } else {
@@ -690,13 +806,18 @@ public class LocalServer {
         if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) {
             respond(ex, 405, "text/plain", "Method Not Allowed".getBytes()); return;
         }
-        ProjectState ps = projectStates.get(projectId);
-        if (ps == null || ps.mutationService == null) {
+        ProjectState ps = ensureProjectState(projectId, projectDir);
+        if (ps == null) {
+            respond(ex, 503, "application/json",
+                "{\"error\":\"Pipeline state not available. Process the project first.\"}".getBytes()); return;
+        }
+        LociMutationService ms = ensureMutationService(ps);
+        if (ms == null) {
             respond(ex, 503, "application/json",
                 "{\"error\":\"Pipeline state not available\"}".getBytes()); return;
         }
 
-        LociMutationService.MutationResult mr = ps.mutationService.undo();
+        LociMutationService.MutationResult mr = ms.undo();
         if (mr.ok) {
             String json = "{\"ok\":true,\"manifest\":" + mr.manifestJson + "}";
             respond(ex, 200, "application/json", json.getBytes("UTF-8"));
@@ -1347,6 +1468,25 @@ public class LocalServer {
         int end = i;
         while (end < json.length() && ",}]".indexOf(json.charAt(end)) < 0) end++;
         return json.substring(i, end).trim();
+    }
+
+    private static List<String> extractStringArray(String json, String key) {
+        List<String> result = new ArrayList<>();
+        String marker = "\"" + key + "\":";
+        int i = json.indexOf(marker);
+        if (i < 0) return result;
+        i += marker.length();
+        while (i < json.length() && json.charAt(i) != '[') i++;
+        if (i >= json.length()) return result;
+        int end = json.indexOf(']', i);
+        if (end < 0) return result;
+        String arrContent = json.substring(i + 1, end);
+        for (String part : arrContent.split(",")) {
+            part = part.trim();
+            if (part.startsWith("\"") && part.endsWith("\""))
+                result.add(part.substring(1, part.length() - 1));
+        }
+        return result;
     }
 
     private static String extractJsonString(String json, String key) {

@@ -287,9 +287,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 #sidebar-list::-webkit-scrollbar-track{background:transparent}
 #sidebar-list::-webkit-scrollbar-thumb{background:#3d3f5c;border-radius:3px}
 
-.sidebar-row{position:absolute;left:0;right:0;padding:6px 12px;cursor:pointer;
+.sidebar-row{position:absolute;left:0;right:0;padding:10px 12px;cursor:pointer;
   border-bottom:1px solid rgba(255,255,255,0.04);display:flex;flex-direction:column;
-  gap:1px;transition:background 0.1s;border-left:3px solid transparent}
+  gap:3px;transition:background 0.1s;border-left:3px solid transparent}
 .sidebar-row:hover{filter:brightness(1.15)}
 .sidebar-row.selected{border-left-color:#7c3aed;background:rgba(124,58,237,0.18)!important}
 .sr-idx{font-size:10px;font-weight:600;color:#c4b5fd;letter-spacing:0.3px}
@@ -809,43 +809,50 @@ async function init() {
 async function renderViewport(animate) {
   const container = document.getElementById('panels-container');
 
-  if (animate) {
+  // Clamp currentStart
+  currentStart = Math.max(0, Math.min(currentStart, lociOrder.length - 1));
+  const idx = lociOrder[currentStart];
+
+  // Skip animation if data is already cached for instant feel
+  const isCached = locusCache.has(idx);
+  const doAnimate = animate && !isCached;
+
+  if (doAnimate) {
     container.classList.add('transitioning');
-    await new Promise(r => setTimeout(r, 200));
+    await new Promise(r => setTimeout(r, 120));
   }
 
-  // Teardown: clear canvas contexts and unbind D3 handlers to prevent leaks
-  container.querySelectorAll('canvas').forEach(c => {
-    const ctx = c.getContext('2d');
-    if (ctx) ctx.clearRect(0, 0, c.width, c.height);
-  });
+  // Teardown: unbind D3 handlers to prevent leaks
   d3.select(container).selectAll('*').on('.', null);
   container.innerHTML = '';
 
-  // Clamp currentStart
-  currentStart = Math.max(0, Math.min(currentStart, lociOrder.length - 1));
-
-  const idx = lociOrder[currentStart];
   const entry = manifest.loci.find(l => l.index === idx);
   const panel = makePanelShell(entry || {index: idx, locus_name:'Locus '+idx, chr:'?', start:0, end:0});
   container.appendChild(panel);
-  loadLocus(idx).then(data => { if (data) fillPanel(data, panel); });
+
+  if (isCached) {
+    fillPanel(locusCache.get(idx), panel);
+  } else {
+    loadLocus(idx).then(data => { if (data) fillPanel(data, panel); });
+  }
 
   updateNavUI();
   updateSkylineHighlights();
   syncSidebarSelection();
 
-  if (animate) {
+  if (doAnimate) {
     container.classList.remove('transitioning');
   }
 
   // Preload neighbors for fast stepping
-  if (currentStart + 1 < lociOrder.length) preload(lociOrder[currentStart + 1]);
-  if (currentStart > 0) preload(lociOrder[currentStart - 1]);
+  for (let d = 1; d <= 2; d++) {
+    if (currentStart + d < lociOrder.length) preload(lociOrder[currentStart + d]);
+    if (currentStart - d >= 0) preload(lociOrder[currentStart - d]);
+  }
 }
 
 function preload(idx) {
-  if (idx >= 1 && idx <= manifest.total_loci && !locusCache.has(idx)) {
+  if (idx >= 1 && !locusCache.has(idx)) {
     loadLocus(idx); // fire-and-forget
   }
 }
@@ -858,12 +865,16 @@ function makePanelShell(entry) {
     <div class="locus-header">
       <div class="lh-title">${entry.locus_name}  —  Chr${entry.chr}:${fmtN(entry.start)}–${fmtN(entry.end)}</div>
       <div class="lh-ops">
+        <button class="lh-op-btn lh-delete-btn" data-idx="${entry.index}" title="Delete this locus" style="border-color:rgba(239,68,68,0.5);color:#fca5a5">Delete</button>
         <button class="lh-op-btn lh-split-btn" data-idx="${entry.index}" title="Split this locus">Split</button>
       </div>
       <div class="lh-genes"></div>
       <div class="lh-top">Loading…</div>
     </div>
     <div class="plot-loading">Loading data…</div>`;
+  d.querySelector('.lh-delete-btn').addEventListener('click', () => {
+    deleteLocus(entry.index, entry.locus_name || 'Locus ' + entry.index);
+  });
   d.querySelector('.lh-split-btn').addEventListener('click', () => {
     const data = locusCache.get(entry.index);
     if (data) showSplitDialog(data);
@@ -2733,10 +2744,16 @@ const SKY_H = 130, SKY_ML = 40, SKY_MR = 16, SKY_MT = 6, SKY_MB = 18;
 let _skyData = null, _skyRendered = false;
 
 async function loadSkyline() {
-  try {
-    const res = await fetchWithTimeout(`${SERVER}/data/genome_skyline.json`, 2000);
-    if (res.ok) { _skyData = await res.json(); return; }
-  } catch(e) {}
+  // Try project-scoped endpoint first, then legacy global path
+  const urls = PROJECT_API
+    ? [`${PROJECT_API}/genome-skyline`, `${SERVER}/data/genome_skyline.json`]
+    : [`${SERVER}/data/genome_skyline.json`];
+  for (const url of urls) {
+    try {
+      const res = await fetchWithTimeout(url, 2000);
+      if (res.ok) { _skyData = await res.json(); return; }
+    } catch(e) {}
+  }
   try {
     await loadScript(`${DATA_DIR}/genome_skyline.js`);
     if (window.GENOME_SKYLINE) _skyData = window.GENOME_SKYLINE;
@@ -2814,7 +2831,14 @@ function renderSkyline() {
   const binSize = genomeLen / sd.bin_count;
   const gwSig = -Math.log10(5e-8);
   const yMax = Math.min(50, Math.max(gwSig + 3, d3.max(sd.bins, d => d[1]) + 1));
-  const ySc = d3.scaleLinear().domain([0, yMax]).range([SKY_MT + plotH, SKY_MT]);
+  // Split y-scale: 0–gwSig gets bottom 50%, gwSig–yMax gets top 50%
+  // Both halves are linear but independently scaled
+  const yMid = SKY_MT + plotH * 0.5;
+  const yBot = SKY_MT + plotH;
+  function ySc(v) {
+    if (v <= gwSig) return yBot - (v / gwSig) * (yBot - yMid);
+    return yMid - ((v - gwSig) / (yMax - gwSig)) * (yMid - SKY_MT);
+  }
 
   // Alternating chromosome density colors: dark green / blue
   const chrDensityColors = ['#166534', '#1e40af'];
@@ -2832,22 +2856,34 @@ function renderSkyline() {
     if (c.pw < 8) return;
     svg.append('text')
       .attr('x', c.px + c.pw / 2).attr('y', SKY_MT + plotH + 13)
-      .attr('text-anchor', 'middle').attr('font-size', c.active ? '10px' : '8px')
-      .attr('fill', c.active ? '#1e293b' : '#94a3b8')
-      .attr('font-weight', c.active ? '700' : '500')
+      .attr('text-anchor', 'middle').attr('font-size', c.active ? '10px' : '9px')
+      .attr('fill', c.active ? '#1e293b' : '#64748b')
+      .attr('font-weight', '700')
       .text(c.chr);
   });
 
-  // Significance line
+  // Suggestive significance line (5×10⁻⁵)
+  const sugSig = -Math.log10(5e-5);
+  svg.append('line')
+    .attr('x1', SKY_ML).attr('x2', SKY_ML + plotW)
+    .attr('y1', ySc(sugSig)).attr('y2', ySc(sugSig))
+    .attr('stroke', '#22c55e').attr('stroke-width', 1)
+    .attr('stroke-dasharray', '4,3').attr('opacity', 0.7);
+  svg.append('text')
+    .attr('x', SKY_ML - 3).attr('y', ySc(sugSig) + 3)
+    .attr('text-anchor', 'end').attr('font-size', '8px').attr('fill', '#22c55e')
+    .text('5×10⁻⁵');
+
+  // Genome-wide significance line (5×10⁻⁸)
   svg.append('line')
     .attr('x1', SKY_ML).attr('x2', SKY_ML + plotW)
     .attr('y1', ySc(gwSig)).attr('y2', ySc(gwSig))
-    .attr('stroke', '#dc2626').attr('stroke-width', 1)
-    .attr('stroke-dasharray', '6,3').attr('opacity', 0.7);
+    .attr('stroke', '#dc2626').attr('stroke-width', 1.5)
+    .attr('stroke-dasharray', '6,3').attr('opacity', 0.8);
   svg.append('text')
     .attr('x', SKY_ML - 3).attr('y', ySc(gwSig) + 3)
-    .attr('text-anchor', 'end').attr('font-size', '8px').attr('fill', '#dc2626')
-    .text('5e-8');
+    .attr('text-anchor', 'end').attr('font-size', '8px').attr('font-weight', '700').attr('fill', '#dc2626')
+    .text('5×10⁻⁸');
 
   // Y-axis
   svg.append('text')
@@ -2855,7 +2891,9 @@ function renderSkyline() {
     .attr('x', -(SKY_MT + plotH / 2)).attr('y', 11)
     .attr('text-anchor', 'middle').attr('font-size', '9px').attr('fill', '#64748b')
     .text('-log₁₀(P)');
-  ySc.ticks(4).forEach(t => {
+  // Manual ticks for split scale
+  const yTicks = [0, 2, 4, 6, Math.round(gwSig), 10, 20, 30, 40, 50].filter(t => t <= yMax);
+  yTicks.forEach(t => {
     svg.append('line')
       .attr('x1', SKY_ML - 3).attr('x2', SKY_ML)
       .attr('y1', ySc(t)).attr('y2', ySc(t))
@@ -3132,6 +3170,42 @@ function showCreateLocusDialog(chr, start, end, defaultName) {
       btn.textContent = 'Create Locus'; btn.disabled = false; btn.style.opacity = '';
     }
   };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Delete locus
+// ═══════════════════════════════════════════════════════════════
+async function deleteLocus(locusIndex, locusName) {
+  if (!confirm(`Delete "${locusName}"?\n\nThis removes the locus from the project. You can undo this action.`)) return;
+  const btn = document.querySelector(`.lh-delete-btn[data-idx="${locusIndex}"]`);
+  if (btn) { btn.textContent = 'Deleting…'; btn.disabled = true; btn.style.opacity = '0.6'; }
+  showToast('Deleting ' + locusName + '…', 10000);
+  try {
+    const res = await fetch(PROJECT_API + '/delete-locus', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ locus_index: locusIndex })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({error:'Server error'}));
+      alert('Delete failed: ' + (err.error || 'Unknown error'));
+      if (btn) { btn.textContent = 'Delete'; btn.disabled = false; btn.style.opacity = ''; }
+      return;
+    }
+    const result = await res.json();
+    if (result.manifest) manifest = result.manifest;
+    else if (result.total_loci) manifest = result;
+    rebuildLociOrder();
+    locusCache.delete(locusIndex);
+    if (currentStart >= lociOrder.length) currentStart = Math.max(0, lociOrder.length - 1);
+    refreshSidebarAfterMutation();
+    document.getElementById('undo-btn').style.display = '';
+    renderViewport(true);
+    showToast(`"${locusName}" deleted successfully`, 4000);
+  } catch(e) {
+    alert('Delete failed: ' + e.message);
+    if (btn) { btn.textContent = 'Delete'; btn.disabled = false; btn.style.opacity = ''; }
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -3715,12 +3789,13 @@ function setupSidebar() {
   sidebarPinned = localStorage.getItem('lynx_sidebar_pinned') !== 'false';
   sidebarCollapsed = localStorage.getItem('lynx_sidebar_collapsed') === 'true';
 
-  const ROW_H = 52;
+  const ROW_H = 68;
   sidebarVList = VirtualList(listEl, ROW_H);
   sidebarVList.setItems(manifest.loci);
   countEl.textContent = `(${manifest.loci.length})`;
 
   sidebarVList.onClick((entry) => {
+    if (!locusCache.has(entry.index)) loadLocus(entry.index);
     const pos = lociOrder.indexOf(entry.index);
     if (pos >= 0) { currentStart = pos; renderViewport(true); }
   });

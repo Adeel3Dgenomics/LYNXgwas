@@ -102,6 +102,41 @@ public class LociMutationService {
         return mr;
     }
 
+    public synchronized MutationResult delete(int locusIndex) {
+        MutationResult mr = new MutationResult();
+        mr.mutationId = UUID.randomUUID().toString();
+        mr.mutationType = "delete";
+        try {
+            Locus target = findByIndex(locusIndex);
+            if (target == null) { mr.error = "Locus " + locusIndex + " not found"; return mr; }
+
+            snapshotForUndo(mr.mutationId, "delete", allIndices());
+
+            String retiredId = target.id;
+            mr.retiredToNewIds.put(retiredId, Collections.emptyList());
+            mr.affectedIds.add(retiredId);
+
+            loci.removeIf(l -> l.index == locusIndex);
+            outputs.removeIf(o -> o.locusIndex == locusIndex);
+
+            String dataDir = config.outputDir + "/data";
+            new File(dataDir + "/locus_" + locusIndex + ".json").delete();
+            new File(dataDir + "/locus_" + locusIndex + ".js").delete();
+
+            reExportManifest();
+            mr.ok = true;
+            mr.manifestJson = readManifestJson();
+            addJournalEntry(mr);
+
+            System.out.printf("[LociMutationService] Deleted locus %d (id=%s)%n", locusIndex, retiredId);
+
+        } catch (Exception e) {
+            mr.error = e.getMessage();
+            e.printStackTrace();
+        }
+        return mr;
+    }
+
     public synchronized MutationResult merge(List<Integer> locusIndices, String mergedName) {
         MutationResult mr = new MutationResult();
         mr.mutationId = UUID.randomUUID().toString();
