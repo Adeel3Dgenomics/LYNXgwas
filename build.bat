@@ -23,6 +23,23 @@ javac -d bin -cp "bin%LIBCP%" ^
   src\rsid\RsidPipeline.java ^
   src\loci\LociIdentifier.java ^
   src\loci\LociProgress.java ^
+  src\analysis\ContentHasher.java ^
+  src\analysis\StepManifest.java ^
+  src\analysis\LocusGwasExtractor.java ^
+  src\analysis\SnpMatcher.java ^
+  src\analysis\AlleleHarmonizer.java ^
+  src\analysis\LdMatrixComputer.java ^
+  src\analysis\LdGwasDiagnostic.java ^
+  src\analysis\StableSnpId.java ^
+  src\analysis\InputContractWriter.java ^
+  src\analysis\OutputContractValidator.java ^
+  src\analysis\ToolDescriptor.java ^
+  src\analysis\PluginEngine.java ^
+  src\analysis\CojoAdapter.java ^
+  src\analysis\SusieAdapter.java ^
+  src\analysis\FinemapAdapter.java ^
+  src\analysis\AnalysisColumnProvider.java ^
+  src\analysis\BaseStepPipeline.java ^
   src\export\ColumnSpec.java ^
   src\export\SnpContext.java ^
   src\export\LocusContext.java ^

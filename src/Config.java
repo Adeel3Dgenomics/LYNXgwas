@@ -37,6 +37,15 @@ public class Config {
     public double splitLdThreshold  = 0.2;
     public long   splitMinDistBp    = 250000;
 
+    // Dataset metadata for analysis tools
+    public int    sampleN           = 0;
+    public int    nCases            = 0;
+    public int    nControls         = 0;
+    public String traitType         = "";     // "quantitative" or "binary"
+    public String effectType        = "";     // "beta", "OR", "logOR"
+    public String genomeBuild       = "GRCh37";
+    public String ancestry          = "";
+
     /**
      * Load config from a project directory's config.properties.
      * Output is directed into the project directory itself.
@@ -123,6 +132,15 @@ public class Config {
         splitLdThreshold   = Double.parseDouble(p.getProperty("split.ld.threshold", String.valueOf(splitLdThreshold)));
         splitMinDistBp     = Long.parseLong(p.getProperty("split.min.distance.bp", String.valueOf(splitMinDistBp)));
 
+        // Dataset metadata for analysis tools
+        sampleN            = Integer.parseInt(p.getProperty("sample.n", String.valueOf(sampleN)));
+        nCases             = Integer.parseInt(p.getProperty("n.cases", String.valueOf(nCases)));
+        nControls          = Integer.parseInt(p.getProperty("n.controls", String.valueOf(nControls)));
+        traitType          = p.getProperty("trait.type", traitType);
+        effectType         = p.getProperty("effect.type", effectType);
+        genomeBuild        = p.getProperty("genome.build", genomeBuild);
+        ancestry           = p.getProperty("ancestry", ancestry.isEmpty() ? refPanelPopulation : ancestry);
+
         // Auto-enable LD if ref.panel.path is set and ld.enabled not explicitly false
         if (!refPanelPath.isEmpty() && !p.containsKey("ld.enabled")) ldEnabled = true;
     }
@@ -172,6 +190,13 @@ public class Config {
         j.append(String.format(",\"max.snps.per.locus\":%d", maxSnpsPerLocus));
         j.append(String.format(",\"split.ld.threshold\":%.4f", splitLdThreshold));
         j.append(String.format(",\"split.min.distance.bp\":%d", splitMinDistBp));
+        j.append(String.format(",\"sample.n\":%d", sampleN));
+        j.append(String.format(",\"n.cases\":%d", nCases));
+        j.append(String.format(",\"n.controls\":%d", nControls));
+        kv(j, "trait.type", traitType, false);
+        kv(j, "effect.type", effectType, false);
+        kv(j, "genome.build", genomeBuild, false);
+        kv(j, "ancestry", ancestry, false);
         j.append('}');
         return j.toString();
     }
@@ -235,6 +260,15 @@ public class Config {
             pw.println("# Performance");
             pw.println("threads=" + threads);
             pw.println("max.snps.per.locus=" + maxSnpsPerLocus);
+            pw.println();
+            pw.println("# Dataset metadata (for analysis tools)");
+            pw.println("sample.n=" + sampleN);
+            pw.println("n.cases=" + nCases);
+            pw.println("n.controls=" + nControls);
+            pw.println("trait.type=" + traitType);
+            pw.println("effect.type=" + effectType);
+            pw.println("genome.build=" + genomeBuild);
+            pw.println("ancestry=" + ancestry);
         }
     }
 
@@ -280,6 +314,18 @@ public class Config {
         if (!v.isEmpty()) splitLdThreshold = Double.parseDouble(v);
         v = jsonStr(json, "split.min.distance.bp", "");
         if (!v.isEmpty()) splitMinDistBp = Long.parseLong(v);
+
+        // Dataset metadata
+        v = jsonStr(json, "sample.n", "");
+        if (!v.isEmpty()) sampleN = Integer.parseInt(v);
+        v = jsonStr(json, "n.cases", "");
+        if (!v.isEmpty()) nCases = Integer.parseInt(v);
+        v = jsonStr(json, "n.controls", "");
+        if (!v.isEmpty()) nControls = Integer.parseInt(v);
+        traitType          = jsonStr(json, "trait.type",   traitType);
+        effectType         = jsonStr(json, "effect.type",  effectType);
+        genomeBuild        = jsonStr(json, "genome.build", genomeBuild);
+        ancestry           = jsonStr(json, "ancestry",     ancestry);
 
         if (!refPanelPath.isEmpty() && !ldEnabled) ldEnabled = true;
     }

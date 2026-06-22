@@ -1,0 +1,14 @@
+tool: finemap
+version: "1.0"
+label: "FINEMAP (ABF)"
+description: "Approximate Bayes Factor fine-mapping with LD-aware posterior inclusion probabilities. Uses pre-computed LD r matrix. Requires R packages: data.table."
+language: R
+command: "source('{run_dir}/run_finemap.R')"
+requires: [harmonized_gwas, ld_r]
+params:
+  - {name: sample_n, type: int, default: "0", label: "Sample size (N)", description: "Required. Total sample size."}
+  - {name: max_causal, type: int, default: "5", label: "Max causal SNPs"}
+output_mapping:
+  - {raw: finemap_pip, as: finemap_pip, scope: per_snp, type: double}
+  - {raw: finemap_log10bf, as: finemap_log10bf, scope: per_snp, type: double}
+  - {raw: finemap_cs, as: finemap_cs, scope: per_credible_set, type: int}

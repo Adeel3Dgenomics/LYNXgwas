@@ -1,0 +1,17 @@
+tool: gwama_meta
+version: "1.0"
+label: "GWAMA Meta-Analysis"
+description: "Genome-wide association meta-analysis using fixed or random effects models."
+language: binary
+command: "{gwama_path} -i {run_dir}/gwama_input.txt -o {run_dir}/gwama_result -qt --genomic_control --indel_alleles"
+requires: [harmonized_gwas]
+params:
+  - {name: gwama_path, type: string, default: "GWAMA", label: "GWAMA binary path"}
+  - {name: model, type: select, default: "fixed", label: "Meta-analysis model", options: ["fixed", "random"]}
+  - {name: genomic_control, type: boolean, default: "true", label: "Genomic control"}
+output_mapping:
+  - {raw: beta, as: gwama_beta, scope: per_snp, type: double}
+  - {raw: se, as: gwama_se, scope: per_snp, type: double}
+  - {raw: "p-value", as: gwama_p, scope: per_snp, type: double}
+  - {raw: direction, as: gwama_direction, scope: per_snp, type: string}
+  - {raw: i2, as: gwama_i2, scope: per_snp, type: double}

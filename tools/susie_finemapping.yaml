@@ -1,0 +1,17 @@
+tool: susie_finemapping
+version: "1.0"
+label: "SuSiE Fine-Mapping"
+description: "Sum of Single Effects model for Bayesian fine-mapping. Uses bigsnpr for LD computation from genotypes. Requires R packages: susieR, bigsnpr, data.table, Matrix."
+language: R
+command: "source('{run_dir}/susie_run.R')"
+requires: [harmonized_gwas, matched_ref]
+params:
+  - {name: sample_n, type: int, default: "0", label: "Sample size (N)", description: "Required. Total sample size."}
+  - {name: max_causal, type: int, default: "10", label: "Max causal SNPs (L)"}
+  - {name: coverage, type: float, default: "0.95", label: "Credible set coverage"}
+  - {name: ld_shrink, type: float, default: "0.1", label: "LD shrinkage (lambda)", description: "Ledoit-Wolf shrinkage toward identity. 0=none, 0.1=default."}
+  - {name: window_kb, type: int, default: "250", label: "Window (kb)", description: "Window around lead SNP in kb."}
+output_mapping:
+  - {raw: susie_pip, as: susie_pip, scope: per_snp, type: double}
+  - {raw: susie_cs, as: susie_cs, scope: per_credible_set, type: int}
+  - {raw: susie_cs_coverage, as: susie_cs_coverage, scope: per_credible_set, type: double}

@@ -593,6 +593,82 @@ let showLd     = true;
 let showLdTri  = true;
 let pdfCancelled = false;
 
+// ── Analysis results overlay state ──
+let analysisOverlay = null; // { column, data: Map<snpKey, value>, min, max, method, selectedSnps }
+
+function applyAnalysisOverlay(resultRows, column, method) {
+  const data = new Map();
+  let min = Infinity, max = -Infinity;
+  const selectedSnps = new Set();
+
+  resultRows.forEach(row => {
+    const id = row.snp_id;
+    const val = parseFloat(row[column]);
+    if (id && !isNaN(val)) {
+      data.set(id, val);
+      if (val < min) min = val;
+      if (val > max) max = val;
+    }
+    // Track COJO-selected or credible set SNPs
+    if (row.cojo_selected === 'TRUE' || row.cojo_selected === 'true') selectedSnps.add(id);
+    if (row.susie_cs && row.susie_cs !== 'NA') selectedSnps.add(id);
+    if (row.finemap_cs && row.finemap_cs !== 'NA') selectedSnps.add(id);
+  });
+
+  analysisOverlay = { column, data, min, max, method, selectedSnps };
+  renderViewport(false);
+}
+
+function clearAnalysisOverlay() {
+  analysisOverlay = null;
+  renderViewport(false);
+}
+
+function getAnalysisColor(snpId, snpPos) {
+  if (!analysisOverlay) return null;
+  // Try matching by ID directly, or by position-based key
+  let val = analysisOverlay.data.get(snpId);
+  if (val === undefined) {
+    // Try matching by iterating (fallback for rsID vs stable ID mismatch)
+    for (const [k, v] of analysisOverlay.data) {
+      if (k === snpId || k.includes(':' + snpPos + ':')) { val = v; break; }
+    }
+  }
+  if (val === undefined) return null;
+
+  const { min, max, column } = analysisOverlay;
+  // PIP columns: 0-1 scale, green gradient
+  if (column.includes('pip') || column.includes('PIP')) {
+    const t = Math.max(0, Math.min(1, val));
+    if (t > 0.9) return '#d73027';
+    if (t > 0.5) return '#fc8d59';
+    if (t > 0.1) return '#fee08b';
+    return '#d9ef8b';
+  }
+  // P-value columns: -log10 scale, red gradient
+  if (column.includes('_p') || column.includes('_P')) {
+    const nlp = val > 0 && val <= 1 ? -Math.log10(val) : val;
+    if (nlp > 7.3) return '#d73027';
+    if (nlp > 5) return '#fc8d59';
+    if (nlp > 3) return '#fee08b';
+    return '#91bfdb';
+  }
+  // Boolean/selected: binary
+  if (column.includes('selected')) {
+    return val ? '#d73027' : null;
+  }
+  // Generic numeric: blue-red gradient
+  const range = max - min || 1;
+  const t = (val - min) / range;
+  const r = Math.round(55 + 200 * t), b = Math.round(255 - 200 * t);
+  return `rgb(${r},80,${b})`;
+}
+
+function isAnalysisSelected(snpId) {
+  if (!analysisOverlay) return false;
+  return analysisOverlay.selectedSnps.has(snpId);
+}
+
 // Handle r2 field name change (old JSON: "r2", new JSON: "r2_with_index")
 function snpR2(s) {
   const v = s.r2_with_index !== undefined ? s.r2_with_index : s.r2;
@@ -865,6 +941,7 @@ function makePanelShell(entry) {
     <div class="locus-header">
       <div class="lh-title">${entry.locus_name}  —  Chr${entry.chr}:${fmtN(entry.start)}–${fmtN(entry.end)}</div>
       <div class="lh-ops">
+        <button class="lh-op-btn lh-analyze-btn" data-idx="${entry.index}" title="Run analysis on this locus" style="border-color:rgba(34,197,94,0.5);color:#86efac">Analyze</button>
         <button class="lh-op-btn lh-delete-btn" data-idx="${entry.index}" title="Delete this locus" style="border-color:rgba(239,68,68,0.5);color:#fca5a5">Delete</button>
         <button class="lh-op-btn lh-split-btn" data-idx="${entry.index}" title="Split this locus">Split</button>
       </div>
@@ -872,6 +949,9 @@ function makePanelShell(entry) {
       <div class="lh-top">Loading…</div>
     </div>
     <div class="plot-loading">Loading data…</div>`;
+  d.querySelector('.lh-analyze-btn').addEventListener('click', () => {
+    showAnalysisDialog(entry);
+  });
   d.querySelector('.lh-delete-btn').addEventListener('click', () => {
     deleteLocus(entry.index, entry.locus_name || 'Locus ' + entry.index);
   });
@@ -1475,8 +1555,11 @@ function renderManhattan(g, data, xScale, yScale) {
     .join('circle')
     .attr('class', s => 'snp-circle' + (isExonic(s.pos, _exons) ? ' snp-exonic' : ''))
     .attr('cx', s => xScale(s.pos)).attr('cy', s => yScale(s.neg_log10_p))
-    .attr('r', 3.5).attr('fill', s => ldColor(snpR2(s)))
-    .attr('stroke','#fff').attr('stroke-width',.4).attr('opacity',.92)
+    .attr('r', s => isAnalysisSelected(s.id) ? 6 : 3.5)
+    .attr('fill', s => getAnalysisColor(s.id, s.pos) || ldColor(snpR2(s)))
+    .attr('stroke', s => isAnalysisSelected(s.id) ? '#000' : '#fff')
+    .attr('stroke-width', s => isAnalysisSelected(s.id) ? 1.5 : .4)
+    .attr('opacity',.92)
     .on('mouseover',(ev,s) => showTip(tip,ev,s))
     .on('mousemove',(ev)   => moveTip(tip,ev))
     .on('mouseout', ()     => hideTip(tip));
@@ -3170,6 +3253,292 @@ function showCreateLocusDialog(chr, start, end, defaultName) {
       btn.textContent = 'Create Locus'; btn.disabled = false; btn.style.opacity = '';
     }
   };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Analysis dialog — tool picker + auto-generated form + job runner
+// ═══════════════════════════════════════════════════════════════
+async function showAnalysisDialog(entry) {
+  const prev = document.getElementById('analysis-dialog');
+  if (prev) prev.remove();
+
+  // Fetch available tools
+  let tools = [];
+  try {
+    const res = await fetch(PROJECT_API + '/analysis/tools');
+    if (res.ok) { const d = await res.json(); tools = d.tools || []; }
+  } catch(e) {}
+
+  const dlg = document.createElement('div');
+  dlg.id = 'analysis-dialog';
+  dlg.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;' +
+    'background:rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;z-index:9999';
+
+  const box = document.createElement('div');
+  box.style.cssText = 'background:#fff;border-radius:12px;padding:24px 28px;width:560px;max-height:90vh;' +
+    'overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,0.2);font-family:system-ui,sans-serif';
+
+  const locusId = entry.id || '';
+  const locusName = entry.locus_name || ('Locus ' + entry.index);
+
+  let html = '<h3 style="margin:0 0 4px;font-size:16px;color:#1e293b">Analyze ' + locusName + '</h3>' +
+    '<p style="margin:0 0 16px;font-size:12px;color:#64748b">Select a tool and configure parameters.</p>';
+
+  if (tools.length === 0) {
+    html += '<p style="color:#94a3b8;font-style:italic">No analysis tools found. Place YAML descriptors in the <code>tools/</code> directory.</p>';
+    html += '<div style="display:flex;justify-content:flex-end;margin-top:16px">' +
+      '<button id="analysis-close" style="padding:6px 16px;border:1px solid #d1d5db;border-radius:6px;background:#fff;cursor:pointer;font-size:13px">Close</button></div>';
+  } else {
+    // Tool selector
+    html += '<div style="margin-bottom:12px"><label style="font-size:12px;font-weight:600;color:#374151">Tool</label>' +
+      '<select id="analysis-tool-select" style="display:block;width:100%;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;margin-top:4px">';
+    tools.forEach((t, i) => {
+      html += '<option value="' + i + '">' + (t.label || t.tool) + ' v' + (t.version || '') + '</option>';
+    });
+    html += '</select></div>';
+
+    // Params container (filled dynamically)
+    html += '<div id="analysis-params"></div>';
+
+    // Status area
+    html += '<div id="analysis-status" style="margin:12px 0;font-size:12px;color:#475569;min-height:20px"></div>';
+    html += '<div id="analysis-progress" style="display:none;margin:8px 0">' +
+      '<div style="background:#e2e8f0;border-radius:99px;height:8px;overflow:hidden">' +
+      '<div id="analysis-progress-fill" style="height:100%;background:linear-gradient(90deg,#22c55e,#16a34a);width:0%;transition:width .3s ease"></div></div></div>';
+
+    // Buttons
+    html += '<div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">' +
+      '<button id="analysis-history-btn" style="padding:6px 14px;border:1px solid #d1d5db;border-radius:6px;background:#f9fafb;cursor:pointer;font-size:12px;margin-right:auto">History</button>' +
+      '<button id="analysis-close" style="padding:6px 16px;border:1px solid #d1d5db;border-radius:6px;background:#fff;cursor:pointer;font-size:13px">Cancel</button>' +
+      '<button id="analysis-run-btn" style="padding:6px 16px;border:none;border-radius:6px;background:#059669;color:#fff;cursor:pointer;font-size:13px;font-weight:600">Run Analysis</button></div>';
+  }
+
+  box.innerHTML = html;
+  dlg.appendChild(box);
+  document.body.appendChild(dlg);
+
+  // Close button
+  document.getElementById('analysis-close').addEventListener('click', () => dlg.remove());
+  dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.remove(); });
+
+  if (tools.length === 0) return;
+
+  // Render params for selected tool
+  const paramsDiv = document.getElementById('analysis-params');
+  const toolSelect = document.getElementById('analysis-tool-select');
+
+  function renderParams(toolIdx) {
+    const t = tools[toolIdx];
+    if (!t.params || t.params.length === 0) {
+      paramsDiv.innerHTML = '<p style="font-size:12px;color:#94a3b8">No configurable parameters.</p>';
+      return;
+    }
+    let ph = '<div style="border:1px solid #e2e8f0;border-radius:8px;padding:12px 14px">' +
+      '<h4 style="font-size:12px;font-weight:700;color:#475569;text-transform:uppercase;margin:0 0 10px">Parameters</h4>';
+    t.params.forEach(p => {
+      ph += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">' +
+        '<label style="font-size:12px;color:#374151;min-width:140px;white-space:nowrap">' + (p.label || p.name) + '</label>';
+      if (p.type === 'boolean') {
+        ph += '<input type="checkbox" data-param="' + p.name + '" ' + (p.default === 'true' ? 'checked' : '') + '>';
+      } else if (p.type === 'select' && p.options) {
+        ph += '<select data-param="' + p.name + '" style="flex:1;padding:5px 9px;border:1px solid #d1d5db;border-radius:6px;font-size:12px">';
+        p.options.forEach(o => { ph += '<option' + (o === p.default ? ' selected' : '') + '>' + o + '</option>'; });
+        ph += '</select>';
+      } else {
+        ph += '<input type="text" data-param="' + p.name + '" value="' + (p.default || '') + '" ' +
+          'style="flex:1;padding:5px 9px;border:1px solid #d1d5db;border-radius:6px;font-size:12px">';
+      }
+      if (p.description) ph += '<span style="font-size:10px;color:#94a3b8">' + p.description + '</span>';
+      ph += '</div>';
+    });
+    ph += '</div>';
+    paramsDiv.innerHTML = ph;
+  }
+  renderParams(0);
+  toolSelect.addEventListener('change', () => renderParams(+toolSelect.value));
+
+  // Run button
+  document.getElementById('analysis-run-btn').addEventListener('click', async () => {
+    const t = tools[+toolSelect.value];
+    const btn = document.getElementById('analysis-run-btn');
+    btn.textContent = 'Starting…'; btn.disabled = true;
+
+    // Collect params
+    const params = {};
+    paramsDiv.querySelectorAll('[data-param]').forEach(el => {
+      params[el.dataset.param] = el.type === 'checkbox' ? String(el.checked) : el.value;
+    });
+
+    const statusEl = document.getElementById('analysis-status');
+    const progressEl = document.getElementById('analysis-progress');
+    const fillEl = document.getElementById('analysis-progress-fill');
+
+    try {
+      const res = await fetch(PROJECT_API + '/analysis/run', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ tool: t.tool, locus_id: locusId, ...params })
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({error:'Server error'}));
+        statusEl.textContent = 'Error: ' + (err.error || 'Failed to start');
+        btn.textContent = 'Run Analysis'; btn.disabled = false;
+        return;
+      }
+      const { job_id } = await res.json();
+      progressEl.style.display = '';
+      statusEl.textContent = 'Running ' + t.label + '…';
+
+      // Poll progress
+      const pollId = setInterval(async () => {
+        try {
+          const pr = await fetch(PROJECT_API + '/analysis/job/' + job_id + '/progress');
+          if (!pr.ok) return;
+          const p = await pr.json();
+          statusEl.textContent = p.phase || 'Running…';
+          fillEl.style.width = p.pct + '%';
+          if (p.done) {
+            clearInterval(pollId);
+            fillEl.style.width = '100%';
+            if (p.ok) {
+              showToast(t.label + ' completed for ' + locusName, 4000);
+              // Fetch result columns for annotation registration
+              try {
+                const rr = await fetch(PROJECT_API + '/analysis/job/' + job_id + '/result');
+                if (rr.ok) {
+                  const tsvText = await rr.text();
+                  const rows = tsvText.trim().split('\n');
+                  const headers = rows[0].split('\t');
+                  const valueCols = headers.slice(1).map(h => h.trim());
+
+                  // Show column selector to add as SNP annotation
+                  let colHtml = '<div style="margin-top:10px;border:1px solid #d1fae5;border-radius:8px;padding:10px 14px;background:#f0fdf4">' +
+                    '<div style="font-weight:700;font-size:12px;color:#065f46;margin-bottom:6px">Add to SNP Annotations</div>' +
+                    '<div style="font-size:11px;color:#475569;margin-bottom:8px">Select columns to overlay on the Manhattan plot as annotation tracks.</div>' +
+                    '<div style="display:flex;flex-direction:column;gap:4px">';
+                  valueCols.forEach(c => {
+                    const isPip = c.includes('pip') || c.includes('PIP');
+                    const isBool = c.includes('selected') || c.includes('cs');
+                    const checked = isPip || isBool ? ' checked' : '';
+                    const trackType = isBool ? 'flag' : 'bar';
+                    const scale = isPip ? 'none' : (c.includes('_p') || c.includes('_P')) ? 'neglog10' : 'none';
+                    colHtml += '<label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer">' +
+                      '<input type="checkbox" data-col="' + c + '" data-track="' + trackType + '" data-scale="' + scale + '"' + checked + '>' +
+                      '<span>' + c + '</span>' +
+                      '<span style="font-size:10px;color:#94a3b8">(' + trackType + ')</span></label>';
+                  });
+                  colHtml += '</div>' +
+                    '<div style="display:flex;gap:8px;margin-top:8px">' +
+                    '<button id="analysis-apply-btn" style="padding:5px 14px;border:none;border-radius:6px;background:#059669;color:#fff;font-size:12px;font-weight:600;cursor:pointer">Add as Annotation</button>' +
+                    '</div></div>';
+
+                  statusEl.innerHTML = '<span style="color:#059669;font-weight:600">Analysis complete — ' +
+                    (rows.length - 1) + ' result rows</span>' + colHtml;
+
+                  document.getElementById('analysis-apply-btn').addEventListener('click', async () => {
+                    // Collect checked columns
+                    const checked = [];
+                    statusEl.querySelectorAll('input[data-col]:checked').forEach(el => {
+                      checked.push({ id: el.dataset.col, track: el.dataset.track, scale: el.dataset.scale });
+                    });
+                    if (checked.length === 0) { alert('Select at least one column'); return; }
+
+                    // Register as annotation via the annotation config API
+                    const resultPath = PROJECT_API + '/analysis/job/' + job_id + '/result';
+                    const annotId = t.tool + '_' + job_id.substring(0, 8);
+                    const annotConfig = {
+                      id: annotId,
+                      label: t.label + ' Results',
+                      level: 'snp',
+                      file: resultPath,
+                      join_on: { rsid: 'snp_id' },
+                      columns: checked.map(c => ({
+                        id: c.id,
+                        label: c.id.replace(/_/g, ' '),
+                        type: c.track === 'flag' ? 'categorical' : 'continuous',
+                        track: c.track,
+                        scale: c.scale,
+                        manhattan_channel: c.track === 'bar' ? 'color' : 'none'
+                      }))
+                    };
+
+                    // Add to in-memory annotation config
+                    if (window.ANNOT && window.ANNOT.config) {
+                      // Remove previous results from same tool
+                      window.ANNOT.config.annotations = window.ANNOT.config.annotations.filter(
+                        a => !a.id.startsWith(t.tool + '_'));
+                      window.ANNOT.config.annotations.push(annotConfig);
+
+                      // Load the result data
+                      try {
+                        const dataResp = await fetch(resultPath);
+                        if (dataResp.ok) {
+                          const text = await dataResp.text();
+                          window.ANNOT.rawData.set(annotId, text);
+                          window.ANNOT.locusJoined.delete(annotId);
+                        }
+                      } catch(e) {}
+
+                      // Re-render
+                      if (typeof reloadAnnotations === 'function') {
+                        await reloadAnnotations();
+                      }
+                      renderViewport(false);
+                      showToast('Added ' + checked.length + ' annotation track(s) from ' + t.label, 4000);
+                    }
+                    dlg.remove();
+                  });
+
+                  btn.textContent = 'Close'; btn.disabled = false;
+                  btn.onclick = function() { dlg.remove(); };
+                } else {
+                  statusEl.innerHTML = '<span style="color:#059669;font-weight:600">Complete</span>';
+                  btn.textContent = 'Close'; btn.disabled = false;
+                  btn.onclick = function() { dlg.remove(); };
+                }
+              } catch(e) {
+                statusEl.innerHTML = '<span style="color:#059669">Complete (could not load results)</span>';
+                btn.textContent = 'Close'; btn.disabled = false;
+                btn.onclick = function() { dlg.remove(); };
+              }
+            } else {
+              statusEl.innerHTML = '<span style="color:#dc2626">' + (p.error || 'Failed') + '</span>';
+              btn.textContent = 'Run Analysis'; btn.disabled = false;
+            }
+          }
+        } catch(e) {}
+      }, 1500);
+
+    } catch(e) {
+      statusEl.textContent = 'Error: ' + e.message;
+      btn.textContent = 'Run Analysis'; btn.disabled = false;
+    }
+  });
+
+  // History button
+  document.getElementById('analysis-history-btn').addEventListener('click', async () => {
+    try {
+      const res = await fetch(PROJECT_API + '/analysis/history?locus_id=' + encodeURIComponent(locusId));
+      if (!res.ok) return;
+      const data = await res.json();
+      const runs = data.runs || [];
+      const statusEl = document.getElementById('analysis-status');
+      if (runs.length === 0) {
+        statusEl.textContent = 'No previous runs for this locus.';
+        return;
+      }
+      let hhtml = '<div style="font-size:12px;max-height:200px;overflow-y:auto">';
+      runs.forEach(r => {
+        const p = r.provenance || {};
+        const date = p.timestamp ? new Date(p.timestamp).toLocaleString() : '?';
+        const status = r.has_result ? '<span style="color:#059669">completed</span>' : '<span style="color:#94a3b8">no result</span>';
+        hhtml += '<div style="padding:4px 0;border-bottom:1px solid #f1f5f9">' +
+          '<b>' + (p.tool || '?') + '</b> v' + (p.tool_version || '?') + ' — ' + date + ' — ' + status + '</div>';
+      });
+      hhtml += '</div>';
+      statusEl.innerHTML = hhtml;
+    } catch(e) {}
+  });
 }
 
 // ═══════════════════════════════════════════════════════════════

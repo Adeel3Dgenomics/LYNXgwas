@@ -178,6 +178,9 @@ td.actions button { margin-right: 0.4rem; }
     <button class="btn btn-secondary" id="btn-process-all" onclick="processAllStale()" disabled>
       Process all updated
     </button>
+    <button class="btn btn-secondary" onclick="openToolsManager()">
+      Tools
+    </button>
     <button class="btn btn-primary" id="btn-new" onclick="newProject()">
       + New project
     </button>
@@ -333,6 +336,7 @@ function render() {
       + '<button class="btn btn-secondary" onclick="editConfig(\'' + esc(p.id) + '\')" title="Edit configuration">Edit</button>'
       + '<button class="btn btn-secondary" onclick="reprocess(\'' + esc(p.id) + '\')" title="Reprocess">Reprocess</button>'
       + '<button class="btn btn-secondary" onclick="exportExcel(\'' + esc(p.id) + '\')" title="Export Excel">Excel</button>'
+      + '<button class="btn btn-secondary" style="background:#d1fae5;color:#065f46" onclick="openProjectAnalysis(\'' + esc(p.id) + '\')" title="Build analysis base artifacts">Analyze</button>'
       + '<button class="btn btn-danger" style="padding:0.2rem 0.6rem;font-size:0.75rem" onclick="deleteProject(\'' + esc(p.id) + '\')" title="Delete project">Delete</button>'
       + '</td></tr>';
   }).join('');
@@ -653,7 +657,38 @@ function wizRenderParams(c) {
     + '<div class="wiz-section-title">Reference panel</div>'
     + '<div class="wiz-field"><label>Population label</label>'
     + '<input data-wiz-key="ref.panel.population" value="' + escAttr(cfg['ref.panel.population'] || 'EUR') + '">'
-    + '<div class="hint">Shown in UI headers (e.g. EUR, EAS, AFR).</div></div>';
+    + '<div class="hint">Shown in UI headers (e.g. EUR, EAS, AFR).</div></div>'
+    + '<div class="wiz-section-title">Dataset metadata (for analysis tools)</div>'
+    + '<div class="wiz-field"><label>Sample size (N)</label>'
+    + '<input type="number" data-wiz-key="sample.n" value="' + (cfg['sample.n'] || 0) + '">'
+    + '<div class="hint">Total sample size. Required by COJO, SuSiE, FINEMAP.</div></div>'
+    + '<div class="wiz-field"><label>Trait type</label>'
+    + '<select data-wiz-key="trait.type">'
+    + '<option value=""' + (!cfg['trait.type'] ? ' selected' : '') + '>Not specified</option>'
+    + '<option value="quantitative"' + (cfg['trait.type'] === 'quantitative' ? ' selected' : '') + '>Quantitative</option>'
+    + '<option value="binary"' + (cfg['trait.type'] === 'binary' ? ' selected' : '') + '>Binary (case/control)</option>'
+    + '</select></div>'
+    + '<div class="wiz-field"><label>N cases</label>'
+    + '<input type="number" data-wiz-key="n.cases" value="' + (cfg['n.cases'] || 0) + '">'
+    + '<div class="hint">For binary traits only.</div></div>'
+    + '<div class="wiz-field"><label>N controls</label>'
+    + '<input type="number" data-wiz-key="n.controls" value="' + (cfg['n.controls'] || 0) + '">'
+    + '</div>'
+    + '<div class="wiz-field"><label>Effect type</label>'
+    + '<select data-wiz-key="effect.type">'
+    + '<option value=""' + (!cfg['effect.type'] ? ' selected' : '') + '>Auto-detect</option>'
+    + '<option value="beta"' + (cfg['effect.type'] === 'beta' ? ' selected' : '') + '>Beta</option>'
+    + '<option value="OR"' + (cfg['effect.type'] === 'OR' ? ' selected' : '') + '>Odds Ratio</option>'
+    + '<option value="logOR"' + (cfg['effect.type'] === 'logOR' ? ' selected' : '') + '>Log Odds Ratio</option>'
+    + '</select></div>'
+    + '<div class="wiz-field"><label>Genome build</label>'
+    + '<select data-wiz-key="genome.build">'
+    + '<option value="GRCh37"' + ((cfg['genome.build'] || 'GRCh37') === 'GRCh37' ? ' selected' : '') + '>GRCh37 / hg19</option>'
+    + '<option value="GRCh38"' + (cfg['genome.build'] === 'GRCh38' ? ' selected' : '') + '>GRCh38 / hg38</option>'
+    + '</select></div>'
+    + '<div class="wiz-field"><label>Ancestry / Population</label>'
+    + '<input data-wiz-key="ancestry" value="' + escAttr(cfg['ancestry'] || cfg['ref.panel.population'] || '') + '">'
+    + '<div class="hint">E.g. EUR, EAS, AFR, AMR, SAS, Hispanic, etc.</div></div>';
 }
 
 function wizRenderPreview(c) {
@@ -670,7 +705,11 @@ function wizRenderPreview(c) {
     ['Columns (required)', [cfg['col.chr'], cfg['col.pos'], cfg['col.pvalue'], cfg['col.ea'], cfg['col.nea']].join(', ')],
     ['Columns (optional)', [cfg['col.rsid'], cfg['col.beta'], cfg['col.or'], cfg['col.se'], cfg['col.n'], cfg['col.maf'], cfg['col.info']].filter(Boolean).join(', ') || '(none)'],
     ['Locus padding', (cfg['locus.padding'] || 200000) + ' bp'],
-    ['LD enabled', cfg['ld.enabled'] === true || cfg['ld.enabled'] === 'true' ? 'Yes' : 'No']
+    ['LD enabled', cfg['ld.enabled'] === true || cfg['ld.enabled'] === 'true' ? 'Yes' : 'No'],
+    ['Sample N', cfg['sample.n'] || '(not set)'],
+    ['Trait type', cfg['trait.type'] || '(not set)'],
+    ['Genome build', cfg['genome.build'] || 'GRCh37'],
+    ['Ancestry', cfg['ancestry'] || cfg['ref.panel.population'] || '(not set)']
   ];
   c.innerHTML = '<table class="wiz-summary-table">'
     + rows.map(function(r) { return '<tr><td>' + esc(r[0]) + '</td><td>' + esc(String(r[1] || '')) + '</td></tr>'; }).join('')
@@ -685,7 +724,8 @@ async function wizSubmit() {
     'col.chr','col.pos','col.pvalue','col.rsid','col.varid','col.ea','col.nea',
     'col.beta','col.or','col.se','col.n','col.maf','col.info','top.snp.file',
     'locus.padding','ld.enabled','ld.triangle.boundary','ld.r2.threshold',
-    'ld.parallel.jobs','threads','max.snps.per.locus','split.ld.threshold','split.min.distance.bp'];
+    'ld.parallel.jobs','threads','max.snps.per.locus','split.ld.threshold','split.min.distance.bp',
+    'sample.n','n.cases','n.controls','trait.type','effect.type','genome.build','ancestry'];
   keys.forEach(function(k) { if (cfg[k] !== undefined) configBody[k] = cfg[k]; });
 
   try {
@@ -1204,6 +1244,361 @@ async function lociReprocessAndClose() {
     });
   } catch(e) {}
   lociClose();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Tools Manager — configure analysis tool binary paths
+// ═══════════════════════════════════════════════════════════════
+async function openToolsManager() {
+  var overlay = document.getElementById('tools-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'tools-overlay';
+    overlay.className = 'wizard-overlay';
+    overlay.innerHTML = '<div class="wizard-box" style="max-width:640px" id="tools-box"></div>';
+    overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.classList.remove('open'); });
+    document.body.appendChild(overlay);
+  }
+
+  var box = document.getElementById('tools-box');
+  box.innerHTML = '<h3>Analysis Tools</h3><p style="color:#666;font-size:0.85rem;margin:0.5rem 0 1rem">Configure tool binary paths and view available analysis descriptors.</p>'
+    + '<div id="tools-content" style="color:#888">Loading...</div>';
+  overlay.classList.add('open');
+
+  // Fetch discovered tools
+  var toolsHtml = '';
+  try {
+    var resp = await fetch(API + '/api/project/_/analysis/tools');
+    if (resp.ok) {
+      var data = await resp.json();
+      var tools = data.tools || [];
+      if (tools.length === 0) {
+        toolsHtml = '<div style="padding:1rem;background:#fef3c7;border-radius:8px;font-size:0.85rem;color:#92400e;margin-bottom:1rem">'
+          + 'No tool descriptors found. Place YAML files in the <code>tools/</code> directory.'
+          + '</div>';
+      } else {
+        toolsHtml = '<div style="font-size:0.85rem;margin-bottom:0.75rem"><b>' + tools.length + '</b> tool(s) discovered:</div>';
+        tools.forEach(function(t) {
+          toolsHtml += '<div style="border:1px solid #e5e7eb;border-radius:8px;padding:0.75rem;margin-bottom:0.5rem">'
+            + '<div style="display:flex;align-items:center;gap:0.5rem">'
+            + '<span style="font-weight:700;color:#1e293b">' + esc(t.label || t.tool) + '</span>'
+            + '<span style="font-size:0.75rem;color:#94a3b8">v' + esc(t.version || '') + '</span>'
+            + '<span style="font-size:0.7rem;padding:2px 6px;border-radius:10px;background:#e0e7ff;color:#3730a3">' + esc(t.language || 'binary') + '</span>'
+            + '</div>';
+          if (t.description) toolsHtml += '<div style="font-size:0.8rem;color:#64748b;margin-top:4px">' + esc(t.description) + '</div>';
+          if (t.params && t.params.length > 0) {
+            toolsHtml += '<div style="font-size:0.75rem;color:#94a3b8;margin-top:4px">'
+              + t.params.length + ' parameter(s): '
+              + t.params.map(function(p) { return p.label || p.name; }).join(', ')
+              + '</div>';
+          }
+          toolsHtml += '</div>';
+        });
+      }
+    }
+  } catch(e) {
+    toolsHtml = '<div style="color:#dc2626">Failed to load tools: ' + esc(e.message) + '</div>';
+  }
+
+  toolsHtml += '<div style="margin-top:1rem;padding:1rem;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0">'
+    + '<div style="font-weight:600;font-size:0.85rem;margin-bottom:0.5rem">Adding a new tool</div>'
+    + '<ol style="font-size:0.82rem;color:#475569;padding-left:1.2rem;margin:0">'
+    + '<li>Create a YAML descriptor in the <code>tools/</code> directory</li>'
+    + '<li>Define: tool name, command template, parameters, and output mapping</li>'
+    + '<li>Restart the server — the tool appears automatically in the Analyze dialog</li>'
+    + '</ol></div>';
+
+  toolsHtml += '<div style="display:flex;justify-content:flex-end;margin-top:1rem">'
+    + '<button class="btn btn-secondary" onclick="document.getElementById(\'tools-overlay\').classList.remove(\'open\')">Close</button></div>';
+
+  document.getElementById('tools-content').innerHTML = toolsHtml;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Project analysis — build base artifacts from the home page
+// ═══════════════════════════════════════════════════════════════
+async function openProjectAnalysis(projectId) {
+  var overlay = document.getElementById('analysis-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'analysis-overlay';
+    overlay.className = 'wizard-overlay';
+    overlay.innerHTML = '<div class="wizard-box" style="max-width:640px" id="analysis-box"></div>';
+    overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.classList.remove('open'); });
+    document.body.appendChild(overlay);
+  }
+
+  var box = document.getElementById('analysis-box');
+  box.innerHTML = '<h3>Analysis — ' + esc(projectId) + '</h3>'
+    + '<p style="color:#666;font-size:0.85rem;margin:0.5rem 0 1rem">Build base artifacts (GWAS extraction, SNP matching, allele harmonization, LD matrices) for all loci.</p>'
+    + '<div id="analysis-content">Loading status...</div>';
+  overlay.classList.add('open');
+
+  // Fetch base status
+  try {
+    var resp = await fetch(API + '/api/project/' + encodeURIComponent(projectId) + '/analysis/base-status');
+    if (!resp.ok) throw new Error('Status check failed: ' + resp.status);
+    var data = await resp.json();
+    var loci = data.loci || [];
+
+    var readyCount = loci.filter(function(l) { return l.ready; }).length;
+    var warnCount = loci.filter(function(l) { return l.diagnostic === 'warn' || l.diagnostic === 'fail'; }).length;
+
+    var html = '<div style="font-size:0.85rem;margin-bottom:0.75rem">'
+      + '<b>' + readyCount + '</b> / ' + loci.length + ' loci have base artifacts built';
+    if (warnCount > 0) html += ' &nbsp; <span style="color:#dc2626">(' + warnCount + ' LD diagnostic warnings)</span>';
+    html += '</div>';
+
+    // Status table
+    html += '<div style="max-height:300px;overflow-y:auto;border:1px solid #e5e7eb;border-radius:8px">'
+      + '<table style="width:100%;font-size:0.8rem"><thead><tr>'
+      + '<th style="padding:4px 8px;text-align:left">Locus</th>'
+      + '<th>Base</th><th>Match</th><th>Harmonize</th><th>LD</th><th>Diag</th>'
+      + '</tr></thead><tbody>';
+    loci.forEach(function(l) {
+      var dot = function(v) { return v ? '<span style="color:#059669">&#9679;</span>' : '<span style="color:#d1d5db">&#9675;</span>'; };
+      var diag = l.diagnostic === 'pass' ? '<span style="color:#059669">pass</span>'
+        : l.diagnostic === 'warn' ? '<span style="color:#d97706">warn</span>'
+        : l.diagnostic === 'fail' ? '<span style="color:#dc2626">fail</span>'
+        : '<span style="color:#d1d5db">—</span>';
+      html += '<tr><td style="padding:3px 8px">Locus ' + l.index + '</td>'
+        + '<td style="text-align:center">' + dot(l.base) + '</td>'
+        + '<td style="text-align:center">' + dot(l.matched) + '</td>'
+        + '<td style="text-align:center">' + dot(l.harmonized) + '</td>'
+        + '<td style="text-align:center">' + dot(l.ld) + '</td>'
+        + '<td style="text-align:center">' + diag + '</td></tr>';
+    });
+    html += '</tbody></table></div>';
+
+    // Build button + progress
+    html += '<div id="analysis-progress-area" style="margin-top:0.75rem;min-height:30px"></div>';
+
+    // Build config row
+    html += '<div style="display:flex;gap:12px;align-items:center;margin-top:0.75rem;flex-wrap:wrap;font-size:0.8rem;color:#475569">'
+      + '<label>Threads: <input type="number" id="analysis-threads" value="2" min="1" max="16" style="width:50px;padding:3px 6px;border:1px solid #d1d5db;border-radius:4px;font-size:0.8rem"></label>'
+      + '<label>LD window (SNPs each side): <input type="number" id="analysis-ld-window" value="200" min="10" max="5000" style="width:65px;padding:3px 6px;border:1px solid #d1d5db;border-radius:4px;font-size:0.8rem"></label>'
+      + '</div>';
+
+    // Run tool section (only if some loci have artifacts ready)
+    if (readyCount > 0) {
+      html += '<div style="border-top:1px solid #e5e7eb;margin-top:1rem;padding-top:1rem">'
+        + '<div style="font-weight:600;font-size:0.9rem;margin-bottom:0.5rem">Run Analysis Tool</div>'
+        + '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'
+        + '<select id="analysis-locus-select" style="padding:5px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:0.82rem;min-width:180px">';
+      loci.filter(function(l) { return l.ready; }).forEach(function(l) {
+        html += '<option value="' + esc(l.id) + '">Locus ' + l.index + '</option>';
+      });
+      html += '</select>'
+        + '<button class="btn btn-primary" style="background:#059669" onclick="openLocusAnalysis(\'' + esc(projectId) + '\')">Select Tool &amp; Run</button>'
+        + '<span style="font-size:0.78rem;color:#94a3b8">or open the locus in the <a href="viewer.html?project=' + encodeURIComponent(projectId) + '" style="color:#4f46e5">Viewer</a> and click Analyze there</span>'
+        + '</div></div>';
+    } else {
+      html += '<div style="border-top:1px solid #e5e7eb;margin-top:1rem;padding-top:0.75rem;font-size:0.82rem;color:#94a3b8">'
+        + 'Build base artifacts first, then you can run analysis tools (COJO, SuSiE, FINEMAP, etc.) on individual loci.'
+        + '</div>';
+    }
+
+    // Action buttons
+    html += '<div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-top:1rem">'
+      + '<button class="btn btn-secondary" onclick="document.getElementById(\'analysis-overlay\').classList.remove(\'open\')">Close</button>'
+      + '<button class="btn btn-primary" id="build-base-btn" onclick="buildBaseArtifacts(\'' + esc(projectId) + '\')">'
+      + (readyCount === loci.length ? 'Rebuild All' : 'Build All Base Artifacts') + '</button>'
+      + '</div>';
+
+    document.getElementById('analysis-content').innerHTML = html;
+  } catch(e) {
+    document.getElementById('analysis-content').innerHTML = '<div style="color:#dc2626">' + esc(e.message) + '</div>'
+      + '<div style="display:flex;justify-content:flex-end;margin-top:1rem">'
+      + '<button class="btn btn-secondary" onclick="document.getElementById(\'analysis-overlay\').classList.remove(\'open\')">Close</button></div>';
+  }
+}
+
+async function openLocusAnalysis(projectId) {
+  var locusId = document.getElementById('analysis-locus-select').value;
+  if (!locusId) { alert('Select a locus first'); return; }
+
+  var contentEl = document.getElementById('analysis-content');
+
+  // Fetch available tools
+  var tools = [];
+  try {
+    var resp = await fetch(API + '/api/project/_/analysis/tools');
+    if (resp.ok) { var d = await resp.json(); tools = d.tools || []; }
+  } catch(e) {}
+
+  if (tools.length === 0) {
+    contentEl.innerHTML = '<div style="padding:1rem;background:#fef3c7;border-radius:8px;font-size:0.85rem;color:#92400e">'
+      + 'No analysis tools found. Place YAML descriptors in the <code>tools/</code> directory.</div>'
+      + '<div style="display:flex;justify-content:flex-end;margin-top:1rem">'
+      + '<button class="btn btn-secondary" onclick="openProjectAnalysis(\'' + esc(projectId) + '\')">Back</button></div>';
+    return;
+  }
+
+  var html = '<div style="font-weight:600;font-size:0.95rem;margin-bottom:0.75rem">Run Tool on Locus</div>';
+
+  // Tool selector
+  html += '<div style="margin-bottom:10px"><label style="font-size:0.82rem;font-weight:600;color:#374151">Tool</label>'
+    + '<select id="run-tool-select" style="display:block;width:100%;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.82rem;margin-top:4px">';
+  tools.forEach(function(t, i) {
+    html += '<option value="' + i + '">' + esc(t.label || t.tool) + ' v' + esc(t.version || '') + '</option>';
+  });
+  html += '</select></div>';
+
+  // Params container
+  html += '<div id="run-tool-params"></div>';
+
+  // Status area
+  html += '<div id="run-tool-status" style="margin:10px 0;font-size:0.82rem;color:#475569;min-height:20px"></div>';
+  html += '<div id="run-tool-progress" style="display:none;margin:8px 0">'
+    + '<div style="background:#e2e8f0;border-radius:99px;height:8px;overflow:hidden">'
+    + '<div id="run-tool-fill" style="height:100%;background:linear-gradient(90deg,#059669,#047857);width:0%;transition:width .3s ease"></div></div></div>';
+
+  // Buttons
+  html += '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:1rem">'
+    + '<button class="btn btn-secondary" onclick="openProjectAnalysis(\'' + esc(projectId) + '\')">Back</button>'
+    + '<button class="btn btn-primary" style="background:#059669" id="run-tool-btn">Run</button></div>';
+
+  contentEl.innerHTML = html;
+
+  // Render params for selected tool
+  var paramsDiv = document.getElementById('run-tool-params');
+  var toolSelect = document.getElementById('run-tool-select');
+
+  function renderParams(idx) {
+    var t = tools[idx];
+    if (!t.params || t.params.length === 0) {
+      paramsDiv.innerHTML = '<p style="font-size:0.82rem;color:#94a3b8">No configurable parameters.</p>';
+      return;
+    }
+    var ph = '<div style="border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;font-size:0.82rem">';
+    t.params.forEach(function(p) {
+      ph += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'
+        + '<label style="min-width:130px;color:#374151">' + esc(p.label || p.name) + '</label>';
+      if (p.type === 'boolean') {
+        ph += '<input type="checkbox" data-param="' + esc(p.name) + '" ' + (p.default === 'true' ? 'checked' : '') + '>';
+      } else if (p.type === 'select' && p.options) {
+        ph += '<select data-param="' + esc(p.name) + '" style="flex:1;padding:4px 8px;border:1px solid #d1d5db;border-radius:4px;font-size:0.82rem">';
+        p.options.forEach(function(o) { ph += '<option' + (o === p.default ? ' selected' : '') + '>' + esc(o) + '</option>'; });
+        ph += '</select>';
+      } else {
+        ph += '<input type="text" data-param="' + esc(p.name) + '" value="' + escAttr(p.default || '') + '" '
+          + 'style="flex:1;padding:4px 8px;border:1px solid #d1d5db;border-radius:4px;font-size:0.82rem">';
+      }
+      if (p.description) ph += '<span style="font-size:0.72rem;color:#94a3b8">' + esc(p.description) + '</span>';
+      ph += '</div>';
+    });
+    ph += '</div>';
+    paramsDiv.innerHTML = ph;
+  }
+  renderParams(0);
+  toolSelect.addEventListener('change', function() { renderParams(+toolSelect.value); });
+
+  // Run button
+  document.getElementById('run-tool-btn').addEventListener('click', async function() {
+    var t = tools[+toolSelect.value];
+    var btn = document.getElementById('run-tool-btn');
+    btn.textContent = 'Starting...'; btn.disabled = true;
+
+    var params = {};
+    paramsDiv.querySelectorAll('[data-param]').forEach(function(el) {
+      params[el.dataset.param] = el.type === 'checkbox' ? String(el.checked) : el.value;
+    });
+
+    var statusEl = document.getElementById('run-tool-status');
+    var progressEl = document.getElementById('run-tool-progress');
+    var fillEl = document.getElementById('run-tool-fill');
+
+    try {
+      var body = { tool: t.tool, locus_id: locusId };
+      Object.keys(params).forEach(function(k) { body[k] = params[k]; });
+
+      var res = await fetch(API + '/api/project/' + encodeURIComponent(projectId) + '/analysis/run', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(body)
+      });
+      if (!res.ok) {
+        var err = await res.json().catch(function() { return {error:'Server error'}; });
+        statusEl.textContent = 'Error: ' + (err.error || 'Failed to start');
+        btn.textContent = 'Run'; btn.disabled = false;
+        return;
+      }
+      var jobData = await res.json();
+      var jobId = jobData.job_id;
+      progressEl.style.display = '';
+      statusEl.textContent = 'Running ' + esc(t.label) + '...';
+
+      var pollId = setInterval(async function() {
+        try {
+          var pr = await fetch(API + '/api/project/' + encodeURIComponent(projectId) + '/analysis/job/' + jobId + '/progress');
+          if (!pr.ok) return;
+          var p = await pr.json();
+          statusEl.textContent = p.phase || 'Running...';
+          fillEl.style.width = p.pct + '%';
+          if (p.done) {
+            clearInterval(pollId);
+            fillEl.style.width = '100%';
+            if (p.ok) {
+              statusEl.innerHTML = '<span style="color:#059669;font-weight:600">Analysis complete — '
+                + (p.result_rows || 0) + ' result rows.</span> '
+                + 'Open in <a href="viewer.html?project=' + encodeURIComponent(projectId)
+                + '" style="color:#4f46e5">Viewer</a> to see results overlaid on the locus plot.';
+              btn.textContent = 'Close'; btn.disabled = false;
+              btn.onclick = function() { document.getElementById('analysis-overlay').classList.remove('open'); };
+            } else {
+              statusEl.innerHTML = '<span style="color:#dc2626">' + esc(p.error || 'Failed') + '</span>';
+              btn.textContent = 'Run'; btn.disabled = false;
+            }
+          }
+        } catch(e) {}
+      }, 1500);
+    } catch(e) {
+      statusEl.textContent = 'Error: ' + e.message;
+      btn.textContent = 'Run'; btn.disabled = false;
+    }
+  });
+}
+
+async function buildBaseArtifacts(projectId) {
+  var btn = document.getElementById('build-base-btn');
+  if (btn) { btn.textContent = 'Building...'; btn.disabled = true; }
+
+  var area = document.getElementById('analysis-progress-area');
+  area.innerHTML = '<div style="font-size:0.85rem;color:#1e40af">Starting base pipeline...</div>'
+    + '<div style="background:#e2e8f0;border-radius:99px;height:8px;overflow:hidden;margin-top:6px">'
+    + '<div id="analysis-build-fill" style="height:100%;background:linear-gradient(90deg,#059669,#047857);width:0%;transition:width .3s ease"></div></div>'
+    + '<div id="analysis-build-status" style="font-size:0.8rem;color:#64748b;margin-top:4px"></div>';
+
+  try {
+    var threads = parseInt(document.getElementById('analysis-threads').value) || 2;
+    var ldWindow = parseInt(document.getElementById('analysis-ld-window').value) || 200;
+    await fetch(API + '/api/project/' + encodeURIComponent(projectId) + '/analysis/build-base', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ threads: threads, ld_window: ldWindow })
+    });
+
+    var pollId = setInterval(async function() {
+      try {
+        var r = await fetch(API + '/api/project/' + encodeURIComponent(projectId) + '/analysis/build-base-progress');
+        if (!r.ok) return;
+        var p = await r.json();
+        var fill = document.getElementById('analysis-build-fill');
+        var status = document.getElementById('analysis-build-status');
+        if (fill) fill.style.width = p.pct + '%';
+        if (status) status.textContent = p.phase + ' (' + p.pct + '%)';
+        if (p.done) {
+          clearInterval(pollId);
+          if (fill) fill.style.width = '100%';
+          if (status) status.innerHTML = '<span style="color:#059669;font-weight:600">Build complete</span>';
+          if (btn) { btn.textContent = 'Done'; }
+          // Refresh the status table
+          setTimeout(function() { openProjectAnalysis(projectId); }, 1000);
+        }
+      } catch(e) {}
+    }, 2000);
+  } catch(e) {
+    area.innerHTML = '<div style="color:#dc2626">' + esc(e.message) + '</div>';
+    if (btn) { btn.textContent = 'Build All Base Artifacts'; btn.disabled = false; }
+  }
 }
 
 loadProjects();

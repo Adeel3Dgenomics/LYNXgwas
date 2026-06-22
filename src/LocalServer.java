@@ -419,6 +419,20 @@ public class LocalServer {
             projectMergeLoci(ex, projectId, projectDir);
         } else if (action.equals("undo-mutation")) {
             projectUndoMutation(ex, projectId, projectDir);
+        } else if (action.equals("analysis/base-status")) {
+            projectAnalysisBaseStatus(ex, projectId, projectDir);
+        } else if (action.equals("analysis/build-base")) {
+            projectAnalysisBuildBase(ex, projectId, projectDir);
+        } else if (action.equals("analysis/build-base-progress")) {
+            projectAnalysisBuildBaseProgress(ex, projectId);
+        } else if (action.equals("analysis/tools")) {
+            projectAnalysisTools(ex);  // doesn't need project state
+        } else if (action.equals("analysis/run")) {
+            projectAnalysisRun(ex, projectId, projectDir);
+        } else if (action.startsWith("analysis/job/")) {
+            projectAnalysisJob(ex, projectId, projectDir, action);
+        } else if (action.equals("analysis/history")) {
+            projectAnalysisHistory(ex, projectId, projectDir);
         } else if (action.equals("progress")) {
             projectProgressEndpoint(ex, projectId);
         } else {
@@ -825,6 +839,362 @@ public class LocalServer {
             respond(ex, 500, "application/json",
                 ("{\"error\":\"" + escJ(mr.error) + "\"}").getBytes());
         }
+    }
+
+    // ── Analysis base pipeline endpoints ──────────────────────────────────
+
+    private final Map<String, ProgressTracker> analysisProgress = new ConcurrentHashMap<>();
+
+    // GET /api/project/{id}/analysis/base-status
+    private void projectAnalysisBaseStatus(HttpExchange ex, String projectId,
+                                            String projectDir) throws IOException {
+        ProjectState ps = ensureProjectState(projectId, projectDir);
+        if (ps == null || ps.loci == null) {
+            respond(ex, 503, "application/json",
+                "{\"error\":\"Pipeline state not available\"}".getBytes()); return;
+        }
+
+        StringBuilder json = new StringBuilder("{\"loci\":[");
+        boolean first = true;
+        for (Locus locus : ps.loci) {
+            if (!first) json.append(',');
+            first = false;
+            Map<String, Boolean> status = BaseStepPipeline.checkStatus(ps.config, locus);
+            json.append("{\"id\":\"").append(escJ(locus.id)).append('"');
+            json.append(",\"index\":").append(locus.index);
+            json.append(",\"base\":").append(status.get("base"));
+            json.append(",\"matched\":").append(status.get("matched"));
+            json.append(",\"harmonized\":").append(status.get("harmonized"));
+            json.append(",\"ld\":").append(status.get("ld"));
+            boolean allDone = status.values().stream().allMatch(v -> v);
+            json.append(",\"ready\":").append(allDone);
+            // Read consistency diagnostic summary if available
+            File diagFile = new File(BaseStepPipeline.analysisDir(ps.config, locus),
+                "ld/consistency_summary.json");
+            if (diagFile.exists()) {
+                try {
+                    String diagJson = new String(java.nio.file.Files.readAllBytes(diagFile.toPath()), "UTF-8");
+                    String verdict = extractStr(diagJson, "verdict");
+                    String flagged = extractStr(diagJson, "flagged_snps");
+                    if (verdict != null) json.append(",\"diagnostic\":\"").append(escJ(verdict)).append('"');
+                    if (flagged != null) json.append(",\"diagnostic_flagged\":").append(flagged);
+                } catch (Exception e) {}
+            }
+            json.append('}');
+        }
+        json.append("]}");
+        respond(ex, 200, "application/json", json.toString().getBytes("UTF-8"));
+    }
+
+    // POST /api/project/{id}/analysis/build-base
+    private void projectAnalysisBuildBase(HttpExchange ex, String projectId,
+                                           String projectDir) throws IOException {
+        if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) {
+            respond(ex, 405, "text/plain", "Method Not Allowed".getBytes()); return;
+        }
+        ProjectState ps = ensureProjectState(projectId, projectDir);
+        if (ps == null || ps.config == null || ps.loci == null) {
+            respond(ex, 503, "application/json",
+                "{\"error\":\"Pipeline state not available. Process the project first.\"}".getBytes()); return;
+        }
+        if (ps.config.refPanelPath.isEmpty()) {
+            respond(ex, 400, "application/json",
+                "{\"error\":\"No reference panel configured\"}".getBytes()); return;
+        }
+
+        String body = new String(readAll(ex.getRequestBody()), "UTF-8");
+        String locusId = extractStr(body, "locus_id");
+        String threadsStr = extractStr(body, "threads");
+        String ldWindowStr = extractStr(body, "ld_window");
+        final int nThreads = (threadsStr != null && !threadsStr.isEmpty())
+            ? Math.max(1, Math.min(Integer.parseInt(threadsStr), 16)) : 2;
+        final int ldWindow = (ldWindowStr != null && !ldWindowStr.isEmpty())
+            ? Math.max(10, Math.min(Integer.parseInt(ldWindowStr), 5000)) : LdMatrixComputer.DEFAULT_LD_WINDOW;
+
+        ProgressTracker pt = new ProgressTracker();
+        analysisProgress.put(projectId, pt);
+
+        // Run in background thread
+        final Config cfg = ps.config;
+        final List<Locus> loci = ps.loci;
+        new Thread(() -> {
+            try {
+                if (locusId != null && !locusId.isEmpty()) {
+                    Locus target = null;
+                    for (Locus l : loci) if (l.id.equals(locusId)) { target = l; break; }
+                    if (target != null) {
+                        pt.update("Building base artifacts", 0, 1);
+                        BaseStepPipeline.runAll(cfg, target, ldWindow);
+                        pt.update("Complete", 1, 1);
+                    }
+                } else {
+                    BaseStepPipeline.runAllLoci(cfg, loci, pt, nThreads, ldWindow);
+                }
+                pt.done = true;
+            } catch (Exception e) {
+                pt.phase = "Error: " + e.getMessage();
+                pt.done = true;
+                System.err.printf("[Analysis] Build base failed: %s%n", e.getMessage());
+            }
+        }, "analysis-build-" + projectId).start();
+
+        respond(ex, 202, "application/json",
+            "{\"status\":\"started\",\"message\":\"Base artifact build started\"}".getBytes());
+    }
+
+    // GET /api/project/{id}/analysis/build-base-progress
+    private void projectAnalysisBuildBaseProgress(HttpExchange ex, String projectId)
+            throws IOException {
+        ProgressTracker pt = analysisProgress.get(projectId);
+        if (pt == null) {
+            respond(ex, 200, "application/json",
+                "{\"phase\":\"idle\",\"pct\":0,\"done\":true}".getBytes()); return;
+        }
+        String json = String.format(
+            "{\"phase\":\"%s\",\"locus\":%d,\"total\":%d,\"pct\":%d,\"done\":%s}",
+            escJ(pt.phase), pt.locusIndex, pt.totalLoci, pt.pct(),
+            pt.done ? "true" : "false");
+        respond(ex, 200, "application/json", json.getBytes());
+    }
+
+    // ── Analysis tool/run endpoints ────────────────────────────────
+
+    private final Map<String, PluginEngine.RunResult> analysisJobs = new ConcurrentHashMap<>();
+    private final Map<String, ProgressTracker> analysisJobProgress = new ConcurrentHashMap<>();
+    private final Set<String> cancelledJobs = ConcurrentHashMap.newKeySet();
+
+    // GET /api/project/{id}/analysis/tools — discovered descriptors + param schemas
+    private void projectAnalysisTools(HttpExchange ex) throws IOException {
+        List<ToolDescriptor> tools = PluginEngine.discoverTools();
+        StringBuilder json = new StringBuilder("{\"tools\":[");
+        for (int i = 0; i < tools.size(); i++) {
+            if (i > 0) json.append(',');
+            json.append(tools.get(i).toFormJson());
+        }
+        json.append("]}");
+        respond(ex, 200, "application/json", json.toString().getBytes("UTF-8"));
+    }
+
+    // POST /api/project/{id}/analysis/run — {tool, params, locus_id} → job id
+    private void projectAnalysisRun(HttpExchange ex, String projectId,
+                                     String projectDir) throws IOException {
+        if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) {
+            respond(ex, 405, "text/plain", "Method Not Allowed".getBytes()); return;
+        }
+        ProjectState ps = ensureProjectState(projectId, projectDir);
+        if (ps == null || ps.config == null || ps.loci == null) {
+            respond(ex, 503, "application/json",
+                "{\"error\":\"Pipeline state not available\"}".getBytes()); return;
+        }
+
+        String body = new String(readAll(ex.getRequestBody()), "UTF-8");
+        String toolName = extractStr(body, "tool");
+        String locusId = extractStr(body, "locus_id");
+        if (toolName == null || locusId == null) {
+            respond(ex, 400, "application/json",
+                "{\"error\":\"tool and locus_id required\"}".getBytes()); return;
+        }
+
+        Locus locus = null;
+        for (Locus l : ps.loci) if (l.id.equals(locusId)) { locus = l; break; }
+        if (locus == null) {
+            respond(ex, 404, "application/json",
+                "{\"error\":\"Locus not found\"}".getBytes()); return;
+        }
+
+        // Parse user params from body
+        Map<String, String> params = new LinkedHashMap<>();
+        ToolDescriptor td = PluginEngine.findTool(toolName);
+        if (td != null) {
+            for (ToolDescriptor.Param p : td.params) {
+                String val = extractStr(body, p.name);
+                if (val != null) params.put(p.name, val);
+                else if (p.defaultValue != null) params.put(p.name, p.defaultValue);
+            }
+        }
+
+        // Prepare COJO input if this is a COJO tool
+        final Locus targetLocus = locus;
+        final Config cfg = ps.config;
+        String jobId = UUID.randomUUID().toString();
+
+        ProgressTracker pt = new ProgressTracker();
+        analysisJobProgress.put(jobId, pt);
+
+        // Run in background
+        new Thread(() -> {
+            try {
+                pt.update("Preparing", 0, 4);
+
+                // Tool-specific input preparation
+                File analysisRoot = BaseStepPipeline.analysisDir(cfg, targetLocus);
+                File harmonizedDir = new File(analysisRoot, "harmonized");
+                File matchedDir = new File(analysisRoot, "matched");
+                File ldDir = new File(analysisRoot, "ld");
+                File runDir = new File(analysisRoot, "runs/" + jobId);
+                runDir.mkdirs();
+
+                int sampleN = cfg.sampleN;
+                String nStr = params.get("sample_n");
+                if (nStr != null && !nStr.isEmpty() && !nStr.equals("0"))
+                    try { sampleN = Integer.parseInt(nStr); } catch (NumberFormatException e) {}
+
+                if (toolName.startsWith("cojo")) {
+                    double pCutoff = 5e-8;
+                    try { pCutoff = Double.parseDouble(params.getOrDefault("p_cutoff", "5e-8")); } catch (NumberFormatException e) {}
+                    String gctaBin = params.getOrDefault("gcta_path", "gcta64");
+                    CojoAdapter.prepareRun(harmonizedDir, matchedDir, runDir, sampleN, pCutoff, gctaBin);
+                } else if (toolName.equals("susie_finemapping")) {
+                    int maxCausal = 10;
+                    double coverage = 0.95, ldShrink = 0.1;
+                    int windowKb = 250;
+                    try { maxCausal = Integer.parseInt(params.getOrDefault("max_causal", "10")); } catch (NumberFormatException e) {}
+                    try { coverage = Double.parseDouble(params.getOrDefault("coverage", "0.95")); } catch (NumberFormatException e) {}
+                    try { ldShrink = Double.parseDouble(params.getOrDefault("ld_shrink", "0.1")); } catch (NumberFormatException e) {}
+                    try { windowKb = Integer.parseInt(params.getOrDefault("window_kb", "250")); } catch (NumberFormatException e) {}
+                    SusieAdapter.prepareRun(harmonizedDir, matchedDir, runDir, sampleN, maxCausal, coverage, ldShrink, windowKb);
+                } else if (toolName.equals("finemap")) {
+                    int maxCausal = 5;
+                    try { maxCausal = Integer.parseInt(params.getOrDefault("max_causal", "5")); } catch (NumberFormatException e) {}
+                    FinemapAdapter.prepareRun(harmonizedDir, ldDir, matchedDir, runDir, sampleN, maxCausal);
+                }
+
+                PluginEngine.RunRequest req = new PluginEngine.RunRequest();
+                req.tool = toolName;
+                req.params = params;
+                req.locusId = locusId;
+                req.projectId = projectId;
+                req.projectDir = cfg.outputDir;
+                req.preCreatedRunDir = runDir.getAbsolutePath();
+
+                pt.update("Running " + toolName, 1, 4);
+                PluginEngine.RunResult result = PluginEngine.execute(req, cfg, targetLocus, pt);
+                result.jobId = jobId;
+
+                // R scripts write result.tsv + result.manifest.json directly
+
+                analysisJobs.put(jobId, result);
+                pt.done = true;
+                pt.phase = result.ok ? "Complete" : "Error: " + result.error;
+
+            } catch (Exception e) {
+                PluginEngine.RunResult errResult = new PluginEngine.RunResult();
+                errResult.jobId = jobId;
+                errResult.error = e.getMessage();
+                analysisJobs.put(jobId, errResult);
+                pt.done = true;
+                pt.phase = "Error: " + e.getMessage();
+            }
+        }, "analysis-run-" + jobId).start();
+
+        respond(ex, 202, "application/json",
+            ("{\"job_id\":\"" + jobId + "\",\"status\":\"started\"}").getBytes());
+    }
+
+    // GET /api/project/{id}/analysis/job/{jobId}/progress or /result or /cancel
+    private void projectAnalysisJob(HttpExchange ex, String projectId,
+                                     String projectDir, String action) throws IOException {
+        // action = "analysis/job/{jobId}/progress" or "/result" or "/cancel" or "/log"
+        String rest = action.substring("analysis/job/".length());
+        int slash = rest.indexOf('/');
+        String jobId = slash >= 0 ? rest.substring(0, slash) : rest;
+        String subAction = slash >= 0 ? rest.substring(slash + 1) : "progress";
+
+        if ("progress".equals(subAction)) {
+            ProgressTracker pt = analysisJobProgress.get(jobId);
+            PluginEngine.RunResult result = analysisJobs.get(jobId);
+            if (pt == null) {
+                respond(ex, 404, "application/json", "{\"error\":\"Job not found\"}".getBytes());
+                return;
+            }
+            StringBuilder json = new StringBuilder("{");
+            json.append("\"job_id\":\"").append(escJ(jobId)).append('"');
+            json.append(",\"phase\":\"").append(escJ(pt.phase)).append('"');
+            json.append(",\"pct\":").append(pt.pct());
+            json.append(",\"done\":").append(pt.done);
+            if (result != null) {
+                json.append(",\"ok\":").append(result.ok);
+                if (result.error != null) json.append(",\"error\":\"").append(escJ(result.error)).append('"');
+                if (result.ok) json.append(",\"result_rows\":").append(result.resultRows);
+            }
+            json.append('}');
+            respond(ex, 200, "application/json", json.toString().getBytes("UTF-8"));
+
+        } else if ("result".equals(subAction)) {
+            PluginEngine.RunResult result = analysisJobs.get(jobId);
+            if (result == null || !result.ok) {
+                respond(ex, 404, "application/json",
+                    "{\"error\":\"Result not available\"}".getBytes()); return;
+            }
+            File resultFile = new File(result.runDir, "result.tsv");
+            if (resultFile.exists()) {
+                byte[] bytes = java.nio.file.Files.readAllBytes(resultFile.toPath());
+                respond(ex, 200, "text/tab-separated-values", bytes);
+            } else {
+                respond(ex, 404, "application/json",
+                    "{\"error\":\"result.tsv not found\"}".getBytes());
+            }
+
+        } else if ("cancel".equals(subAction)) {
+            cancelledJobs.add(jobId);
+            respond(ex, 200, "application/json", "{\"ok\":true}".getBytes());
+
+        } else if ("log".equals(subAction)) {
+            PluginEngine.RunResult result = analysisJobs.get(jobId);
+            if (result != null && result.runDir != null) {
+                File logFile = new File(result.runDir, "run.log");
+                if (logFile.exists()) {
+                    byte[] bytes = java.nio.file.Files.readAllBytes(logFile.toPath());
+                    respond(ex, 200, "text/plain", bytes);
+                    return;
+                }
+            }
+            respond(ex, 404, "text/plain", "Log not found".getBytes());
+        }
+    }
+
+    // GET /api/project/{id}/analysis/history?locus_id=...
+    private void projectAnalysisHistory(HttpExchange ex, String projectId,
+                                         String projectDir) throws IOException {
+        String query = ex.getRequestURI().getQuery();
+        String locusId = null;
+        if (query != null) {
+            for (String p : query.split("&")) {
+                String[] kv = p.split("=", 2);
+                if (kv.length == 2 && kv[0].equals("locus_id")) locusId = kv[1];
+            }
+        }
+
+        if (locusId == null) {
+            respond(ex, 400, "application/json",
+                "{\"error\":\"locus_id query param required\"}".getBytes()); return;
+        }
+
+        File runsDir = new File(projectDir, "loci_analysis/" + locusId + "/runs");
+        StringBuilder json = new StringBuilder("{\"runs\":[");
+        boolean first = true;
+
+        if (runsDir.isDirectory()) {
+            File[] runDirs = runsDir.listFiles(File::isDirectory);
+            if (runDirs != null) {
+                Arrays.sort(runDirs, Comparator.comparingLong(File::lastModified).reversed());
+                for (File rd : runDirs) {
+                    File provFile = new File(rd, "provenance.json");
+                    if (!provFile.exists()) continue;
+                    if (!first) json.append(',');
+                    first = false;
+                    String prov = new String(java.nio.file.Files.readAllBytes(provFile.toPath()), "UTF-8");
+                    // Add run status
+                    boolean hasResult = new File(rd, "result.tsv").exists();
+                    json.append("{\"run_dir\":\"").append(escJ(rd.getName())).append('"');
+                    json.append(",\"has_result\":").append(hasResult);
+                    json.append(",\"provenance\":").append(prov.trim());
+                    json.append('}');
+                }
+            }
+        }
+        json.append("]}");
+        respond(ex, 200, "application/json", json.toString().getBytes("UTF-8"));
     }
 
     // GET /api/project/{id}/progress

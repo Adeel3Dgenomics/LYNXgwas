@@ -60,6 +60,7 @@ public class LociMutationService {
             mr.ok = true;
             mr.manifestJson = readManifestJson();
             addJournalEntry(mr);
+            invalidateAnalysis(original.id);
         } catch (Exception e) {
             mr.error = e.getMessage();
             e.printStackTrace();
@@ -95,6 +96,7 @@ public class LociMutationService {
             mr.ok = true;
             mr.manifestJson = readManifestJson();
             addJournalEntry(mr);
+            invalidateAnalysis(retiredId);
         } catch (Exception e) {
             mr.error = e.getMessage();
             e.printStackTrace();
@@ -127,6 +129,7 @@ public class LociMutationService {
             mr.ok = true;
             mr.manifestJson = readManifestJson();
             addJournalEntry(mr);
+            invalidateAnalysis(retiredId);
 
             System.out.printf("[LociMutationService] Deleted locus %d (id=%s)%n", locusIndex, retiredId);
 
@@ -205,6 +208,7 @@ public class LociMutationService {
             mr.ok = true;
             mr.manifestJson = readManifestJson();
             addJournalEntry(mr);
+            for (String retiredId : retiredIds) invalidateAnalysis(retiredId);
 
             System.out.printf("[LociMutationService] Merged %d loci into %s: chr%s:%d-%d%n",
                 locusIndices.size(), mergedName, chr, mergedStart, mergedEnd);
@@ -264,6 +268,12 @@ public class LociMutationService {
 
     public boolean hasUndo() {
         return !undoJournal.isEmpty();
+    }
+
+    // ── Analysis artifact invalidation ──────────────────────────────
+
+    private void invalidateAnalysis(String locusId) {
+        BaseStepPipeline.invalidate(config.outputDir, locusId);
     }
 
     // ── Internal helpers ───────────────────────────────────────────
