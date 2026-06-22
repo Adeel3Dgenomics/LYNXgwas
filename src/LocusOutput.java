@@ -2,6 +2,7 @@ import java.util.*;
 
 /** Full output structure for one locus — serialised to locus_N.json. */
 public class LocusOutput {
+    public String id;
     public int    locusIndex;
     public String locusName;
     public String chr;

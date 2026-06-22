@@ -33,8 +33,8 @@ public class LocusUpdater {
                 return result;
             }
 
-            // Create updated locus with new boundaries
-            Locus updated = new Locus(original.index, original.chr, newStart, newEnd, config.locusPadding);
+            // Create updated locus with new boundaries, preserving stable ID
+            Locus updated = new Locus(original.id, original.index, original.chr, newStart, newEnd, config.locusPadding);
 
             // Re-stream GWAS for this single locus
             streamGwasForLocus(updated, config);
@@ -97,6 +97,7 @@ public class LocusUpdater {
 
             // Build output
             LocusOutput lo = new LocusOutput();
+            lo.id          = updated.id;
             lo.locusIndex  = updated.index;
             lo.locusName   = "Locus " + updated.index;
             lo.chr         = updated.chr;
@@ -236,6 +237,7 @@ public class LocusUpdater {
 
             // Build output
             LocusOutput lo = new LocusOutput();
+            lo.id          = locus.id;
             lo.locusIndex  = newIndex;
             lo.locusName   = locusName != null && !locusName.isEmpty() ? locusName : "Locus " + newIndex;
             lo.chr         = chr;

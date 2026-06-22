@@ -43,6 +43,7 @@ public class JsonExporter {
     static String locusToJson(LocusOutput lo) {
         Jb j = new Jb();
         j.obj(() -> {
+            if (lo.id != null) j.kv("id", lo.id);
             j.kv("locus_index",   lo.locusIndex);
             j.kv("locus_name",    lo.locusName);
             j.kv("chr",           lo.chr);
@@ -206,6 +207,7 @@ public class JsonExporter {
             j.kv("total_loci", sorted.size());
             j.key("loci");
             j.arr(() -> sorted.forEach(lo -> j.obj(() -> {
+                if (lo.id != null) j.kv("id", lo.id);
                 j.kv("index",        lo.locusIndex);
                 j.kv("chr",          lo.chr);
                 j.kv("start",        lo.start);

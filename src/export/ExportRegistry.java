@@ -152,6 +152,7 @@ public class ExportRegistry {
             new ColumnSpec("chr",   "Chr",   "Core", TEXT, 2),
             new ColumnSpec("start", "Start", "Core", INT, 3),
             new ColumnSpec("end",   "End",   "Core", INT, 4),
+            new ColumnSpec("imd",   "IMD (bp)", "Core", TEXT, 5),
             new ColumnSpec("size",  "Size (bp)", "Core", INT, 5));
         public List<ColumnSpec> columns() { return cols; }
         public Object value(LocusContext c, ColumnSpec col) {
@@ -161,6 +162,7 @@ public class ExportRegistry {
                 case "chr":   return c.chr;
                 case "start": return c.start;
                 case "end":   return c.end;
+                case "imd":   return c.imd;
                 case "size":  return c.sizeBp;
                 default: return "";
             }

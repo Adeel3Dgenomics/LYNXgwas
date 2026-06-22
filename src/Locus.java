@@ -1,7 +1,9 @@
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 public class Locus {
+    public final String id;
     public final int    index;
     public final String chr;
     public final long   start;
@@ -13,6 +15,11 @@ public class Locus {
     public final List<Snp> snps = new ArrayList<>();
 
     public Locus(int index, String chr, long start, long end, long padding) {
+        this(UUID.randomUUID().toString(), index, chr, start, end, padding);
+    }
+
+    public Locus(String id, int index, String chr, long start, long end, long padding) {
+        this.id          = id;
         this.index       = index;
         this.chr         = chr;
         this.start       = start;
@@ -43,6 +50,6 @@ public class Locus {
 
     @Override
     public String toString() {
-        return "Locus " + index + " [chr" + chr + ":" + start + "-" + end + "]";
+        return "Locus " + index + " [" + id + " chr" + chr + ":" + start + "-" + end + "]";
     }
 }

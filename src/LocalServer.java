@@ -7,6 +7,7 @@ import java.util.*;
 import java.util.concurrent.*;
 import rsid.*;
 import loci.*;
+import export.*;
 
 public class LocalServer {
 
@@ -37,6 +38,7 @@ public class LocalServer {
         GffParser gff;
         List<Locus> loci;
         List<LocusOutput> outputs;
+        LociMutationService mutationService;
     }
 
     public void setPipelineState(Config config, GffParser gff, List<Locus> loci, List<LocusOutput> outputs) {
@@ -50,6 +52,7 @@ public class LocalServer {
                                 List<Locus> loci, List<LocusOutput> outputs) {
         ProjectState ps = new ProjectState();
         ps.config = config; ps.gff = gff; ps.loci = loci; ps.outputs = outputs;
+        ps.mutationService = new LociMutationService(config, gff, loci, outputs);
         projectStates.put(projectId, ps);
     }
 
@@ -74,6 +77,8 @@ public class LocalServer {
         http.createContext("/api/rsid-detect",       this::rsidDetect);
         http.createContext("/api/loci-identify",     this::lociIdentify);
         http.createContext("/api/loci-progress",     this::lociProgressEndpoint);
+        http.createContext("/api/export-excel",      this::exportExcel);
+        http.createContext("/api/export-progress",   this::exportProgressEndpoint);
         http.createContext("/pick-folder-native",    this::pickFolder);
 
         // ── Legacy endpoints (kept for backward compatibility) ───────────
@@ -332,6 +337,10 @@ public class LocalServer {
             projectSplitLocus(ex, projectId, projectDir);
         } else if (action.equals("validate-split")) {
             projectValidateSplit(ex, projectId, projectDir);
+        } else if (action.equals("merge-loci")) {
+            projectMergeLoci(ex, projectId, projectDir);
+        } else if (action.equals("undo-mutation")) {
+            projectUndoMutation(ex, projectId, projectDir);
         } else if (action.equals("progress")) {
             projectProgressEndpoint(ex, projectId);
         } else {
@@ -634,6 +643,69 @@ public class LocalServer {
         respond(ex, 200, "application/json", json.toString().getBytes());
     }
 
+    // POST /api/project/{id}/merge-loci
+    private void projectMergeLoci(HttpExchange ex, String projectId,
+                                  String projectDir) throws IOException {
+        if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) {
+            respond(ex, 405, "text/plain", "Method Not Allowed".getBytes()); return;
+        }
+        ProjectState ps = projectStates.get(projectId);
+        if (ps == null || ps.mutationService == null) {
+            respond(ex, 503, "application/json",
+                "{\"error\":\"Pipeline state not available\"}".getBytes()); return;
+        }
+        String body = new String(readAll(ex.getRequestBody()), "UTF-8");
+
+        // Parse locus_indices array
+        List<Integer> indices = new ArrayList<>();
+        int arrStart = body.indexOf("\"locus_indices\"");
+        if (arrStart >= 0) {
+            int s = body.indexOf('[', arrStart);
+            int e = body.indexOf(']', s);
+            if (s >= 0 && e > s) {
+                for (String part : body.substring(s+1, e).split(",")) {
+                    part = part.trim();
+                    if (!part.isEmpty()) indices.add(Integer.parseInt(part));
+                }
+            }
+        }
+        if (indices.size() < 2) {
+            respond(ex, 400, "application/json",
+                "{\"error\":\"need at least 2 locus_indices\"}".getBytes()); return;
+        }
+        String mergedName = extractStr(body, "merged_name");
+
+        LociMutationService.MutationResult mr = ps.mutationService.merge(indices, mergedName);
+        if (mr.ok) {
+            respond(ex, 200, "application/json", mr.manifestJson.getBytes("UTF-8"));
+        } else {
+            respond(ex, 500, "application/json",
+                ("{\"error\":\"" + escJ(mr.error) + "\"}").getBytes());
+        }
+    }
+
+    // POST /api/project/{id}/undo-mutation
+    private void projectUndoMutation(HttpExchange ex, String projectId,
+                                     String projectDir) throws IOException {
+        if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) {
+            respond(ex, 405, "text/plain", "Method Not Allowed".getBytes()); return;
+        }
+        ProjectState ps = projectStates.get(projectId);
+        if (ps == null || ps.mutationService == null) {
+            respond(ex, 503, "application/json",
+                "{\"error\":\"Pipeline state not available\"}".getBytes()); return;
+        }
+
+        LociMutationService.MutationResult mr = ps.mutationService.undo();
+        if (mr.ok) {
+            String json = "{\"ok\":true,\"manifest\":" + mr.manifestJson + "}";
+            respond(ex, 200, "application/json", json.getBytes("UTF-8"));
+        } else {
+            respond(ex, 500, "application/json",
+                ("{\"error\":\"" + escJ(mr.error) + "\"}").getBytes());
+        }
+    }
+
     // GET /api/project/{id}/progress
     private void projectProgressEndpoint(HttpExchange ex, String projectId) throws IOException {
         ProgressTracker pt = projectProgress.get(projectId);
@@ -651,6 +723,7 @@ public class LocalServer {
 
     private final Map<String, RsidProgress> rsidProgressMap = new ConcurrentHashMap<>();
     private final Map<String, LociProgress> lociProgressMap = new ConcurrentHashMap<>();
+    private final Map<String, ExcelExporter.ExportProgress> exportProgressMap = new ConcurrentHashMap<>();
 
     // GET/POST /api/global-config
     private void globalConfigEndpoint(HttpExchange ex) throws IOException {
@@ -918,6 +991,77 @@ public class LocalServer {
             return;
         }
         respond(ex, 200, "application/json", lp.toJson().getBytes("UTF-8"));
+    }
+
+    // POST /api/export-excel — { project_id, scope: "dataset"|"locus", locus_index? }
+    private void exportExcel(HttpExchange ex) throws IOException {
+        cors(ex); if (preflight(ex)) return;
+        if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) {
+            respond(ex, 405, "application/json", "{\"error\":\"POST required\"}".getBytes()); return;
+        }
+        String body = new String(readAll(ex.getRequestBody()), "UTF-8");
+        String projectId = extractStr(body, "project_id");
+        String scope = extractStr(body, "scope");
+        if (scope == null) scope = "dataset";
+
+        if (projectId == null || projectId.isEmpty()) {
+            respond(ex, 400, "application/json", "{\"error\":\"missing project_id\"}".getBytes()); return;
+        }
+        File projDir = new File("projects/" + projectId);
+        if (!projDir.isDirectory()) {
+            respond(ex, 404, "application/json", "{\"error\":\"Project not found\"}".getBytes()); return;
+        }
+
+        String projectDir = projDir.getAbsolutePath();
+        String outputFolder = extractStr(body, "output_folder");
+        File exportsDir;
+        if (outputFolder != null && !outputFolder.isEmpty()) {
+            exportsDir = new File(outputFolder);
+        } else {
+            exportsDir = new File(projectDir, "exports");
+        }
+        exportsDir.mkdirs();
+        String date = java.time.LocalDate.now().toString();
+        String outputPath;
+
+        ExcelExporter.ExportProgress ep = new ExcelExporter.ExportProgress();
+        exportProgressMap.put(projectId, ep);
+
+        if ("locus".equals(scope)) {
+            String sIdx = extractStr(body, "locus_index");
+            int locusIdx = sIdx != null ? Integer.parseInt(sIdx) : 1;
+            outputPath = new File(exportsDir, projectId + "_locus" + locusIdx + "_" + date + ".xlsx").getAbsolutePath();
+            String finalPath = outputPath;
+            new Thread(() -> ExcelExporter.exportLocus(projectDir, locusIdx, finalPath, ep),
+                "excel-" + projectId).start();
+        } else {
+            outputPath = new File(exportsDir, projectId + "_" + date + ".xlsx").getAbsolutePath();
+            String finalPath = outputPath;
+            new Thread(() -> ExcelExporter.exportDataset(projectDir, finalPath, ep),
+                "excel-" + projectId).start();
+        }
+
+        respond(ex, 200, "application/json",
+            ("{\"started\":true,\"output\":\"" + escJ(outputPath) + "\"}").getBytes());
+    }
+
+    // GET /api/export-progress?project=...
+    private void exportProgressEndpoint(HttpExchange ex) throws IOException {
+        cors(ex); if (preflight(ex)) return;
+        String query = ex.getRequestURI().getQuery();
+        String projectId = null;
+        if (query != null) for (String p : query.split("&")) {
+            String[] kv = p.split("=", 2);
+            if (kv.length == 2 && kv[0].equals("project"))
+                projectId = URLDecoder.decode(kv[1], "UTF-8");
+        }
+        ExcelExporter.ExportProgress ep = projectId != null ? exportProgressMap.get(projectId) : null;
+        if (ep == null) {
+            respond(ex, 200, "application/json",
+                "{\"pct\":0,\"step_index\":0,\"total_steps\":6,\"current_step\":\"Not started\",\"done\":false,\"error\":null,\"current_locus\":0,\"total_loci\":0}".getBytes());
+            return;
+        }
+        respond(ex, 200, "application/json", ep.toJson().getBytes("UTF-8"));
     }
 
     // ══════════════════════════════════════════════════════════════════════

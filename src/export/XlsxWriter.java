@@ -76,30 +76,48 @@ public class XlsxWriter implements Closeable {
 
     private void writeSheet(int idx, SheetData sd) throws IOException {
         zos.putNextEntry(new ZipEntry("xl/worksheets/sheet" + (idx + 1) + ".xml"));
-        StringBuilder xml = new StringBuilder();
-        xml.append("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n");
-        xml.append("<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">\n");
+        // Write directly to stream to avoid OOM on large sheets
+        Writer w = new OutputStreamWriter(zos, "UTF-8");
 
-        // Column widths
-        xml.append("<cols>");
-        for (int c = 0; c < sd.colCount; c++) {
-            xml.append("<col min=\"").append(c + 1).append("\" max=\"").append(c + 1)
-               .append("\" width=\"15\" bestFit=\"1\" customWidth=\"1\"/>");
-        }
-        xml.append("</cols>\n");
+        w.write("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n");
+        w.write("<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">\n");
 
-        // Freeze panes
+        // Dimension
+        String lastCell = sd.rows.isEmpty() ? "A1" : colRef(Math.max(0, sd.colCount - 1)) + sd.rows.size();
+        w.write("<dimension ref=\"A1:"); w.write(lastCell); w.write("\"/>\n");
+
+        // OOXML element order: dimension → sheetViews → cols → sheetData → autoFilter
+
+        // 1. Freeze panes (sheetViews must come first after dimension)
         if (sd.frozenRows > 0) {
-            xml.append("<sheetViews><sheetView tabSelected=\"").append(idx == 0 ? "1" : "0")
-               .append("\" workbookViewId=\"0\"><pane ySplit=\"").append(sd.frozenRows)
-               .append("\" topLeftCell=\"A").append(sd.frozenRows + 1)
-               .append("\" activePane=\"bottomLeft\" state=\"frozen\"/></sheetView></sheetViews>\n");
+            w.write("<sheetViews><sheetView tabSelected=\"");
+            w.write(idx == 0 ? "1" : "0");
+            w.write("\" workbookViewId=\"0\"><pane ySplit=\"");
+            w.write(String.valueOf(sd.frozenRows));
+            w.write("\" topLeftCell=\"A");
+            w.write(String.valueOf(sd.frozenRows + 1));
+            w.write("\" activePane=\"bottomLeft\" state=\"frozen\"/></sheetView></sheetViews>\n");
         }
 
-        xml.append("<sheetData>\n");
+        // sheetFormatPr (required between sheetViews and cols)
+        w.write("<sheetFormatPr defaultRowHeight=\"15\"/>\n");
+
+        // 2. Column widths
+        if (sd.colCount > 0) {
+            w.write("<cols>");
+            for (int c = 0; c < sd.colCount; c++) {
+                w.write("<col min=\""); w.write(String.valueOf(c + 1));
+                w.write("\" max=\""); w.write(String.valueOf(c + 1));
+                w.write("\" width=\"15\" bestFit=\"1\" customWidth=\"1\"/>");
+            }
+            w.write("</cols>\n");
+        }
+
+        // 3. Sheet data (rows)
+        w.write("<sheetData>\n");
         for (int r = 0; r < sd.rows.size(); r++) {
             Object[] cells = sd.rows.get(r);
-            xml.append("<row r=\"").append(r + 1).append("\">");
+            w.write("<row r=\""); w.write(String.valueOf(r + 1)); w.write("\">");
             for (int c = 0; c < cells.length; c++) {
                 String ref = colRef(c) + (r + 1);
                 Object val = cells[c];
@@ -108,37 +126,37 @@ public class XlsxWriter implements Closeable {
                 } else if (val instanceof Number) {
                     double d = ((Number) val).doubleValue();
                     if (val instanceof Double && (Double.isNaN(d) || Double.isInfinite(d))) {
-                        xml.append("<c r=\"").append(ref).append("\" t=\"s\"><v>")
-                           .append(ssi("-")).append("</v></c>");
+                        w.write("<c r=\""); w.write(ref); w.write("\" t=\"s\"><v>");
+                        w.write(String.valueOf(ssi("-"))); w.write("</v></c>");
                     } else {
-                        String style = (r == 0) ? " s=\"1\"" : // header bold
-                            (val instanceof Double && Math.abs(d) < 0.01 && d != 0) ? " s=\"2\"" : ""; // scientific
-                        xml.append("<c r=\"").append(ref).append("\"").append(style)
-                           .append("><v>").append(formatNum(d)).append("</v></c>");
+                        String style = (r == 0) ? " s=\"1\"" :
+                            (val instanceof Double && Math.abs(d) < 0.01 && d != 0) ? " s=\"2\"" : "";
+                        w.write("<c r=\""); w.write(ref); w.write("\""); w.write(style);
+                        w.write("><v>"); w.write(formatNum(d)); w.write("</v></c>");
                     }
                 } else if (val instanceof Boolean) {
-                    xml.append("<c r=\"").append(ref).append("\" t=\"b\"><v>")
-                       .append((Boolean) val ? "1" : "0").append("</v></c>");
+                    w.write("<c r=\""); w.write(ref); w.write("\" t=\"b\"><v>");
+                    w.write((Boolean) val ? "1" : "0"); w.write("</v></c>");
                 } else {
                     String s = val.toString();
-                    int style = (r == 0) ? 1 : 0;
-                    xml.append("<c r=\"").append(ref).append("\" t=\"s\"");
-                    if (style > 0) xml.append(" s=\"1\"");
-                    xml.append("><v>").append(ssi(s)).append("</v></c>");
+                    w.write("<c r=\""); w.write(ref); w.write("\" t=\"s\"");
+                    if (r == 0) w.write(" s=\"1\"");
+                    w.write("><v>"); w.write(String.valueOf(ssi(s))); w.write("</v></c>");
                 }
             }
-            xml.append("</row>\n");
+            w.write("</row>\n");
+            if (r % 10000 == 0) w.flush();
         }
-        xml.append("</sheetData>\n");
+        w.write("</sheetData>\n");
 
-        // Auto-filter
+        // 4. Auto-filter (must come after sheetData)
         if (sd.autoFilter && !sd.rows.isEmpty()) {
             String range = "A1:" + colRef(sd.colCount - 1) + sd.rows.size();
-            xml.append("<autoFilter ref=\"").append(range).append("\"/>\n");
+            w.write("<autoFilter ref=\""); w.write(range); w.write("\"/>\n");
         }
 
-        xml.append("</worksheet>");
-        zos.write(xml.toString().getBytes("UTF-8"));
+        w.write("</worksheet>");
+        w.flush();
         zos.closeEntry();
     }
 

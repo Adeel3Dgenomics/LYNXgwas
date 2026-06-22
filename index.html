@@ -332,6 +332,7 @@ function render() {
       + '<td class="actions" onclick="event.stopPropagation()">'
       + '<button class="btn btn-secondary" onclick="editConfig(\'' + esc(p.id) + '\')" title="Edit configuration">Edit</button>'
       + '<button class="btn btn-secondary" onclick="reprocess(\'' + esc(p.id) + '\')" title="Reprocess">Reprocess</button>'
+      + '<button class="btn btn-secondary" onclick="exportExcel(\'' + esc(p.id) + '\')" title="Export Excel">Excel</button>'
       + '<button class="btn btn-danger" style="padding:0.2rem 0.6rem;font-size:0.75rem" onclick="deleteProject(\'' + esc(p.id) + '\')" title="Delete project">Delete</button>'
       + '</td></tr>';
   }).join('');
@@ -707,6 +708,41 @@ async function wizSubmit() {
 }
 
 function escAttr(s) { return (s || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+
+async function exportExcel(id) {
+  // Open folder picker to choose save location
+  var folder = '';
+  try {
+    var fr = await fetch(API + '/pick-folder-native');
+    var fd = await fr.json();
+    if (fd.path) folder = fd.path;
+    else return; // user cancelled
+  } catch(e) {
+    // Folder picker unavailable — use default
+    folder = '';
+  }
+
+  try {
+    var resp = await fetch(API + '/api/export-excel', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ project_id: id, scope: 'dataset', output_folder: folder })
+    });
+    var d = await resp.json();
+    if (d.error) { alert('Export failed: ' + d.error); return; }
+    // Poll progress
+    var pollId = setInterval(async function() {
+      try {
+        var r = await fetch(API + '/api/export-progress?project=' + encodeURIComponent(id));
+        var p = await r.json();
+        if (p.done) {
+          clearInterval(pollId);
+          if (p.error) { alert('Export failed: ' + p.error); }
+          else { alert('Excel export complete!\n\nSaved to: ' + (d.output || 'exports/ folder')); }
+        }
+      } catch(e) { clearInterval(pollId); }
+    }, 1000);
+  } catch (e) { alert('Export failed: ' + e.message); }
+}
 
 async function deleteProject(id) {
   if (!confirm('Are you sure you want to delete project "' + id + '"?\n\nThis will permanently remove the project folder and all its processed data. This cannot be undone.')) return;

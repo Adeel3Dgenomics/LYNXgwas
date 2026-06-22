@@ -290,6 +290,7 @@ public class Main {
         for (int i = 0; i < loci.size(); i++) {
             Locus locus = loci.get(i);
             LocusOutput lo = new LocusOutput();
+            lo.id          = locus.id;
             lo.locusIndex  = locus.index;
             lo.locusName   = "Locus " + locus.index;
             lo.chr         = locus.chr;

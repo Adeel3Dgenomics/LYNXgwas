@@ -247,6 +247,71 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 #toast{position:fixed;bottom:24px;right:24px;background:#1e293b;color:#e2e8f0;
   padding:10px 18px;border-radius:8px;font-size:12px;box-shadow:0 4px 16px rgba(0,0,0,.3);
   display:none;z-index:400;transition:opacity .3s}
+
+/* ─── Loci Sidebar ──────────────────────────────────────── */
+#loci-sidebar{position:fixed;top:46px;left:0;bottom:0;width:320px;
+  background:#1a1c2e;color:#e2e8f0;display:flex;flex-direction:column;
+  z-index:45;box-shadow:2px 0 12px rgba(0,0,0,0.3);
+  transition:transform 0.25s ease;overflow:hidden}
+#loci-sidebar.sb-hidden{transform:translateX(-320px);pointer-events:none}
+
+#sidebar-rail{position:fixed;top:46px;left:0;bottom:0;width:28px;
+  background:#1a1c2e;z-index:44;display:none;flex-direction:column;
+  align-items:center;padding-top:14px;cursor:pointer;
+  box-shadow:2px 0 8px rgba(0,0,0,0.2)}
+#sidebar-rail:hover{background:#24263d}
+.sidebar-expand-btn{background:none;border:none;color:#94a3b8;
+  font-size:18px;cursor:pointer;padding:4px}
+.sidebar-expand-btn:hover{color:#e2e8f0}
+
+.sidebar-top{display:flex;align-items:center;justify-content:space-between;
+  padding:10px 12px;border-bottom:1px solid #2d2f50;flex-shrink:0}
+.sidebar-title{font-weight:700;font-size:13px;display:flex;align-items:center;gap:6px}
+.sidebar-count{font-size:11px;color:#94a3b8}
+.sidebar-controls{display:flex;gap:2px}
+.sidebar-ctrl-btn{background:none;border:none;color:#94a3b8;
+  cursor:pointer;font-size:14px;padding:3px 5px;border-radius:4px}
+.sidebar-ctrl-btn:hover{color:#e2e8f0;background:rgba(255,255,255,0.06)}
+.sidebar-ctrl-btn.pinned{color:#c084fc}
+
+.sidebar-search{padding:8px 12px;border-bottom:1px solid #2d2f50;flex-shrink:0}
+.sidebar-search input{width:100%;padding:6px 10px;border:1px solid #3d3f5c;
+  border-radius:6px;background:#2d2f50;color:#e2e8f0;font-size:12px;outline:none}
+.sidebar-search input:focus{border-color:#7c3aed}
+.sidebar-search input::placeholder{color:#64748b}
+.sidebar-match-count{font-size:10px;color:#64748b;margin-top:3px;display:block;min-height:14px}
+.sidebar-filter-hint{font-size:10px;color:#fbbf24;margin-top:2px;display:none}
+
+#sidebar-list{flex:1;overflow-y:auto;position:relative}
+#sidebar-list::-webkit-scrollbar{width:6px}
+#sidebar-list::-webkit-scrollbar-track{background:transparent}
+#sidebar-list::-webkit-scrollbar-thumb{background:#3d3f5c;border-radius:3px}
+
+.sidebar-row{position:absolute;left:0;right:0;padding:6px 12px;cursor:pointer;
+  border-bottom:1px solid rgba(255,255,255,0.04);display:flex;flex-direction:column;
+  gap:1px;transition:background 0.1s;border-left:3px solid transparent}
+.sidebar-row:hover{filter:brightness(1.15)}
+.sidebar-row.selected{border-left-color:#7c3aed;background:rgba(124,58,237,0.18)!important}
+.sr-idx{font-size:10px;font-weight:600;color:#c4b5fd;letter-spacing:0.3px}
+.sr-region{font-size:12px;font-weight:600;color:#e2e8f0}
+.sr-info{font-size:10px;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+#sidebar-merge-bar{padding:8px 12px;background:#1e40af;display:none;
+  align-items:center;gap:8px;flex-shrink:0;border-top:1px solid rgba(255,255,255,0.1)}
+#sidebar-merge-bar span{color:#e2e8f0;font-size:12px}
+.merge-btn{margin-left:auto;padding:4px 12px;background:#fff;color:#1e40af;
+  border:none;border-radius:4px;font-size:12px;font-weight:600;cursor:pointer}
+.merge-cancel-btn{padding:4px 8px;background:none;border:1px solid rgba(255,255,255,0.3);
+  color:#e2e8f0;border-radius:4px;font-size:11px;cursor:pointer}
+
+.sidebar-kbd-hints{padding:6px 12px;border-top:1px solid #2d2f50;flex-shrink:0;
+  font-size:10px;color:#4b5563;display:flex;gap:10px;flex-wrap:wrap}
+.sidebar-kbd-hints kbd{background:#2d2f50;padding:1px 4px;border-radius:3px;
+  font-family:inherit;color:#94a3b8}
+
+/* ─── Sidebar layout helpers ────────────────────────────── */
+#main{transition:margin-left 0.25s ease}
+#genome-skyline{transition:margin-left 0.25s ease}
 </style>
 </head>
 <body>
@@ -424,6 +489,43 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   </div>
 
   <button id="export-pdf-btn">Export PDF</button>
+  <button id="undo-btn" class="nav-btn" style="display:none" title="Undo last locus change">&#8617; Undo</button>
+  <button id="export-excel-btn" onclick="exportLocusExcel()" style="padding:5px 14px;background:#065f46;color:#fff;border:none;border-radius:14px;font-size:12px;cursor:pointer;margin-left:6px">Export Excel</button>
+</div>
+
+<!-- Sidebar rail (visible when sidebar collapsed) -->
+<div id="sidebar-rail">
+  <button class="sidebar-expand-btn" id="sidebar-expand-btn" title="Show loci list">&#9656;</button>
+</div>
+
+<!-- Loci sidebar -->
+<div id="loci-sidebar" class="sb-hidden">
+  <div class="sidebar-top">
+    <div class="sidebar-title">
+      <span>Loci</span>
+      <span id="sidebar-count" class="sidebar-count"></span>
+    </div>
+    <div class="sidebar-controls">
+      <button id="sidebar-pin-btn" class="sidebar-ctrl-btn pinned" title="Unpin sidebar (floating overlay)">&#128204;</button>
+      <button id="sidebar-close-btn" class="sidebar-ctrl-btn" title="Collapse sidebar">&times;</button>
+    </div>
+  </div>
+  <div class="sidebar-search">
+    <input type="text" id="sidebar-search-input" placeholder="Filter by gene, rsID, locus..." autocomplete="off">
+    <span id="sidebar-match-count" class="sidebar-match-count"></span>
+    <span id="sidebar-filter-hint" class="sidebar-filter-hint"></span>
+  </div>
+  <div id="sidebar-list"></div>
+  <div id="sidebar-merge-bar">
+    <span id="merge-count"></span>
+    <button class="merge-btn" id="merge-btn">Merge</button>
+    <button class="merge-cancel-btn" id="merge-cancel">Cancel</button>
+  </div>
+  <div class="sidebar-kbd-hints">
+    <span><kbd>&uarr;</kbd><kbd>&darr;</kbd> navigate</span>
+    <span><kbd>/</kbd> search</span>
+    <span><kbd>Esc</kbd> clear</span>
+  </div>
 </div>
 
 <div id="genome-skyline">
@@ -445,7 +547,7 @@ const SERVER    = 'http://localhost:8765';
 const PROJECT_ID = new URLSearchParams(window.location.search).get('project');
 const PROJECT_API = PROJECT_ID ? SERVER + '/api/project/' + encodeURIComponent(PROJECT_ID) : '';
 const DATA_DIR  = 'data';
-const VISIBLE   = 3;
+const VISIBLE   = 1;
 const MARGIN    = {top:10, right:20, bottom:28, left:52};
 const PLOT_H    = 250;
 const GENE_ROW  = 40;
@@ -674,6 +776,8 @@ async function init() {
   setupToggles();
   setupNav();
   setupPdfDialog();
+  setupSidebar();
+  setupKeyboardNav();
 
   // Load and render genome skyline (non-blocking)
   loadSkyline().then(() => { renderSkyline(); updateSkylineHighlights(); });
@@ -694,8 +798,9 @@ async function init() {
   }
 
   renderViewport(false);
-  // Preload next batch
-  preload(currentStart + VISIBLE);
+  // Preload neighbors
+  if (currentStart + 1 < lociOrder.length) preload(lociOrder[currentStart + 1]);
+  if (currentStart > 0) preload(lociOrder[currentStart - 1]);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -709,29 +814,33 @@ async function renderViewport(animate) {
     await new Promise(r => setTimeout(r, 200));
   }
 
+  // Teardown: clear canvas contexts and unbind D3 handlers to prevent leaks
+  container.querySelectorAll('canvas').forEach(c => {
+    const ctx = c.getContext('2d');
+    if (ctx) ctx.clearRect(0, 0, c.width, c.height);
+  });
+  d3.select(container).selectAll('*').on('.', null);
   container.innerHTML = '';
 
   // Clamp currentStart
-  currentStart = Math.max(0, Math.min(currentStart, lociOrder.length - VISIBLE));
+  currentStart = Math.max(0, Math.min(currentStart, lociOrder.length - 1));
 
-  const endPos = Math.min(currentStart + VISIBLE, lociOrder.length);
-  for (let pos = currentStart; pos < endPos; pos++) {
-    const idx = lociOrder[pos];
-    const entry  = manifest.loci.find(l => l.index === idx);
-    const panel  = makePanelShell(entry || {index: idx, locus_name:'Locus '+idx, chr:'?', start:0, end:0});
-    container.appendChild(panel);
-    loadLocus(idx).then(data => { if (data) fillPanel(data, panel); });
-  }
+  const idx = lociOrder[currentStart];
+  const entry = manifest.loci.find(l => l.index === idx);
+  const panel = makePanelShell(entry || {index: idx, locus_name:'Locus '+idx, chr:'?', start:0, end:0});
+  container.appendChild(panel);
+  loadLocus(idx).then(data => { if (data) fillPanel(data, panel); });
 
   updateNavUI();
   updateSkylineHighlights();
+  syncSidebarSelection();
 
   if (animate) {
     container.classList.remove('transitioning');
   }
 
-  // Preload next + prev not yet cached
-  if (currentStart + VISIBLE < lociOrder.length) preload(lociOrder[currentStart + VISIBLE]);
+  // Preload neighbors for fast stepping
+  if (currentStart + 1 < lociOrder.length) preload(lociOrder[currentStart + 1]);
   if (currentStart > 0) preload(lociOrder[currentStart - 1]);
 }
 
@@ -2284,18 +2393,15 @@ function setupNav() {
     if (currentStart > 0) { currentStart--; renderViewport(true); }
   });
   document.getElementById('next-btn').addEventListener('click', () => {
-    if (currentStart + VISIBLE < lociOrder.length) { currentStart++; renderViewport(true); }
+    if (currentStart + 1 < lociOrder.length) { currentStart++; renderViewport(true); }
   });
 }
 
 function updateNavUI() {
-  const endPos = Math.min(currentStart + VISIBLE, lociOrder.length);
-  const showFrom = currentStart + 1;
-  const showTo = endPos;
   document.getElementById('nav-counter').textContent =
-    `Showing loci ${showFrom}–${showTo} of ${lociOrder.length}`;
+    `Locus ${currentStart + 1} of ${lociOrder.length}`;
   document.getElementById('prev-btn').disabled = currentStart <= 0;
-  document.getElementById('next-btn').disabled = currentStart + VISIBLE >= lociOrder.length;
+  document.getElementById('next-btn').disabled = currentStart + 1 >= lociOrder.length;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -2327,11 +2433,9 @@ function setupSearch() {
         `<div class="si-name">${entry.locus_name}</div>
          <div class="si-sub">${(entry.nearest_genes||[]).join(', ')} &nbsp;|&nbsp; ${entry.top_snp||'—'}</div>`;
       item.addEventListener('click', () => {
-        // Jump to the locus: navigate viewport to show it
         const idx = entry.index;
         const pos = lociOrder.indexOf(idx);
-        if (pos >= 0) currentStart = Math.max(0, Math.min(pos, lociOrder.length - VISIBLE));
-        renderViewport(true);
+        if (pos >= 0) { currentStart = pos; renderViewport(true); }
         dd.style.display = 'none';
         input.value = '';
       });
@@ -2385,6 +2489,42 @@ function downloadPng(panelEl, name) {
 // ═══════════════════════════════════════════════════════════════
 // PDF Export
 // ═══════════════════════════════════════════════════════════════
+async function exportLocusExcel() {
+  if (!PROJECT_ID) { alert('No project selected'); return; }
+  var locIdx = lociOrder[currentStart];
+  if (!locIdx) { alert('No locus selected'); return; }
+
+  // Open folder picker
+  var folder = '';
+  try {
+    var fr = await fetch(SERVER + '/pick-folder-native');
+    var fd = await fr.json();
+    if (fd.path) folder = fd.path;
+    else return;
+  } catch(e) {}
+
+  try {
+    var resp = await fetch(SERVER + '/api/export-excel', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ project_id: PROJECT_ID, scope: 'locus', locus_index: String(locIdx), output_folder: folder })
+    });
+    var d = await resp.json();
+    if (d.error) { alert('Export failed: ' + d.error); return; }
+    // Poll
+    var pollId = setInterval(async function() {
+      try {
+        var r = await fetch(SERVER + '/api/export-progress?project=' + encodeURIComponent(PROJECT_ID));
+        var p = await r.json();
+        if (p.done) {
+          clearInterval(pollId);
+          if (p.error) alert('Export failed: ' + p.error);
+          else alert('Excel export complete!\nLocus ' + locIdx + ' → ' + (d.output || 'exports/ folder'));
+        }
+      } catch(e) { clearInterval(pollId); }
+    }, 500);
+  } catch(e) { alert('Export failed: ' + e.message); }
+}
+
 function setupPdfDialog() {
   const cfgModal  = document.getElementById('pdf-config-modal');
   const progModal = document.getElementById('pdf-progress-modal');
@@ -2976,16 +3116,14 @@ function showCreateLocusDialog(chr, start, end, defaultName) {
 
       // Server returns updated manifest
       const newManifest = await res.json();
-      manifest = newManifest;
+      manifest = newManifest.manifest || newManifest;
       rebuildLociOrder();
 
       // Navigate to the new locus (last in the list)
-      currentStart = Math.max(0, lociOrder.length - VISIBLE);
+      currentStart = Math.max(0, lociOrder.length - 1);
 
-      // Update UI
-      document.getElementById('cfg-total').textContent = lociOrder.length;
-      document.getElementById('range-to').value = lociOrder.length;
-
+      refreshSidebarAfterMutation();
+      document.getElementById('undo-btn').style.display = '';
       dlg.remove();
       renderViewport(true);
 
@@ -3328,19 +3466,19 @@ function showSplitDialog(data) {
       }
 
       const newManifest = await res.json();
-      manifest = newManifest;
+      manifest = newManifest.manifest || newManifest;
       rebuildLociOrder();
       locusCache.delete(data.locus_index);
-      document.getElementById('cfg-total').textContent = lociOrder.length;
-      document.getElementById('range-to').value = lociOrder.length;
 
       // Navigate to first new locus
-      const firstNew = newManifest.loci[newManifest.loci.length - splitRegions.length];
+      const firstNew = manifest.loci[manifest.loci.length - splitRegions.length];
       if (firstNew) {
         const pos = lociOrder.indexOf(firstNew.index);
-        if (pos >= 0) currentStart = Math.max(0, Math.min(pos, lociOrder.length - VISIBLE));
+        if (pos >= 0) currentStart = pos;
       }
 
+      refreshSidebarAfterMutation();
+      document.getElementById('undo-btn').style.display = '';
       dlg.remove();
       renderViewport(true);
 
@@ -3383,10 +3521,18 @@ async function triggerLocusUpdate(locusIndex, newStart, newEnd, origStart, origE
     // Update manifest entry so header and skyline reflect new boundaries
     if (manifest) {
       const entry = manifest.loci.find(l => l.index === locusIndex);
-      if (entry) { entry.start = newStart; entry.end = newEnd; }
+      if (entry) {
+        entry.start = newStart; entry.end = newEnd;
+        if (newData.top_snp) {
+          entry.top_snp = newData.top_snp.id;
+          entry.top_snp_pval = newData.top_snp.pvalue;
+        }
+        if (newData.nearest_genes) entry.nearest_genes = newData.nearest_genes;
+      }
     }
 
-    // Re-render the viewport
+    refreshSidebarAfterMutation();
+    document.getElementById('undo-btn').style.display = '';
     renderViewport(false);
 
   } catch (e) {
@@ -3395,6 +3541,444 @@ async function triggerLocusUpdate(locusIndex, newStart, newEnd, origStart, origE
     btn.disabled = false;
     btn.style.opacity = '';
   }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Chromosome color palette
+// ═══════════════════════════════════════════════════════════════
+const CHR_PALETTE = {
+  '1':'#e6194b','2':'#3cb44b','3':'#4363d8','4':'#f58231','5':'#911eb4',
+  '6':'#42d4f4','7':'#f032e6','8':'#bfef45','9':'#fabed4','10':'#469990',
+  '11':'#dcbeff','12':'#9A6324','13':'#fffac8','14':'#800000','15':'#aaffc3',
+  '16':'#808000','17':'#ffd8b1','18':'#000075','19':'#a9a9a9','20':'#e6beff',
+  '21':'#1abc9c','22':'#7f8c8d','X':'#2c3e50','Y':'#8e44ad','MT':'#c0392b'
+};
+function chrRowBg(chr, rowIdx) {
+  const base = CHR_PALETTE[String(chr)] || '#6b7280';
+  const r = parseInt(base.slice(1,3),16), g = parseInt(base.slice(3,5),16), b = parseInt(base.slice(5,7),16);
+  const alpha = rowIdx % 2 === 0 ? 0.10 : 0.06;
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Sidebar — virtual list
+// ═══════════════════════════════════════════════════════════════
+function VirtualList(containerEl, rowHeight) {
+  const BUFFER = 8;
+  let items = [];
+  let selectedLocusIndex = -1;
+  let onClickCb = null;
+  let onShiftClickCb = null;
+
+  // Sentinel div sets the scroll height
+  const sentinel = document.createElement('div');
+  sentinel.style.cssText = 'pointer-events:none';
+  containerEl.appendChild(sentinel);
+
+  // Map tracks which virtual indices have a DOM row currently mounted
+  const activeRows = new Map(); // virtualIndex → HTMLElement
+  // Pool of detached row elements ready for reuse
+  const pool = [];
+
+  function acquireRow() {
+    if (pool.length) return pool.pop();
+    const r = document.createElement('div');
+    r.className = 'sidebar-row';
+    return r;
+  }
+
+  function releaseRow(vi) {
+    const el = activeRows.get(vi);
+    if (!el) return;
+    activeRows.delete(vi);
+    containerEl.removeChild(el);
+    pool.push(el);
+  }
+
+  function populateRow(row, entry, i) {
+    row.style.position = 'absolute';
+    row.style.top = (i * rowHeight) + 'px';
+    row.style.left = '0';
+    row.style.right = '0';
+    row.style.height = rowHeight + 'px';
+    row.style.backgroundColor = chrRowBg(entry.chr, i);
+
+    const genes = (entry.nearest_genes || []).slice(0, 2).join(', ') || '—';
+    const pval = entry.top_snp_pval ? fmtP(entry.top_snp_pval) : '—';
+    row.innerHTML =
+      `<div class="sr-idx">Locus ${entry.index}</div>
+       <div class="sr-region">chr${entry.chr}:${fmtN(entry.start)}–${fmtN(entry.end)}</div>
+       <div class="sr-info">${genes} · ${entry.top_snp || '—'} · p=${pval}</div>`;
+
+    if (entry.index === selectedLocusIndex) row.classList.add('selected');
+    else row.classList.remove('selected');
+
+    row.onclick = (e) => {
+      if (e.shiftKey && onShiftClickCb) { onShiftClickCb(entry); return; }
+      selectedLocusIndex = entry.index;
+      if (onClickCb) onClickCb(entry);
+      updateSelectionClass();
+    };
+  }
+
+  function updateSelectionClass() {
+    for (const [vi, el] of activeRows) {
+      const entry = items[vi];
+      if (entry && entry.index === selectedLocusIndex) el.classList.add('selected');
+      else el.classList.remove('selected');
+    }
+  }
+
+  function render() {
+    const scrollTop = containerEl.scrollTop;
+    const viewH = containerEl.clientHeight;
+    if (viewH === 0) return; // container not visible yet
+
+    const startIdx = Math.max(0, Math.floor(scrollTop / rowHeight) - BUFFER);
+    const endIdx = Math.min(items.length, Math.ceil((scrollTop + viewH) / rowHeight) + BUFFER);
+
+    sentinel.style.height = (items.length * rowHeight) + 'px';
+
+    // Release rows outside the visible range
+    for (const vi of [...activeRows.keys()]) {
+      if (vi < startIdx || vi >= endIdx) releaseRow(vi);
+    }
+
+    // Mount rows that are now visible but not yet mounted
+    for (let i = startIdx; i < endIdx; i++) {
+      if (activeRows.has(i)) continue;
+      const entry = items[i];
+      if (!entry) continue;
+      const row = acquireRow();
+      populateRow(row, entry, i);
+      activeRows.set(i, row);
+      containerEl.appendChild(row);
+    }
+  }
+
+  let rafPending = false;
+  containerEl.addEventListener('scroll', () => {
+    if (!rafPending) {
+      rafPending = true;
+      requestAnimationFrame(() => { render(); rafPending = false; });
+    }
+  });
+
+  function clearAll() {
+    for (const vi of [...activeRows.keys()]) releaseRow(vi);
+  }
+
+  return {
+    render,
+    setItems(newItems) {
+      items = newItems;
+      clearAll();
+      render();
+    },
+    getItems() { return items; },
+    selectByIndex(locusIndex) {
+      selectedLocusIndex = locusIndex;
+      updateSelectionClass();
+      const pos = items.findIndex(e => e.index === locusIndex);
+      if (pos >= 0) {
+        const target = pos * rowHeight - containerEl.clientHeight / 2 + rowHeight / 2;
+        containerEl.scrollTop = Math.max(0, target);
+      }
+    },
+    getSelectedIndex() { return selectedLocusIndex; },
+    onClick(fn) { onClickCb = fn; },
+    onShiftClick(fn) { onShiftClickCb = fn; }
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Sidebar — setup & state
+// ═══════════════════════════════════════════════════════════════
+let sidebarVList = null;
+let sidebarPinned = true;
+let sidebarCollapsed = false;
+let _autoHideTimer = null;
+let mergeSelection = new Set();
+
+function setupSidebar() {
+  if (!manifest || !manifest.loci) return;
+
+  const sidebar = document.getElementById('loci-sidebar');
+  const rail = document.getElementById('sidebar-rail');
+  const listEl = document.getElementById('sidebar-list');
+  const searchInput = document.getElementById('sidebar-search-input');
+  const matchCount = document.getElementById('sidebar-match-count');
+  const filterHint = document.getElementById('sidebar-filter-hint');
+  const countEl = document.getElementById('sidebar-count');
+
+  // Restore state
+  sidebarPinned = localStorage.getItem('lynx_sidebar_pinned') !== 'false';
+  sidebarCollapsed = localStorage.getItem('lynx_sidebar_collapsed') === 'true';
+
+  const ROW_H = 52;
+  sidebarVList = VirtualList(listEl, ROW_H);
+  sidebarVList.setItems(manifest.loci);
+  countEl.textContent = `(${manifest.loci.length})`;
+
+  sidebarVList.onClick((entry) => {
+    const pos = lociOrder.indexOf(entry.index);
+    if (pos >= 0) { currentStart = pos; renderViewport(true); }
+  });
+
+  sidebarVList.onShiftClick((entry) => {
+    if (mergeSelection.has(entry.index)) mergeSelection.delete(entry.index);
+    else mergeSelection.add(entry.index);
+    renderMergeBar();
+    sidebarVList.render();
+  });
+
+  // Search / filter
+  searchInput.addEventListener('input', () => {
+    const q = searchInput.value.trim().toLowerCase();
+    if (!q) {
+      sidebarVList.setItems(manifest.loci);
+      matchCount.textContent = '';
+      filterHint.style.display = 'none';
+      return;
+    }
+    const filtered = manifest.loci.filter(entry => {
+      return entry.locus_name.toLowerCase().includes(q)
+        || (entry.nearest_genes||[]).some(g => g.toLowerCase().includes(q))
+        || (entry.top_snp && entry.top_snp.toLowerCase().includes(q))
+        || String(entry.index).includes(q)
+        || ('chr'+entry.chr).toLowerCase().includes(q);
+    });
+    sidebarVList.setItems(filtered);
+    matchCount.textContent = `${filtered.length} of ${manifest.loci.length} loci`;
+
+    // Check if selected locus is still in filtered set
+    const selIdx = lociOrder[currentStart];
+    if (selIdx !== undefined && !filtered.find(e => e.index === selIdx)) {
+      filterHint.textContent = 'Current locus not in filter';
+      filterHint.style.display = '';
+    } else {
+      filterHint.style.display = 'none';
+    }
+  });
+
+  // Pin/unpin
+  document.getElementById('sidebar-pin-btn').addEventListener('click', () => {
+    sidebarPinned = !sidebarPinned;
+    localStorage.setItem('lynx_sidebar_pinned', sidebarPinned);
+    applySidebarMode();
+  });
+
+  // Collapse to rail
+  document.getElementById('sidebar-close-btn').addEventListener('click', () => {
+    sidebarCollapsed = true;
+    localStorage.setItem('lynx_sidebar_collapsed', 'true');
+    applySidebarMode();
+  });
+
+  // Expand from rail
+  rail.addEventListener('click', () => {
+    sidebarCollapsed = false;
+    localStorage.setItem('lynx_sidebar_collapsed', 'false');
+    applySidebarMode();
+  });
+
+  // Auto-hide for floating mode
+  sidebar.addEventListener('mouseleave', () => {
+    if (!sidebarPinned && !sidebarCollapsed) {
+      _autoHideTimer = setTimeout(() => {
+        if (!sidebar.matches(':hover')) {
+          sidebarCollapsed = true;
+          applySidebarMode();
+        }
+      }, 800);
+    }
+  });
+  sidebar.addEventListener('mouseenter', () => {
+    if (_autoHideTimer) { clearTimeout(_autoHideTimer); _autoHideTimer = null; }
+  });
+
+  // Merge bar handlers
+  document.getElementById('merge-btn').addEventListener('click', executeMerge);
+  document.getElementById('merge-cancel').addEventListener('click', () => {
+    mergeSelection.clear();
+    renderMergeBar();
+    sidebarVList.render();
+  });
+
+  // Undo button
+  document.getElementById('undo-btn').addEventListener('click', async () => {
+    try {
+      const res = await fetch(PROJECT_API + '/undo-mutation', { method: 'POST' });
+      if (res.ok) {
+        const result = await res.json();
+        if (result.manifest) {
+          manifest = result.manifest;
+          rebuildLociOrder();
+          locusCache.clear();
+          refreshSidebarAfterMutation();
+          renderViewport(true);
+        }
+      }
+    } catch(e) { showToast('Undo failed: ' + e.message); }
+  });
+
+  applySidebarMode();
+  // Select current locus
+  if (lociOrder.length > 0) sidebarVList.selectByIndex(lociOrder[currentStart]);
+}
+
+function applySidebarMode() {
+  const sidebar = document.getElementById('loci-sidebar');
+  const rail = document.getElementById('sidebar-rail');
+  const main = document.getElementById('main');
+  const skyline = document.getElementById('genome-skyline');
+  const pinBtn = document.getElementById('sidebar-pin-btn');
+
+  if (sidebarCollapsed) {
+    sidebar.classList.add('sb-hidden');
+    rail.style.display = 'flex';
+    main.style.marginLeft = '28px';
+    skyline.style.marginLeft = '28px';
+  } else if (sidebarPinned) {
+    sidebar.classList.remove('sb-hidden');
+    rail.style.display = 'none';
+    main.style.marginLeft = '320px';
+    skyline.style.marginLeft = '320px';
+    pinBtn.classList.add('pinned');
+    pinBtn.title = 'Unpin sidebar (floating overlay)';
+  } else {
+    sidebar.classList.remove('sb-hidden');
+    rail.style.display = 'none';
+    main.style.marginLeft = '0';
+    skyline.style.marginLeft = '0';
+    pinBtn.classList.remove('pinned');
+    pinBtn.title = 'Pin sidebar (docked)';
+  }
+
+  // Re-render virtual list since container height may have changed
+  if (sidebarVList) requestAnimationFrame(() => sidebarVList.render());
+}
+
+function syncSidebarSelection() {
+  if (!sidebarVList || !lociOrder.length) return;
+  sidebarVList.selectByIndex(lociOrder[currentStart]);
+}
+
+function refreshSidebarAfterMutation() {
+  if (!sidebarVList) return;
+  sidebarVList.setItems(manifest.loci);
+  document.getElementById('sidebar-count').textContent = `(${manifest.loci.length})`;
+  const cfgTotal = document.getElementById('cfg-total');
+  const rangeTo = document.getElementById('range-to');
+  if (cfgTotal) cfgTotal.textContent = lociOrder.length;
+  if (rangeTo) rangeTo.value = lociOrder.length;
+  syncSidebarSelection();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Merge UI
+// ═══════════════════════════════════════════════════════════════
+function renderMergeBar() {
+  const bar = document.getElementById('sidebar-merge-bar');
+  const countEl = document.getElementById('merge-count');
+  if (mergeSelection.size < 2) {
+    bar.style.display = 'none';
+    return;
+  }
+  bar.style.display = 'flex';
+  countEl.textContent = `${mergeSelection.size} loci selected`;
+}
+
+async function executeMerge() {
+  const indices = [...mergeSelection].sort((a,b) => a - b);
+  const entries = indices.map(i => manifest.loci.find(l => l.index === i)).filter(Boolean);
+  if (entries.length < 2) return;
+
+  const chrs = new Set(entries.map(e => e.chr));
+  if (chrs.size > 1) { alert('Cannot merge loci on different chromosomes.'); return; }
+
+  const ids = entries.map(e => e.id).filter(Boolean);
+  const mergedName = entries.map(e => e.locus_name).join(' + ');
+
+  try {
+    const res = await fetch(PROJECT_API + '/merge-loci', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        locus_ids: ids.length ? ids : undefined,
+        locus_indices: ids.length ? undefined : indices,
+        merged_name: mergedName
+      })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({error:'Server error'}));
+      alert('Merge failed: ' + (err.error || 'Unknown error'));
+      return;
+    }
+    const result = await res.json();
+    if (result.manifest) {
+      manifest = result.manifest;
+    } else if (result.total_loci) {
+      manifest = result;
+    }
+    rebuildLociOrder();
+    locusCache.clear();
+    mergeSelection.clear();
+    renderMergeBar();
+    refreshSidebarAfterMutation();
+    document.getElementById('undo-btn').style.display = '';
+    renderViewport(true);
+    showToast('Loci merged successfully');
+  } catch(e) {
+    alert('Merge failed: ' + e.message);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Keyboard navigation
+// ═══════════════════════════════════════════════════════════════
+function setupKeyboardNav() {
+  document.addEventListener('keydown', (e) => {
+    const tag = (e.target.tagName || '').toUpperCase();
+    const isInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+
+    // '/' focuses sidebar search (unless already in an input)
+    if (e.key === '/' && !isInput) {
+      e.preventDefault();
+      const searchInput = document.getElementById('sidebar-search-input');
+      if (searchInput) {
+        if (sidebarCollapsed) {
+          sidebarCollapsed = false;
+          localStorage.setItem('lynx_sidebar_collapsed', 'false');
+          applySidebarMode();
+        }
+        searchInput.focus();
+      }
+      return;
+    }
+
+    // Escape clears sidebar search and unfocuses
+    if (e.key === 'Escape') {
+      const searchInput = document.getElementById('sidebar-search-input');
+      if (searchInput && document.activeElement === searchInput) {
+        searchInput.value = '';
+        searchInput.dispatchEvent(new Event('input'));
+        searchInput.blur();
+      }
+      return;
+    }
+
+    if (isInput) return;
+
+    // Arrow keys / j/k for locus navigation
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowUp' || e.key === 'k') {
+      if (currentStart > 0) { currentStart--; renderViewport(true); }
+      e.preventDefault();
+    } else if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === 'j') {
+      if (currentStart + 1 < lociOrder.length) { currentStart++; renderViewport(true); }
+      e.preventDefault();
+    }
+  });
 }
 
 // ═══════════════════════════════════════════════════════════════

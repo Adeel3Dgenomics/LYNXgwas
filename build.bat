@@ -23,6 +23,14 @@ javac -d bin -cp "bin%LIBCP%" ^
   src\rsid\RsidPipeline.java ^
   src\loci\LociIdentifier.java ^
   src\loci\LociProgress.java ^
+  src\export\ColumnSpec.java ^
+  src\export\SnpContext.java ^
+  src\export\LocusContext.java ^
+  src\export\SnpColumnProvider.java ^
+  src\export\LocusColumnProvider.java ^
+  src\export\ExportRegistry.java ^
+  src\export\XlsxWriter.java ^
+  src\export\ExcelExporter.java ^
   src\Config.java ^
   src\Locus.java ^
   src\Snp.java ^
@@ -41,6 +49,7 @@ javac -d bin -cp "bin%LIBCP%" ^
   src\ProjectMetadata.java ^
   src\JsonExporter.java ^
   src\LocusUpdater.java ^
+  src\LociMutationService.java ^
   src\LocalServer.java ^
   src\Main.java
 if %ERRORLEVEL% neq 0 (
