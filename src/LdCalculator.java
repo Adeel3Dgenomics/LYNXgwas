@@ -37,7 +37,11 @@ public class LdCalculator {
             Snp topSnp = topSnps.get(locus.index);
             PlinkSubsetter.SubsetResult subset = subsets.get(locus.index);
 
-            if (topSnp == null || subset == null || !subset.ok || subset.topSnpBimId == null) {
+            // Note: subset.topSnpBimId may be null (top SNP absent from ref panel, e.g.
+            // an indel the panel doesn't genotype) — that alone shouldn't block LD.
+            // compute() falls back to the nearest-position ref-panel variant to center
+            // the window in that case.
+            if (topSnp == null || subset == null || !subset.ok) {
                 LdResult r = new LdResult(); r.ldFailed = true;
                 results.put(locus.index, r); continue;
             }
@@ -82,8 +86,23 @@ public class LdCalculator {
         // ── Step A: select 100-SNP window around top SNP ─────────────────────
         List<String[]> bimRows = readBimSorted(subPrefix + ".bim");
         int topIdx = -1;
-        for (int i = 0; i < bimRows.size(); i++) {
-            if (bimRows.get(i)[1].equals(subset.topSnpBimId)) { topIdx = i; break; }
+        if (subset.topSnpBimId != null) {
+            for (int i = 0; i < bimRows.size(); i++) {
+                if (bimRows.get(i)[1].equals(subset.topSnpBimId)) { topIdx = i; break; }
+            }
+        }
+
+        // Top SNP not genotyped in the ref panel (e.g. an indel the panel lacks) —
+        // fall back to the nearest-position ref-panel variant so the window is still
+        // centered on the true locus region instead of defaulting to the file start.
+        String anchorBimId = subset.topSnpBimId;
+        if (topIdx < 0 && !bimRows.isEmpty()) {
+            long bestDist = Long.MAX_VALUE;
+            for (int i = 0; i < bimRows.size(); i++) {
+                long pos = Long.parseLong(bimRows.get(i)[3].trim());
+                long dist = Math.abs(pos - topSnp.pos);
+                if (dist < bestDist) { bestDist = dist; topIdx = i; anchorBimId = bimRows.get(i)[1]; }
+            }
         }
 
         int lo = topIdx < 0 ? 0 : Math.max(0, topIdx - config.ldTriangleBoundary);
@@ -99,38 +118,42 @@ public class LdCalculator {
         }
 
         // ── Step B: LD with index SNP (all locus SNPs) ───────────────────────
-        String ldIdxPrefix = ldDir + "/locus_" + locus.index + "_index";
-        long   windowKb    = (locus.paddedEnd - locus.paddedStart) / 1000 + 2;
-        runPlink(Arrays.asList(
-            plinkBin,
-            "--bfile",        subPrefix,
-            "--r2",
-            "--ld-snp",       subset.topSnpBimId,
-            "--ld-window",    "999999",
-            "--ld-window-kb", String.valueOf(windowKb),
-            "--ld-window-r2", "0.0",
-            "--out",          ldIdxPrefix,
-            "--silent"
-        ));
+        // Uses anchorBimId (the true top SNP, or its nearest-position proxy when the
+        // top SNP itself isn't in the ref panel) so Manhattan r²-coloring still works.
+        if (anchorBimId != null) {
+            String ldIdxPrefix = ldDir + "/locus_" + locus.index + "_index";
+            long   windowKb    = (locus.paddedEnd - locus.paddedStart) / 1000 + 2;
+            runPlink(Arrays.asList(
+                plinkBin,
+                "--bfile",        subPrefix,
+                "--r2",
+                "--ld-snp",       anchorBimId,
+                "--ld-window",    "999999",
+                "--ld-window-kb", String.valueOf(windowKb),
+                "--ld-window-r2", "0.0",
+                "--out",          ldIdxPrefix,
+                "--silent"
+            ));
 
-        File idxFile = new File(ldIdxPrefix + ".ld");
-        if (idxFile.exists()) {
-            // CHR_A  BP_A  SNP_A  CHR_B  BP_B  SNP_B  R2
-            try (BufferedReader br = new BufferedReader(new FileReader(idxFile))) {
-                br.readLine(); // header
-                String line;
-                while ((line = br.readLine()) != null) {
-                    String[] f = line.trim().split("\\s+");
-                    if (f.length < 7) continue;
-                    try {
-                        double r2 = Double.parseDouble(f[6]);
-                        result.r2ByPos.put(f[3] + ":" + f[4], r2);
-                    } catch (NumberFormatException ignored) {}
+            File idxFile = new File(ldIdxPrefix + ".ld");
+            if (idxFile.exists()) {
+                // CHR_A  BP_A  SNP_A  CHR_B  BP_B  SNP_B  R2
+                try (BufferedReader br = new BufferedReader(new FileReader(idxFile))) {
+                    br.readLine(); // header
+                    String line;
+                    while ((line = br.readLine()) != null) {
+                        String[] f = line.trim().split("\\s+");
+                        if (f.length < 7) continue;
+                        try {
+                            double r2 = Double.parseDouble(f[6]);
+                            result.r2ByPos.put(f[3] + ":" + f[4], r2);
+                        } catch (NumberFormatException ignored) {}
+                    }
                 }
+                idxFile.delete();
             }
-            idxFile.delete();
+            cleanupPlink(ldIdxPrefix);
         }
-        cleanupPlink(ldIdxPrefix);
 
         // ── Step C: pairwise LD square matrix (window only) ─────────────────
         String ldPairPrefix = ldDir + "/locus_" + locus.index + "_pairwise";

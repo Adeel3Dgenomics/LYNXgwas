@@ -6,7 +6,7 @@ REM Build classpath for HTSJDK dependencies
 set "LIBCP="
 for %%f in (lib\*.jar) do call set "LIBCP=%%LIBCP%%;%%f"
 
-javac -d bin -cp "bin%LIBCP%" ^
+javac -encoding UTF-8 -d bin -cp "bin%LIBCP%" ^
   src\rsid\DbSnpRecord.java ^
   src\rsid\MatchResult.java ^
   src\rsid\RsidMatcher.java ^
@@ -20,6 +20,7 @@ javac -d bin -cp "bin%LIBCP%" ^
   src\rsid\NcbiDbSnpProvider.java ^
   src\rsid\GnomadProvider.java ^
   src\rsid\RsidApiCompleter.java ^
+  src\rsid\CrossFileLookup.java ^
   src\rsid\RsidPipeline.java ^
   src\loci\LociIdentifier.java ^
   src\loci\LociProgress.java ^

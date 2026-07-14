@@ -157,15 +157,25 @@ public class LociIdentifier {
         System.out.printf("[Loci] Stage B — after ref-panel match: %,d SNPs%n", stageB);
 
         // ── Stage C: Seed filter p <= leadPThreshold ──
+        // Non-destructive: byChr must keep all preFilterP-level candidates so PLINK's
+        // --clump-p2 can pull in suggestive (non-genome-wide-significant) SNPs as LD-linked
+        // clump members. Only seedsByChr (used for counting and the no-PLINK fallback) is
+        // restricted to lead-threshold-significant SNPs.
         if (progress != null) { progress.stepIndex = 3; progress.currentStep = "Seed filter (p <= " + params.leadPThreshold + ")"; }
-        for (List<CandidateSnp> chrSnps : byChr.values())
-            chrSnps.removeIf(s -> s.p > params.leadPThreshold);
-        byChr.entrySet().removeIf(e -> e.getValue().isEmpty());
-
-        long stageC = byChr.values().stream().mapToLong(List::size).sum();
+        Map<String, List<CandidateSnp>> seedsByChr = new TreeMap<>(LociIdentifier::chrCompare);
+        long stageC = 0;
+        for (Map.Entry<String, List<CandidateSnp>> entry : byChr.entrySet()) {
+            List<CandidateSnp> seeds = new ArrayList<>();
+            for (CandidateSnp s : entry.getValue()) if (s.p <= params.leadPThreshold) seeds.add(s);
+            if (!seeds.isEmpty()) { seedsByChr.put(entry.getKey(), seeds); stageC += seeds.size(); }
+        }
         System.out.printf("[Loci] Stage C — seeds p<=%.0e: %,d across %d chromosomes%n",
-            params.leadPThreshold, stageC, byChr.size());
+            params.leadPThreshold, stageC, seedsByChr.size());
         if (progress != null) { progress.seedSnps = (int) stageC; }
+
+        // Chromosomes with no seed SNP can't produce a clump at all — drop them from the
+        // clumping input, but keep the full preFilterP-level pool for the ones that remain.
+        byChr.keySet().retainAll(seedsByChr.keySet());
 
         // ── Stage D: PLINK clumping per chromosome ──
         List<ClumpInterval> allClumps;
@@ -176,12 +186,15 @@ public class LociIdentifier {
             allClumps = runClumping(byChr, params, plinkBin, progress);
             System.out.printf("[Loci] Stage D — after PLINK clumping: %,d independent signals%n", allClumps.size());
         } else {
-            // Fallback: no PLINK available — use positional merge directly on seeds
+            // Fallback: no PLINK available — use positional merge directly on seeds.
+            // No LD information is available here, so members can't be identified beyond
+            // the seed SNP itself (unlike the PLINK path, which can pull in suggestive
+            // LD-linked neighbors as members).
             if (plinkBin == null) System.out.println("[Loci] Stage D — PLINK not found, falling back to positional merge");
             else System.out.println("[Loci] Stage D — no ref panel for clumping, using positional merge");
             if (progress != null) { progress.stepIndex = 4; progress.currentStep = "Positional merge (no PLINK)"; }
             allClumps = new ArrayList<>();
-            for (Map.Entry<String, List<CandidateSnp>> entry : byChr.entrySet()) {
+            for (Map.Entry<String, List<CandidateSnp>> entry : seedsByChr.entrySet()) {
                 String chr = entry.getKey();
                 List<CandidateSnp> snps = entry.getValue();
                 snps.sort(Comparator.comparingLong((CandidateSnp s) -> s.pos));

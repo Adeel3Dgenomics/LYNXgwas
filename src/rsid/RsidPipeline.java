@@ -38,6 +38,8 @@ public class RsidPipeline {
                            String colChr, String colPos, String colEa, String colNea,
                            RsidProgress progress, RsidApiCompleter.Config apiConfig) {
         try {
+            progress.totalSteps = 6;
+
             // Step 1: Validate inputs
             progress.stepIndex = 1;
             progress.currentStep = "Validating project & build";
@@ -253,18 +255,73 @@ public class RsidPipeline {
                 progress.currentStep = "API completion (skipped)";
             }
 
+            if (progress.cancelled) return;
+
+            // ── Step 5: Cross-file GWAS lookup (Strategy 3) ──
+            // Checks every project's GWAS file that has a genuine rsID column (including
+            // this project's own file) for the same chr:pos, in case another cohort's
+            // summary stats already resolved it. Runs after local dbSNP + API completion;
+            // whatever's still unmatched afterward goes to the cross-project
+            // "missing rsIDs" list (see LocalServer /api/missing-rsids).
+            progress.stepIndex = 5;
+            Map<String, String> crossFileRecovered = new HashMap<>();
+            if (progress.unmatched.get() > 0) {
+                progress.currentStep = "Cross-file GWAS lookup";
+                Map<String, String> crossIndex = CrossFileLookup.buildIndex(new File(projectDir).getParentFile());
+                try (BufferedReader csvBr3 = new BufferedReader(new FileReader(csvPath))) {
+                    csvBr3.readLine(); // skip header
+                    String csvLine3;
+                    while ((csvLine3 = csvBr3.readLine()) != null) {
+                        String[] parts = csvLine3.split(",", 7);
+                        if (parts.length < 6) continue;
+                        String key = parts[0] + ":" + parts[1];
+                        boolean alreadyResolved = !parts[4].isEmpty() || apiRecovered.containsKey(key);
+                        if (alreadyResolved) continue;
+                        String rsid = crossIndex.get(key);
+                        if (rsid != null) crossFileRecovered.put(key, rsid);
+                    }
+                }
+                progress.matched.addAndGet(crossFileRecovered.size());
+                progress.unmatched.addAndGet(-crossFileRecovered.size());
+                System.out.printf("[RsidPipeline] Cross-file lookup: %,d additional matches (index size %,d)%n",
+                    crossFileRecovered.size(), crossIndex.size());
+            } else {
+                progress.currentStep = "Cross-file GWAS lookup (skipped — nothing unmatched)";
+            }
+
             int totalMatched = progress.matched.get();
             double rate = totalProcessed > 0 ? totalMatched * 100.0 / totalProcessed : 0;
 
-            progress.stepIndex = 5;
+            progress.stepIndex = 6;
             progress.currentStep = "Patching locus JSONs";
 
             System.out.printf("Total matched: %,d (%.1f%%) — forward: %,d, reverse: %,d%n",
                 totalMatched, rate, progress.forward.get(), progress.reverse.get());
             System.out.printf("Still unmatched: %,d%n", progress.unmatched.get());
 
+            // ── Persist API + cross-file recoveries back into the CSV so the cross-project
+            //    "missing rsIDs" list stays accurate (previously only local matches were
+            //    ever written back, so API-recovered SNPs would wrongly keep showing as missing) ──
+            if (!apiRecovered.isEmpty() || !crossFileRecovered.isEmpty()) {
+                List<String> csvLines = Files.readAllLines(Paths.get(csvPath));
+                List<String> updated = new ArrayList<>(csvLines.size());
+                if (!csvLines.isEmpty()) updated.add(csvLines.get(0)); // header
+                for (int i = 1; i < csvLines.size(); i++) {
+                    String[] parts = csvLines.get(i).split(",", -1);
+                    if (parts.length >= 6 && parts[4].isEmpty()) {
+                        String key = parts[0] + ":" + parts[1];
+                        String rsid = apiRecovered.get(key);
+                        String reason = "api";
+                        if (rsid == null) { rsid = crossFileRecovered.get(key); reason = "cross_file"; }
+                        if (rsid != null) { parts[4] = rsid; parts[5] = reason; }
+                    }
+                    updated.add(String.join(",", parts));
+                }
+                Files.write(Paths.get(csvPath), updated);
+            }
+
             // ── Patch existing locus JSONs with recovered rsIDs (no reprocess needed) ──
-            // Build chr:pos → rsid lookup from the CSV we just wrote
+            // Build chr:pos → rsid lookup from the (now fully updated) CSV
             Map<String, String> posToRsid = new HashMap<>();
             try (BufferedReader csvBr = new BufferedReader(new FileReader(csvPath))) {
                 csvBr.readLine(); // skip header
@@ -276,79 +333,11 @@ public class RsidPipeline {
                     }
                 }
             }
-            // Merge API-recovered rsIDs into the map
-            posToRsid.putAll(apiRecovered);
-            System.out.printf("[RsidPipeline] Patching locus JSONs with %,d rsIDs (local + API)%n", posToRsid.size());
+            System.out.printf("[RsidPipeline] Patching locus JSONs with %,d rsIDs (local + API + cross-file)%n",
+                posToRsid.size());
 
-            File dataDir = new File(projectDir, "data");
-            if (dataDir.isDirectory()) {
-                File[] locusFiles = dataDir.listFiles((d, n) -> n.matches("locus_\\d+\\.json"));
-                if (locusFiles != null) {
-                    int patched = 0;
-                    for (File lf : locusFiles) {
-                        String content = new String(Files.readAllBytes(lf.toPath()), "UTF-8");
-                        boolean changed = false;
-
-                        // Replace SNP IDs: find "id":"oldId","chr":"X","pos":NNN patterns
-                        // and replace oldId with rsid from our lookup
-                        StringBuilder result = new StringBuilder(content.length());
-                        int idx = 0;
-                        while (idx < content.length()) {
-                            int idStart = content.indexOf("\"id\":\"", idx);
-                            if (idStart < 0) { result.append(content, idx, content.length()); break; }
-                            result.append(content, idx, idStart);
-
-                            // Extract current id
-                            int valStart = idStart + 6;
-                            int valEnd = content.indexOf('"', valStart);
-                            if (valEnd < 0) { result.append(content, idStart, content.length()); break; }
-                            String oldId = content.substring(valStart, valEnd);
-
-                            // Look ahead for chr and pos
-                            int chrIdx = content.indexOf("\"chr\":\"", valEnd);
-                            int posIdx = content.indexOf("\"pos\":", valEnd);
-                            if (chrIdx >= 0 && posIdx >= 0 && chrIdx - valEnd < 100 && posIdx - valEnd < 150) {
-                                int chrValStart = chrIdx + 7;
-                                int chrValEnd = content.indexOf('"', chrValStart);
-                                int posValStart = posIdx + 6;
-                                int posValEnd = posValStart;
-                                while (posValEnd < content.length() && Character.isDigit(content.charAt(posValEnd))) posValEnd++;
-
-                                if (chrValEnd > chrValStart && posValEnd > posValStart) {
-                                    String chr = content.substring(chrValStart, chrValEnd);
-                                    String pos = content.substring(posValStart, posValEnd);
-                                    String rsid = posToRsid.get(chr + ":" + pos);
-                                    if (rsid != null && !rsid.equals(oldId)) {
-                                        result.append("\"id\":\"").append(rsid).append('"');
-                                        idx = valEnd + 1;
-                                        changed = true;
-                                        continue;
-                                    }
-                                }
-                            }
-
-                            result.append(content, idStart, valEnd + 1);
-                            idx = valEnd + 1;
-                        }
-
-                        if (changed) {
-                            Files.writeString(lf.toPath(), result.toString());
-                            patched++;
-                        }
-                    }
-                    System.out.printf("[RsidPipeline] Patched %d / %d locus files%n", patched, locusFiles.length);
-
-                    // Also patch manifest.json top_snp IDs
-                    File manifestFile = new File(dataDir, "manifest.json");
-                    if (manifestFile.exists()) {
-                        String mContent = new String(Files.readAllBytes(manifestFile.toPath()), "UTF-8");
-                        // Replace "top_snp":"oldid" with rsid where we have a match
-                        for (Map.Entry<String, String> entry : posToRsid.entrySet()) {
-                            // Simple: just let the viewer pick up the updated locus JSONs
-                        }
-                    }
-                }
-            }
+            int patchedCount = patchLocusJsonsWithRsids(projectDir, posToRsid);
+            System.out.printf("[RsidPipeline] Patched %d locus files%n", patchedCount);
 
             // Update project.json with rsID status (don't touch config.properties — avoids stale fingerprint)
             try {
@@ -385,6 +374,73 @@ public class RsidPipeline {
             System.err.println("[RsidPipeline] Failed: " + e.getMessage());
             e.printStackTrace(System.err);
         }
+    }
+
+    /**
+     * Patches "id" fields in a project's locus_N.json files wherever chr:pos matches
+     * a key in posToRsid. Shared by the full recovery pipeline and by manual
+     * single-SNP rsID submission (see LocalServer's /api/submit-rsid).
+     * Returns the number of locus files actually changed.
+     */
+    public static int patchLocusJsonsWithRsids(String projectDir, Map<String, String> posToRsid) throws IOException {
+        File dataDir = new File(projectDir, "data");
+        if (!dataDir.isDirectory()) return 0;
+        File[] locusFiles = dataDir.listFiles((d, n) -> n.matches("locus_\\d+\\.json"));
+        if (locusFiles == null) return 0;
+
+        int patched = 0;
+        for (File lf : locusFiles) {
+            String content = new String(Files.readAllBytes(lf.toPath()), "UTF-8");
+            boolean changed = false;
+
+            // Replace SNP IDs: find "id":"oldId","chr":"X","pos":NNN patterns
+            // and replace oldId with rsid from our lookup
+            StringBuilder result = new StringBuilder(content.length());
+            int idx = 0;
+            while (idx < content.length()) {
+                int idStart = content.indexOf("\"id\":\"", idx);
+                if (idStart < 0) { result.append(content, idx, content.length()); break; }
+                result.append(content, idx, idStart);
+
+                // Extract current id
+                int valStart = idStart + 6;
+                int valEnd = content.indexOf('"', valStart);
+                if (valEnd < 0) { result.append(content, idStart, content.length()); break; }
+                String oldId = content.substring(valStart, valEnd);
+
+                // Look ahead for chr and pos
+                int chrIdx = content.indexOf("\"chr\":\"", valEnd);
+                int posIdx = content.indexOf("\"pos\":", valEnd);
+                if (chrIdx >= 0 && posIdx >= 0 && chrIdx - valEnd < 100 && posIdx - valEnd < 150) {
+                    int chrValStart = chrIdx + 7;
+                    int chrValEnd = content.indexOf('"', chrValStart);
+                    int posValStart = posIdx + 6;
+                    int posValEnd = posValStart;
+                    while (posValEnd < content.length() && Character.isDigit(content.charAt(posValEnd))) posValEnd++;
+
+                    if (chrValEnd > chrValStart && posValEnd > posValStart) {
+                        String chr = content.substring(chrValStart, chrValEnd);
+                        String pos = content.substring(posValStart, posValEnd);
+                        String rsid = posToRsid.get(chr + ":" + pos);
+                        if (rsid != null && !rsid.equals(oldId)) {
+                            result.append("\"id\":\"").append(rsid).append('"');
+                            idx = valEnd + 1;
+                            changed = true;
+                            continue;
+                        }
+                    }
+                }
+
+                result.append(content, idStart, valEnd + 1);
+                idx = valEnd + 1;
+            }
+
+            if (changed) {
+                Files.writeString(lf.toPath(), result.toString());
+                patched++;
+            }
+        }
+        return patched;
     }
 
     private static int colIdx(String[] cols, String name) {

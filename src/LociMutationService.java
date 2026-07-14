@@ -126,6 +126,7 @@ public class LociMutationService {
             new File(dataDir + "/locus_" + locusIndex + ".js").delete();
 
             reExportManifest();
+            ProjectMetadata.syncLociCount(config.outputDir, outputs.size());
             mr.ok = true;
             mr.manifestJson = readManifestJson();
             addJournalEntry(mr);
@@ -220,6 +221,143 @@ public class LociMutationService {
         return mr;
     }
 
+    /**
+     * Renumbers every locus's index to match genomic order (chr:pos), so "Locus N"
+     * always reflects its position in the genome. Needed because manually created/split
+     * loci keep their original append-order index even though the manifest lists them
+     * in genomic order — this reconciles the two.
+     */
+    public synchronized MutationResult reorder() {
+        MutationResult mr = new MutationResult();
+        mr.mutationId = UUID.randomUUID().toString();
+        mr.mutationType = "reorder";
+        try {
+            if (loci.isEmpty()) { mr.error = "No loci to reorder"; return mr; }
+
+            List<Locus> sortedByPos = new ArrayList<>(loci);
+            sortedByPos.sort(Comparator.comparingInt(Locus::chrInt).thenComparingLong(l -> l.start));
+
+            Map<Integer, Integer> oldToNew = new LinkedHashMap<>();
+            for (int i = 0; i < sortedByPos.size(); i++) {
+                oldToNew.put(sortedByPos.get(i).index, i + 1);
+            }
+            boolean alreadyOrdered = oldToNew.entrySet().stream()
+                .allMatch(e -> e.getKey().equals(e.getValue()));
+            if (alreadyOrdered) {
+                mr.ok = true;
+                mr.manifestJson = readManifestJson();
+                return mr;
+            }
+
+            snapshotForUndo(mr.mutationId, "reorder", allIndices());
+
+            String dataDir = config.outputDir + "/data";
+
+            // Phase 1: move every affected file out of the way to avoid old/new index
+            // collisions (e.g. old 27 -> new 28 while old 28 -> new 29).
+            Map<Integer, File> tmpJson = new HashMap<>();
+            Map<Integer, File> tmpJs = new HashMap<>();
+            for (int oldIdx : oldToNew.keySet()) {
+                File jsonF = new File(dataDir, "locus_" + oldIdx + ".json");
+                File jsF   = new File(dataDir, "locus_" + oldIdx + ".js");
+                if (jsonF.exists()) {
+                    File tmp = new File(dataDir, "locus_" + oldIdx + ".json.reordertmp");
+                    if (jsonF.renameTo(tmp)) tmpJson.put(oldIdx, tmp);
+                }
+                if (jsF.exists()) {
+                    File tmp = new File(dataDir, "locus_" + oldIdx + ".js.reordertmp");
+                    if (jsF.renameTo(tmp)) tmpJs.put(oldIdx, tmp);
+                }
+            }
+
+            // Phase 2: patch locus_index/locus_name/prev-next refs, write under new index
+            for (Map.Entry<Integer, Integer> e : oldToNew.entrySet()) {
+                int oldIdx = e.getKey(), newIdx = e.getValue();
+                File tj = tmpJson.get(oldIdx);
+                if (tj == null) continue;
+                String json = new String(Files.readAllBytes(tj.toPath()), "UTF-8");
+                json = patchLocusIndex(json, oldIdx, newIdx);
+                json = remapNestedIndex(json, "prev_locus", oldToNew);
+                json = remapNestedIndex(json, "next_locus", oldToNew);
+
+                Files.write(new File(dataDir, "locus_" + newIdx + ".json").toPath(),
+                    json.getBytes("UTF-8"));
+                tj.delete();
+
+                File tsjs = tmpJs.get(oldIdx);
+                if (tsjs != null) {
+                    try (PrintWriter pw = new PrintWriter(new BufferedWriter(
+                            new FileWriter(new File(dataDir, "locus_" + newIdx + ".js"))))) {
+                        pw.print("(function(){window.LOCUS_DATA=window.LOCUS_DATA||{};");
+                        pw.print("window.LOCUS_DATA[" + newIdx + "]=" + json + ";");
+                        pw.print("})();");
+                    }
+                    tsjs.delete();
+                }
+            }
+
+            // Update in-memory state (Locus.index is final -> rebuild the objects)
+            List<Locus> newLoci = new ArrayList<>();
+            for (Locus l : loci) {
+                Integer newIdx = oldToNew.get(l.index);
+                if (newIdx == null) continue;
+                newLoci.add(new Locus(l.id, newIdx, l.chr, l.start, l.end, config.locusPadding));
+            }
+            loci.clear();
+            loci.addAll(newLoci);
+            loci.sort(Comparator.comparingInt(l -> l.index));
+
+            for (LocusOutput lo : outputs) {
+                Integer newIdx = oldToNew.get(lo.locusIndex);
+                if (newIdx == null) continue;
+                if (lo.locusName == null || lo.locusName.equals("Locus " + lo.locusIndex)) {
+                    lo.locusName = "Locus " + newIdx;
+                }
+                lo.locusIndex = newIdx;
+            }
+            outputs.sort(Comparator.comparingInt(o -> o.locusIndex));
+
+            reExportManifest();
+            for (LocusOutput lo : outputs) if (lo.id != null) mr.affectedIds.add(lo.id);
+            mr.ok = true;
+            mr.manifestJson = readManifestJson();
+            addJournalEntry(mr);
+
+            System.out.printf("[LociMutationService] Reordered %d loci by genomic position%n", loci.size());
+
+        } catch (Exception e) {
+            mr.error = e.getMessage();
+            e.printStackTrace();
+        }
+        return mr;
+    }
+
+    private static String patchLocusIndex(String json, int oldIdx, int newIdx) {
+        // "locus_index" is a unique top-level key (nested refs use "index" instead),
+        // so a direct replace of its one occurrence is unambiguous.
+        json = json.replaceFirst(
+            "\"locus_index\":" + oldIdx + "(?=[,}])",
+            "\"locus_index\":" + newIdx);
+        json = json.replace(
+            "\"locus_name\":\"Locus " + oldIdx + "\"",
+            "\"locus_name\":\"Locus " + newIdx + "\"");
+        return json;
+    }
+
+    private static String remapNestedIndex(String json, String key, Map<Integer, Integer> oldToNew) {
+        String marker = "\"" + key + "\":{\"index\":";
+        int i = json.indexOf(marker);
+        if (i < 0) return json;
+        int numStart = i + marker.length();
+        int numEnd = numStart;
+        while (numEnd < json.length() && Character.isDigit(json.charAt(numEnd))) numEnd++;
+        if (numEnd == numStart) return json;
+        int oldNeighbor = Integer.parseInt(json.substring(numStart, numEnd));
+        Integer newNeighbor = oldToNew.get(oldNeighbor);
+        if (newNeighbor == null) return json;
+        return json.substring(0, numStart) + newNeighbor + json.substring(numEnd);
+    }
+
     public synchronized MutationResult undo() {
         MutationResult mr = new MutationResult();
         mr.mutationId = UUID.randomUUID().toString();
@@ -253,6 +391,7 @@ public class LociMutationService {
 
             // Reload state from disk
             reloadStateFromDisk();
+            ProjectMetadata.syncLociCount(config.outputDir, outputs.size());
 
             mr.ok = true;
             mr.manifestJson = readManifestJson();

@@ -96,17 +96,36 @@ public class LocalServer {
                     String startS = extractStr(json, "start");
                     String endS = extractStr(json, "end");
                     String id = extractStr(json, "id");
+                    String name = extractStr(json, "locus_name");
                     if (chr == null || startS == null || endS == null) continue;
                     Locus l = id != null
                         ? new Locus(id, idx, chr, Long.parseLong(startS), Long.parseLong(endS), cfg.locusPadding)
                         : new Locus(idx, chr, Long.parseLong(startS), Long.parseLong(endS), cfg.locusPadding);
                     loci.add(l);
                     LocusOutput lo = new LocusOutput();
-                    lo.id = l.id; lo.locusIndex = idx; lo.locusName = "Locus " + idx;
+                    lo.id = l.id; lo.locusIndex = idx;
+                    lo.locusName = (name != null && !name.isEmpty()) ? name : "Locus " + idx;
                     lo.chr = chr; lo.start = l.start; lo.end = l.end;
                     lo.paddedStart = l.paddedStart; lo.paddedEnd = l.paddedEnd;
                     lo.nearestGenes = extractStringArray(json, "nearest_genes");
                     lo.genes = gff.overlapping(chr, l.paddedStart, l.paddedEnd);
+
+                    // Parse top_snp so manifest summaries (top_snp/top_snp_pval) stay
+                    // correct after a live mutation (create/split/delete/merge/reorder)
+                    // that re-exports the manifest from this reconstructed state.
+                    int topSnpIdx = json.indexOf("\"top_snp\":");
+                    if (topSnpIdx >= 0) {
+                        String topId  = extractNestedStr(json, topSnpIdx, "id");
+                        String topPos = extractNestedStr(json, topSnpIdx, "pos");
+                        String topP   = extractNestedStr(json, topSnpIdx, "pvalue");
+                        if (topId != null && topPos != null && topP != null) {
+                            try {
+                                lo.topSnp = new Snp(topId, chr, Long.parseLong(topPos),
+                                    Double.parseDouble(topP), "", "");
+                            } catch (NumberFormatException ignore) {}
+                        }
+                    }
+
                     outputs.add(lo);
                 }
             }
@@ -149,10 +168,13 @@ public class LocalServer {
         http.createContext("/api/rsid-recover",      this::rsidRecover);
         http.createContext("/api/rsid-progress",     this::rsidProgressEndpoint);
         http.createContext("/api/rsid-detect",       this::rsidDetect);
+        http.createContext("/api/missing-rsids",     this::missingRsids);
+        http.createContext("/api/submit-rsid",       this::submitRsid);
         http.createContext("/api/loci-identify",     this::lociIdentify);
         http.createContext("/api/loci-progress",     this::lociProgressEndpoint);
         http.createContext("/api/export-excel",      this::exportExcel);
         http.createContext("/api/export-progress",   this::exportProgressEndpoint);
+        http.createContext("/api/export-projects-info", this::exportProjectsInfo);
         http.createContext("/pick-folder-native",    this::pickFolder);
 
         // ── Legacy endpoints (kept for backward compatibility) ───────────
@@ -419,6 +441,8 @@ public class LocalServer {
             projectMergeLoci(ex, projectId, projectDir);
         } else if (action.equals("undo-mutation")) {
             projectUndoMutation(ex, projectId, projectDir);
+        } else if (action.equals("reorder-loci")) {
+            projectReorderLoci(ex, projectId, projectDir);
         } else if (action.equals("analysis/base-status")) {
             projectAnalysisBaseStatus(ex, projectId, projectDir);
         } else if (action.equals("analysis/build-base")) {
@@ -835,6 +859,32 @@ public class LocalServer {
         if (mr.ok) {
             String json = "{\"ok\":true,\"manifest\":" + mr.manifestJson + "}";
             respond(ex, 200, "application/json", json.getBytes("UTF-8"));
+        } else {
+            respond(ex, 500, "application/json",
+                ("{\"error\":\"" + escJ(mr.error) + "\"}").getBytes());
+        }
+    }
+
+    // POST /api/project/{id}/reorder-loci
+    private void projectReorderLoci(HttpExchange ex, String projectId,
+                                    String projectDir) throws IOException {
+        if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) {
+            respond(ex, 405, "text/plain", "Method Not Allowed".getBytes()); return;
+        }
+        ProjectState ps = ensureProjectState(projectId, projectDir);
+        if (ps == null) {
+            respond(ex, 503, "application/json",
+                "{\"error\":\"Pipeline state not available. Process the project first.\"}".getBytes()); return;
+        }
+        LociMutationService ms = ensureMutationService(ps);
+        if (ms == null) {
+            respond(ex, 503, "application/json",
+                "{\"error\":\"Pipeline state not available\"}".getBytes()); return;
+        }
+
+        LociMutationService.MutationResult mr = ms.reorder();
+        if (mr.ok) {
+            respond(ex, 200, "application/json", mr.manifestJson.getBytes("UTF-8"));
         } else {
             respond(ex, 500, "application/json",
                 ("{\"error\":\"" + escJ(mr.error) + "\"}").getBytes());
@@ -1342,6 +1392,102 @@ public class LocalServer {
         respond(ex, 200, "application/json", rp.toJson().getBytes("UTF-8"));
     }
 
+    // GET /api/missing-rsids — aggregates unmatched SNPs (chr/pos/ea/nea) across every
+    // project's rsid_recovery_results.csv, so the user can manually supply the rsID.
+    private void missingRsids(HttpExchange ex) throws IOException {
+        cors(ex); if (preflight(ex)) return;
+        List<File> dirs = Main.discoverProjects(new File("projects"));
+        StringBuilder json = new StringBuilder("{\"missing\":[");
+        boolean first = true;
+        for (File dir : dirs) {
+            String projectId = dir.getName();
+            File csvFile = new File(dir, "rsid_recovery_results.csv");
+            if (!csvFile.exists()) continue;
+            ProjectMetadata pm = ProjectMetadata.load(dir.getAbsolutePath());
+            String projectName = pm != null && !pm.name.isEmpty() ? pm.name : projectId;
+            try (BufferedReader br = new BufferedReader(new FileReader(csvFile))) {
+                br.readLine(); // header: chr,pos,gwas_ea,gwas_nea,assigned_rsid,match_reason,pos_only_rsid,n_candidates_at_pos
+                String line;
+                while ((line = br.readLine()) != null) {
+                    if (line.isEmpty()) continue;
+                    String[] f = line.split(",", -1);
+                    if (f.length < 6 || !f[4].isEmpty()) continue; // already has an rsid
+                    if (!first) json.append(',');
+                    first = false;
+                    json.append('{')
+                        .append("\"project_id\":\"").append(escJ(projectId)).append("\",")
+                        .append("\"project_name\":\"").append(escJ(projectName)).append("\",")
+                        .append("\"chr\":\"").append(escJ(f[0])).append("\",")
+                        .append("\"pos\":").append(f[1]).append(',')
+                        .append("\"ea\":\"").append(escJ(f[2])).append("\",")
+                        .append("\"nea\":\"").append(escJ(f[3])).append("\",")
+                        .append("\"match_reason\":\"").append(escJ(f[5])).append("\",")
+                        .append("\"pos_only_rsid\":\"").append(f.length > 6 ? escJ(f[6]) : "").append('"')
+                        .append('}');
+                }
+            } catch (IOException e) {
+                System.err.println("[Server] Failed reading " + csvFile + ": " + e.getMessage());
+            }
+        }
+        json.append("]}");
+        respond(ex, 200, "application/json", json.toString().getBytes("UTF-8"));
+    }
+
+    // POST /api/submit-rsid — { "project_id", "chr", "pos", "rsid" }
+    // Manually supplies an rsID for one SNP: patches the locus JSON(s) and marks the
+    // row in rsid_recovery_results.csv as resolved so it drops out of /api/missing-rsids.
+    private void submitRsid(HttpExchange ex) throws IOException {
+        cors(ex); if (preflight(ex)) return;
+        if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) {
+            respond(ex, 405, "text/plain", "Method Not Allowed".getBytes()); return;
+        }
+        String body = new String(readAll(ex.getRequestBody()), "UTF-8");
+        String projectId = extractStr(body, "project_id");
+        String chr = extractStr(body, "chr");
+        String posStr = extractStr(body, "pos");
+        String rsid = extractStr(body, "rsid");
+
+        if (projectId == null || chr == null || posStr == null || rsid == null || rsid.trim().isEmpty()) {
+            respond(ex, 400, "application/json",
+                "{\"error\":\"missing project_id, chr, pos, or rsid\"}".getBytes()); return;
+        }
+        rsid = rsid.trim();
+
+        File projDir = new File("projects", projectId);
+        if (!projDir.isDirectory()) {
+            respond(ex, 404, "application/json", "{\"error\":\"Project not found\"}".getBytes()); return;
+        }
+
+        try {
+            Map<String, String> posToRsid = new HashMap<>();
+            posToRsid.put(chr + ":" + posStr, rsid);
+            int patched = RsidPipeline.patchLocusJsonsWithRsids(projDir.getAbsolutePath(), posToRsid);
+
+            File csvFile = new File(projDir, "rsid_recovery_results.csv");
+            if (csvFile.exists()) {
+                List<String> lines = Files.readAllLines(csvFile.toPath());
+                List<String> updated = new ArrayList<>();
+                for (String line : lines) {
+                    String[] f = line.split(",", -1);
+                    if (f.length >= 6 && f[0].equals(chr) && f[1].equals(posStr) && f[4].isEmpty()) {
+                        f[4] = rsid;
+                        f[5] = "user_provided";
+                        updated.add(String.join(",", f));
+                    } else {
+                        updated.add(line);
+                    }
+                }
+                Files.write(csvFile.toPath(), updated);
+            }
+
+            String json = "{\"ok\":true,\"patched_files\":" + patched + "}";
+            respond(ex, 200, "application/json", json.getBytes("UTF-8"));
+        } catch (Exception e) {
+            respond(ex, 500, "application/json",
+                ("{\"error\":\"" + escJ(e.getMessage()) + "\"}").getBytes());
+        }
+    }
+
     // GET /api/rsid-detect?gwas_file=...
     private void rsidDetect(HttpExchange ex) throws IOException {
         cors(ex); if (preflight(ex)) return;
@@ -1553,6 +1699,78 @@ public class LocalServer {
             return;
         }
         respond(ex, 200, "application/json", ep.toJson().getBytes("UTF-8"));
+    }
+
+    // GET /api/export-projects-info — one-sheet cross-project summary table
+    // (loci, SNPs, cases/controls/total, ancestry, ref panel, rsID status, etc.)
+    private void exportProjectsInfo(HttpExchange ex) throws IOException {
+        cors(ex); if (preflight(ex)) return;
+        try {
+            List<File> dirs = Main.discoverProjects(new File("projects"));
+
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            try (XlsxWriter xlsx = new XlsxWriter(baos)) {
+                XlsxWriter.Sheet s = xlsx.addSheet("Projects Info").freezeHeader().autoFilter();
+                s.addRow("Project ID", "Name", "Status", "Loci", "Total SNPs",
+                    "Cases", "Controls", "Total N", "Ancestry", "Genome Build",
+                    "Ref Panel Population", "Ref Panel Path", "RSID Present",
+                    "RSID Recovery Status", "RSID Recovery Rate", "Last Processed",
+                    "GWAS File");
+
+                for (File dir : dirs) {
+                    String id = dir.getName();
+                    String projectDir = dir.getAbsolutePath();
+                    ProjectMetadata pm = ProjectMetadata.load(projectDir);
+
+                    Config cfg = null;
+                    String status;
+                    try {
+                        cfg = Config.loadFromProject(projectDir);
+                        ProjectMetadata.StaleReason reason =
+                            ProjectMetadata.checkStaleness(projectDir, cfg);
+                        status = reason == ProjectMetadata.StaleReason.NOT_STALE
+                            ? "up_to_date" : "needs_reprocessing";
+                    } catch (Exception e) {
+                        status = "error";
+                    }
+
+                    boolean rsidPresent = (pm != null && pm.rsidColumnPresent)
+                        || (cfg != null && cfg.colRsid != null && !cfg.colRsid.isEmpty());
+
+                    s.addRow(
+                        id,
+                        pm != null && !pm.name.isEmpty() ? pm.name : id,
+                        status,
+                        pm != null ? pm.lociCount : 0,
+                        pm != null ? pm.totalSnps : 0,
+                        cfg != null ? cfg.nCases : 0,
+                        cfg != null ? cfg.nControls : 0,
+                        cfg != null ? cfg.sampleN : 0,
+                        cfg != null ? cfg.ancestry : "",
+                        cfg != null ? cfg.genomeBuild : "",
+                        cfg != null ? cfg.refPanelPopulation : "",
+                        cfg != null ? cfg.refPanelPath : "",
+                        rsidPresent,
+                        pm != null ? pm.rsidRecoveryStatus : "not_started",
+                        pm != null ? pm.rsidRecoveryRate : "",
+                        pm != null ? pm.lastProcessed : "",
+                        cfg != null ? cfg.gwasFile : ""
+                    );
+                }
+                xlsx.finish();
+            }
+
+            byte[] bytes = baos.toByteArray();
+            ex.getResponseHeaders().set("Content-Type",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+            ex.getResponseHeaders().set("Content-Disposition",
+                "attachment; filename=\"lynxgwas_projects_info.xlsx\"");
+            ex.sendResponseHeaders(200, bytes.length);
+            try (OutputStream os = ex.getResponseBody()) { os.write(bytes); }
+        } catch (Exception e) {
+            respond(ex, 500, "application/json",
+                ("{\"error\":\"" + escJ(e.getMessage()) + "\"}").getBytes());
+        }
     }
 
     // ══════════════════════════════════════════════════════════════════════
@@ -1820,6 +2038,30 @@ public class LocalServer {
     private static String extractStr(String json, String key) {
         String marker = "\"" + key + "\":";
         int i = json.indexOf(marker);
+        if (i < 0) return null;
+        i += marker.length();
+        while (i < json.length() && json.charAt(i) == ' ') i++;
+        if (i >= json.length()) return null;
+        if (json.charAt(i) == '"') {
+            StringBuilder sb = new StringBuilder(); i++;
+            while (i < json.length()) {
+                char c = json.charAt(i++);
+                if (c == '"') break;
+                if (c == '\\' && i < json.length()) { sb.append(json.charAt(i++)); continue; }
+                sb.append(c);
+            }
+            return sb.toString();
+        }
+        if (json.startsWith("null", i)) return null;
+        int end = i;
+        while (end < json.length() && ",}]".indexOf(json.charAt(end)) < 0) end++;
+        return json.substring(i, end).trim();
+    }
+
+    /** Like extractStr, but only searches from a given offset (e.g. inside a nested object). */
+    private static String extractNestedStr(String json, int fromIndex, String key) {
+        String marker = "\"" + key + "\":";
+        int i = json.indexOf(marker, fromIndex);
         if (i < 0) return null;
         i += marker.length();
         while (i < json.length() && json.charAt(i) == ' ') i++;

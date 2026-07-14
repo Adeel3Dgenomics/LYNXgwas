@@ -1,4 +1,5 @@
 import java.io.*;
+import java.nio.file.Files;
 import java.util.*;
 
 /**
@@ -286,6 +287,7 @@ public class LocusUpdater {
             allOutputs.sort(Comparator.comparingInt((LocusOutput o) -> Locus.chrToInt(o.chr))
                 .thenComparingLong(o -> o.start));
             rebuildLocusContext(allOutputs, config);
+            ProjectMetadata.syncLociCount(config.outputDir, allOutputs.size());
 
             result.ok = true;
             result.jsonPath = jsonPath;
@@ -350,6 +352,7 @@ public class LocusUpdater {
 
             // Rebuild prev/next context for all loci and re-export their JSONs
             rebuildLocusContext(allOutputs, config);
+            ProjectMetadata.syncLociCount(config.outputDir, allOutputs.size());
 
             result.ok = true;
             System.out.printf("[LocusUpdater] Split locus %d into %d sub-loci: %s%n",
@@ -555,13 +558,20 @@ public class LocusUpdater {
                     (next.start + next.end) / 2, dist);
             }
         }
-        // Re-export all locus JSONs with updated context + manifest
+        // Patch just the locus_context field of each EXISTING on-disk file, rather
+        // than re-serializing the whole LocusOutput from memory. In-memory outputs
+        // for loci other than the one just created/split may only carry minimal
+        // navigation fields (e.g. after a lazy state reload — see
+        // LocalServer.ensureProjectState), which lack gwas_snps/top_snp/ld_triangle.
+        // A full re-serialize here would silently wipe that data for every locus.
         try {
             String dataDir = config.outputDir + "/data";
             for (LocusOutput lo : allOutputs) {
-                String json = JsonExporter.locusToJson(lo);
-                try (PrintWriter pw = new PrintWriter(new BufferedWriter(
-                        new FileWriter(dataDir + "/locus_" + lo.locusIndex + ".json")))) {
+                File jsonFile = new File(dataDir, "locus_" + lo.locusIndex + ".json");
+                if (!jsonFile.exists()) continue;
+                String json = new String(Files.readAllBytes(jsonFile.toPath()), "UTF-8");
+                json = patchLocusContext(json, lo.locusContext);
+                try (PrintWriter pw = new PrintWriter(new BufferedWriter(new FileWriter(jsonFile)))) {
                     pw.print(json);
                 }
                 try (PrintWriter pw = new PrintWriter(new BufferedWriter(
@@ -575,6 +585,30 @@ public class LocusUpdater {
         } catch (IOException e) {
             System.err.println("[LocusUpdater] Failed to re-export locus context: " + e.getMessage());
         }
+    }
+
+    /** Replaces only the "locus_context" value in an existing locus JSON string. */
+    private static String patchLocusContext(String json, LocusOutput.LocusContext ctx) {
+        String marker = "\"locus_context\":";
+        int i = json.indexOf(marker);
+        if (i < 0) return json;
+        int valueStart = i + marker.length();
+        int outerEnd = json.lastIndexOf('}');
+        if (outerEnd < valueStart) return json;
+        return json.substring(0, valueStart) + locusContextJson(ctx) + json.substring(outerEnd);
+    }
+
+    private static String locusContextJson(LocusOutput.LocusContext ctx) {
+        if (ctx == null) return "null";
+        return "{\"prev_locus\":" + locusRefJson(ctx.prevLocus)
+             + ",\"next_locus\":" + locusRefJson(ctx.nextLocus) + "}";
+    }
+
+    private static String locusRefJson(LocusOutput.LocusRef ref) {
+        if (ref == null) return "null";
+        return String.format(
+            "{\"index\":%d,\"chr\":\"%s\",\"start\":%d,\"end\":%d,\"mid\":%d,\"distance_bp\":%d}",
+            ref.index, ref.chr, ref.start, ref.end, ref.mid, ref.distanceBp);
     }
 
     private static void streamGwasForLocus(Locus locus, Config config) throws IOException {

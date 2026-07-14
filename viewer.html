@@ -491,6 +491,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   <button id="export-pdf-btn">Export PDF</button>
   <button id="undo-btn" class="nav-btn" style="display:none" title="Undo last locus change">&#8617; Undo</button>
   <button id="export-excel-btn" onclick="exportLocusExcel()" style="padding:5px 14px;background:#065f46;color:#fff;border:none;border-radius:14px;font-size:12px;cursor:pointer;margin-left:6px">Export Excel</button>
+  <button id="reorder-loci-btn" onclick="reorderLoci()" title="Renumber loci to match genomic (chr:pos) order"
+    style="padding:5px 14px;background:#374151;color:#fff;border:none;border-radius:14px;font-size:12px;cursor:pointer;margin-left:6px">Reorder Loci</button>
 </div>
 
 <!-- Sidebar rail (visible when sidebar collapsed) -->
@@ -583,7 +585,11 @@ let lociOrder = [];    // sorted array of locus indices from manifest
 
 function rebuildLociOrder() {
   if (manifest && manifest.loci) {
-    lociOrder = manifest.loci.map(l => l.index).sort((a, b) => a - b);
+    // manifest.loci is already sorted by genomic position (chr:pos) server-side —
+    // preserve that order. Re-sorting numerically by index would push manually
+    // created loci (which keep their original append-order index) to the wrong
+    // navigation position.
+    lociOrder = manifest.loci.map(l => l.index);
   }
 }
 const locusCache = new Map();
@@ -884,6 +890,7 @@ async function init() {
 // ═══════════════════════════════════════════════════════════════
 async function renderViewport(animate) {
   const container = document.getElementById('panels-container');
+  focusedEmptyChr = null;
 
   // Clamp currentStart
   currentStart = Math.max(0, Math.min(currentStart, lociOrder.length - 1));
@@ -2619,6 +2626,43 @@ async function exportLocusExcel() {
   } catch(e) { alert('Export failed: ' + e.message); }
 }
 
+async function reorderLoci() {
+  if (!PROJECT_ID) { alert('No project selected'); return; }
+  if (!confirm('Renumber all loci to match genomic (chr:pos) order?\n\n' +
+    'Locus names/numbers will be reassigned so "Locus N" reflects its position ' +
+    'in the genome. You can undo this action.')) return;
+
+  const btn = document.getElementById('reorder-loci-btn');
+  const prevLocusIdx = lociOrder[currentStart];
+  if (btn) { btn.textContent = 'Reordering…'; btn.disabled = true; btn.style.opacity = '0.6'; }
+  showToast('Reordering loci…', 10000);
+  try {
+    const res = await fetch(PROJECT_API + '/reorder-loci', { method: 'POST' });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({error:'Server error'}));
+      alert('Reorder failed: ' + (err.error || 'Unknown error'));
+      return;
+    }
+    const result = await res.json();
+    if (result.manifest) manifest = result.manifest;
+    else if (result.total_loci) manifest = result;
+    locusCache.clear();
+    rebuildLociOrder();
+    // currentStart is a position within lociOrder, not a locus index, so the
+    // genomic position being viewed is preserved automatically — just clamp
+    // in case the count somehow changed.
+    if (currentStart >= lociOrder.length) currentStart = Math.max(0, lociOrder.length - 1);
+    refreshSidebarAfterMutation();
+    document.getElementById('undo-btn').style.display = '';
+    renderViewport(true);
+    showToast('Loci renumbered by genomic order', 4000);
+  } catch(e) {
+    alert('Reorder failed: ' + e.message);
+  } finally {
+    if (btn) { btn.textContent = 'Reorder Loci'; btn.disabled = false; btn.style.opacity = ''; }
+  }
+}
+
 function setupPdfDialog() {
   const cfgModal  = document.getElementById('pdf-config-modal');
   const progModal = document.getElementById('pdf-progress-modal');
@@ -2825,6 +2869,9 @@ function fmtDist(b) {
 // ═══════════════════════════════════════════════════════════════
 const SKY_H = 130, SKY_ML = 40, SKY_MR = 16, SKY_MT = 6, SKY_MB = 18;
 let _skyData = null, _skyRendered = false;
+// Chromosome explicitly clicked while it has zero loci — kept "expanded" in the
+// density view (like an active chromosome) until the user navigates to a real locus.
+let focusedEmptyChr = null;
 
 async function loadSkyline() {
   // Try project-scoped endpoint first, then legacy global path
@@ -2867,6 +2914,7 @@ function renderSkyline() {
       if (entry) activeChrSet.add(String(entry.chr));
     }
   }
+  if (focusedEmptyChr !== null) activeChrSet.add(String(focusedEmptyChr));
 
   // Build weighted piecewise x-scale: active chromosomes get 50% of plotW, rest get 50%
   const activeLen = sd.chromosomes.filter(c => activeChrSet.has(c.chr))
@@ -3114,10 +3162,26 @@ function renderSkyline() {
     _dragRect = null;
 
     if (dragDist < 8) {
-      // Click — navigate to nearest locus
+      // Click — navigate to nearest locus (within the clicked chromosome)
       _dragStart = null;
       if (!manifest) return;
       const cumX = xSc.invert(mx);
+      const clicked = cumPosToChr(cumX);
+      const clickedChr = clicked ? String(clicked.chr) : null;
+      const chrLoci = clickedChr !== null
+        ? manifest.loci.filter(loc => String(loc.chr) === clickedChr)
+        : [];
+
+      if (clickedChr !== null && chrLoci.length === 0) {
+        // This chromosome has no loci at all — expand it in the density view
+        // and show a blank panel instead of silently jumping to a locus on a
+        // different chromosome.
+        focusedEmptyChr = clickedChr;
+        showEmptyChrPanel(clickedChr);
+        renderSkyline();
+        return;
+      }
+
       let bestDist = Infinity, bestIdx = -1;
       manifest.loci.forEach(loc => {
         const ci = sd.chromosomes.findIndex(c => c.chr === String(loc.chr));
@@ -3160,6 +3224,21 @@ function renderSkyline() {
 
 function updateSkylineHighlights() {
   renderSkyline();
+}
+
+// Shown when the user clicks a region of the genome skyline that falls on a
+// chromosome with zero identified loci — makes that empty state explicit
+// instead of silently jumping to a locus on a different chromosome.
+function showEmptyChrPanel(chr) {
+  const container = document.getElementById('panels-container');
+  d3.select(container).selectAll('*').on('.', null);
+  container.classList.remove('transitioning');
+  container.innerHTML = `
+    <div class="locus-panel" style="padding:56px 24px;text-align:center;color:#94a3b8">
+      <strong style="color:#475569;font-size:15px">Chr${chr} — no loci to view</strong><br><br>
+      No significant loci were identified on this chromosome for this project.
+    </div>`;
+  document.getElementById('nav-counter').textContent = `Chr${chr} — no loci`;
 }
 
 // ═══════════════════════════════════════════════════════════════

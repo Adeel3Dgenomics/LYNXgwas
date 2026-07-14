@@ -320,6 +320,24 @@ public class ProjectMetadata {
         }
     }
 
+    /**
+     * Keeps the home page's cached loci_count in sync after a live mutation
+     * (create/split/delete/merge) that changes how many loci exist, without
+     * requiring a full reprocess. Leaves fingerprints untouched so the project
+     * isn't wrongly flagged as needing reprocessing.
+     */
+    public static void syncLociCount(String projectDir, int newCount) {
+        try {
+            ProjectMetadata pm = load(projectDir);
+            if (pm != null && pm.lociCount != newCount) {
+                pm.lociCount = newCount;
+                pm.save(projectDir);
+            }
+        } catch (Exception e) {
+            System.err.println("[ProjectMetadata] Failed to sync loci_count: " + e.getMessage());
+        }
+    }
+
     // ── Annotation counting ──────────────────────────────────────────────
 
     /**

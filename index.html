@@ -181,6 +181,12 @@ td.actions button { margin-right: 0.4rem; }
     <button class="btn btn-secondary" onclick="openToolsManager()">
       Tools
     </button>
+    <button class="btn btn-secondary" onclick="openMissingRsids()">
+      Missing rsIDs
+    </button>
+    <button class="btn btn-secondary" onclick="exportProjectsInfo()">
+      Info
+    </button>
     <button class="btn btn-primary" id="btn-new" onclick="newProject()">
       + New project
     </button>
@@ -889,9 +895,9 @@ async function rsidRenderSource() {
     + '<div class="wiz-field"><label>Source 1 — Local SNP database</label>'
     + '<select id="rsid-snpdb">' + dbOpts + '</select></div>'
     + '<div class="wiz-section-title" style="margin-top:1rem">Source 2 — API completion (for remaining unmatched)</div>'
-    + '<div class="wiz-field"><label><input type="checkbox" id="rsid-api-enabled"> Enable API completion (NCBI + gnomAD)</label>'
-    + '<div class="hint">Runs only if unmatched SNPs are below the cap. Batched, rate-limited.</div></div>'
-    + '<div id="rsid-api-opts" style="display:none;margin-left:1.5rem">'
+    + '<div class="wiz-field"><label><input type="checkbox" id="rsid-api-enabled" checked> Enable API completion (NCBI + gnomAD)</label>'
+    + '<div class="hint">Runs only if unmatched SNPs are below the cap. Batched, rate-limited. On by default — uncheck to skip (faster, no external network calls).</div></div>'
+    + '<div id="rsid-api-opts" style="margin-left:1.5rem">'
     + '<div class="wiz-field"><label>Max unmatched for API</label>'
     + '<input type="number" id="rsid-api-max" value="2000" style="width:100px">'
     + '<div class="hint">Skip API if more unmatched than this (likely a data issue).</div></div>'
@@ -1312,6 +1318,136 @@ async function openToolsManager() {
     + '<button class="btn btn-secondary" onclick="document.getElementById(\'tools-overlay\').classList.remove(\'open\')">Close</button></div>';
 
   document.getElementById('tools-content').innerHTML = toolsHtml;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Info — export a cross-project summary table (loci, SNPs, cases/
+// controls/total, ancestry, ref panel, rsID status, etc.) as .xlsx
+// ═══════════════════════════════════════════════════════════════
+function exportProjectsInfo() {
+  window.location.href = API + '/api/export-projects-info';
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Missing rsIDs — cross-project manual enrichment
+// ═══════════════════════════════════════════════════════════════
+var missingRsidsCache = [];
+
+async function openMissingRsids() {
+  var overlay = document.getElementById('missing-rsids-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'missing-rsids-overlay';
+    overlay.className = 'wizard-overlay';
+    overlay.innerHTML = '<div class="wizard-box" style="max-width:900px;width:90vw" id="missing-rsids-box"></div>';
+    overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.classList.remove('open'); });
+    document.body.appendChild(overlay);
+  }
+
+  var box = document.getElementById('missing-rsids-box');
+  box.innerHTML = '<h3>Missing rsIDs</h3>'
+    + '<p style="color:#666;font-size:0.85rem;margin:0.5rem 0 1rem">'
+    + 'SNPs that could not be automatically matched to dbSNP, across all projects. '
+    + 'Supply the correct rsID below (using chr/pos/effect allele/other allele to look it up) '
+    + 'and it will be patched directly into that project\'s locus data — no reprocess needed.</p>'
+    + '<div id="missing-rsids-content" style="color:#888">Loading…</div>';
+  overlay.classList.add('open');
+
+  try {
+    var resp = await fetch(API + '/api/missing-rsids');
+    var data = await resp.json();
+    missingRsidsCache = data.missing || [];
+    renderMissingRsidsTable();
+  } catch (e) {
+    document.getElementById('missing-rsids-content').innerHTML =
+      '<div style="color:#dc2626">Failed to load: ' + esc(e.message) + '</div>';
+  }
+}
+
+function renderMissingRsidsTable() {
+  var el = document.getElementById('missing-rsids-content');
+  if (!el) return;
+
+  if (missingRsidsCache.length === 0) {
+    el.innerHTML = '<div style="padding:1rem;background:#ecfdf5;border-radius:8px;font-size:0.85rem;color:#065f46">'
+      + 'No missing rsIDs — every SNP across every project has been matched.</div>'
+      + '<div style="display:flex;justify-content:flex-end;margin-top:1rem">'
+      + '<button class="btn btn-secondary" onclick="document.getElementById(\'missing-rsids-overlay\').classList.remove(\'open\')">Close</button></div>';
+    return;
+  }
+
+  var rows = missingRsidsCache.map(function(m, i) {
+    var rowId = 'mrsid-row-' + i;
+    var suggestion = m.pos_only_rsid || '';
+    var inputStyle = suggestion
+      ? 'width:110px;padding:3px 6px;border:1px solid #f59e0b;background:#fffbeb;border-radius:6px;font-size:0.78rem'
+      : 'width:110px;padding:3px 6px;border:1px solid #cbd5e1;border-radius:6px;font-size:0.78rem';
+    var suggestionNote = suggestion
+      ? '<div style="font-size:0.68rem;color:#b45309;margin-top:2px" title="Same position matched in dbSNP, but the reported alleles didn\'t line up (e.g. indel vs SNP representation) — verify before saving">suggested, unverified</div>'
+      : '';
+    return '<tr id="' + rowId + '">'
+      + '<td style="font-size:0.78rem;color:#475569">' + esc(m.project_name) + '</td>'
+      + '<td style="font-family:monospace;font-size:0.78rem">' + esc(m.chr) + '</td>'
+      + '<td style="font-family:monospace;font-size:0.78rem">' + esc(String(m.pos)) + '</td>'
+      + '<td style="font-family:monospace;font-size:0.78rem">' + esc(m.ea) + '</td>'
+      + '<td style="font-family:monospace;font-size:0.78rem">' + esc(m.nea) + '</td>'
+      + '<td><input type="text" placeholder="rs…" value="' + escAttr(suggestion) + '" data-idx="' + i + '" class="mrsid-input" '
+      + 'style="' + inputStyle + '" '
+      + 'onkeydown="if(event.key===\'Enter\') saveMissingRsid(' + i + ')">' + suggestionNote + '</td>'
+      + '<td><button class="btn btn-secondary" style="padding:3px 10px;font-size:0.75rem" '
+      + 'onclick="saveMissingRsid(' + i + ')">Save</button></td>'
+      + '</tr>';
+  }).join('');
+
+  var suggestedCount = missingRsidsCache.filter(function(m) { return m.pos_only_rsid; }).length;
+  el.innerHTML = '<div style="font-size:0.85rem;margin-bottom:0.6rem"><b>' + missingRsidsCache.length + '</b> missing SNP(s) across all projects'
+    + (suggestedCount > 0 ? ' — <span style="color:#b45309">' + suggestedCount + ' have a suggested (unverified) rsID pre-filled</span>' : '')
+    + '.</div>'
+    + '<div style="max-height:55vh;overflow-y:auto;border:1px solid #e5e7eb;border-radius:8px">'
+    + '<table style="width:100%;border-collapse:collapse">'
+    + '<thead style="position:sticky;top:0;background:#f8fafc"><tr>'
+    + '<th style="text-align:left;padding:6px 8px;font-size:0.75rem;color:#64748b">Project</th>'
+    + '<th style="text-align:left;padding:6px 8px;font-size:0.75rem;color:#64748b">Chr</th>'
+    + '<th style="text-align:left;padding:6px 8px;font-size:0.75rem;color:#64748b">Pos</th>'
+    + '<th style="text-align:left;padding:6px 8px;font-size:0.75rem;color:#64748b">EA</th>'
+    + '<th style="text-align:left;padding:6px 8px;font-size:0.75rem;color:#64748b">NEA</th>'
+    + '<th style="text-align:left;padding:6px 8px;font-size:0.75rem;color:#64748b">rsID</th>'
+    + '<th></th>'
+    + '</tr></thead><tbody>' + rows + '</tbody></table></div>'
+    + '<div style="display:flex;justify-content:flex-end;margin-top:1rem">'
+    + '<button class="btn btn-secondary" onclick="document.getElementById(\'missing-rsids-overlay\').classList.remove(\'open\')">Close</button></div>';
+}
+
+async function saveMissingRsid(idx) {
+  var m = missingRsidsCache[idx];
+  if (!m) return;
+  var row = document.getElementById('mrsid-row-' + idx);
+  var input = row ? row.querySelector('.mrsid-input') : null;
+  var rsid = input ? input.value.trim() : '';
+  if (!rsid) { alert('Enter an rsID first'); return; }
+
+  var btn = row.querySelector('button');
+  var prevLabel = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Saving…';
+
+  try {
+    var resp = await fetch(API + '/api/submit-rsid', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ project_id: m.project_id, chr: m.chr, pos: m.pos, rsid: rsid })
+    });
+    var d = await resp.json();
+    if (!resp.ok || d.error) {
+      alert('Failed to save: ' + (d.error || 'Unknown error'));
+      btn.disabled = false; btn.textContent = prevLabel;
+      return;
+    }
+    // Remove this row from the cache/table — it's resolved now
+    missingRsidsCache.splice(idx, 1);
+    renderMissingRsidsTable();
+  } catch (e) {
+    alert('Failed to save: ' + e.message);
+    btn.disabled = false; btn.textContent = prevLabel;
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════
