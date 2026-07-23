@@ -23,4 +23,7 @@ public class SnpContext {
     public long locusStart, locusEnd;
     // Dynamic annotations (key → value)
     public Map<String, String> annotations = new LinkedHashMap<>();
+    // GWAS columns not part of the standardized pipeline (e.g. METAL's Direction/
+    // HetISq/HetChiSq/HetDf/HetPVal, MR-MEGA's per-cohort stats)
+    public Map<String, String> extraCols = new LinkedHashMap<>();
 }

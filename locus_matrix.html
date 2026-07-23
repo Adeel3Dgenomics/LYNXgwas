@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Locus Matrix — LYNXgwas</title>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<style>
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;margin:0;background:#f8fafc;color:#0f172a}
+header{padding:1rem 1.5rem;background:#fff;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;gap:1rem;flex-wrap:wrap}
+header h1{font-size:1.1rem;margin:0}
+header .meta{font-size:0.8rem;color:#64748b}
+.btn{display:inline-block;padding:0.4rem 0.9rem;border-radius:6px;border:1px solid #cbd5e1;background:#fff;color:#0f172a;text-decoration:none;font-size:0.82rem;cursor:pointer}
+.btn-primary{background:#2563eb;border-color:#2563eb;color:#fff}
+#plot-wrap{padding:1.5rem;overflow-x:auto}
+#legend{display:flex;align-items:center;gap:0.4rem;font-size:0.78rem;color:#475569;margin-left:auto}
+#legend .sw{width:12px;height:12px;border-radius:2px;display:inline-block}
+#loading,#error{padding:2rem;color:#64748b;font-size:0.9rem}
+#error{color:#dc2626}
+#tooltip{position:fixed;background:rgba(15,15,30,.92);color:#e2e8f0;padding:8px 12px;border-radius:8px;
+  font-size:12px;pointer-events:none;display:none;z-index:200;line-height:1.6;box-shadow:0 4px 16px rgba(0,0,0,.4)}
+#tooltip .tt-title{font-weight:700;color:#93c5fd}
+.row-label{font-size:11px;fill:#334155}
+.chr-label{font-size:14px;font-weight:700;fill:#1e293b}
+</style>
+</head>
+<body>
+<header>
+  <h1>Locus Matrix</h1>
+  <div class="meta" id="hdr-meta">Loading…</div>
+  <div id="legend">
+    <span class="sw" style="background:linear-gradient(90deg,#6366f1,#ec4899,#f59e0b,#10b981)"></span> dataset has SNPs in this locus
+    <span class="sw" style="background:repeating-linear-gradient(90deg,#fff,#fff 4px,#f1f5f9 4px,#f1f5f9 8px);border:1px solid #cbd5e1;margin-left:0.75rem"></span> no SNPs in this locus
+  </div>
+  <a class="btn btn-primary" id="export-link" href="#">Export Excel</a>
+</header>
+<div id="loading">Loading matrix…</div>
+<div id="error" style="display:none"></div>
+<div id="plot-wrap" style="display:none"></div>
+<div id="tooltip"></div>
+
+<script>
+var params = new URLSearchParams(location.search);
+var jobId = params.get('job');
+document.getElementById('export-link').href = '/api/locus-matrix-export?job=' + encodeURIComponent(jobId || '');
+
+var ROW_H = 34;
+var HEADER_H = 26;
+var LABEL_W = 180;
+var MIN_LOCUS_PX = 16;
+var PLOT_W_TARGET = 1400;
+
+// Distinct qualitative palette, one color per chromosome (cycles if >20 chromosomes present).
+var CHR_PALETTE = [
+  '#6366f1', '#ec4899', '#f59e0b', '#10b981', '#3b82f6',
+  '#ef4444', '#8b5cf6', '#14b8a6', '#f97316', '#0ea5e9',
+  '#84cc16', '#d946ef', '#eab308', '#06b6d4', '#a855f7',
+  '#22c55e', '#f43f5e', '#6d28d9', '#0284c7', '#65a30d',
+  '#c026d3', '#ca8a04'
+];
+
+function fmtP(p) {
+  if (p === null || p === undefined || isNaN(p)) return '-';
+  return p.toExponential(2);
+}
+
+async function load() {
+  if (!jobId) {
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('error').style.display = 'block';
+    document.getElementById('error').textContent = 'No job id in URL (?job=...)';
+    return;
+  }
+  try {
+    var resp = await fetch('/api/locus-matrix-result?job=' + encodeURIComponent(jobId));
+    if (!resp.ok) throw new Error((await resp.json()).error || 'Failed to load result');
+    var result = await resp.json();
+    document.getElementById('loading').style.display = 'none';
+    render(result);
+  } catch (e) {
+    document.getElementById('loading').style.display = 'none';
+    var errEl = document.getElementById('error');
+    errEl.style.display = 'block';
+    errEl.textContent = 'Error: ' + e.message;
+  }
+}
+
+function render(result) {
+  document.getElementById('hdr-meta').textContent =
+    result.datasets.length + ' datasets · ' + result.loci.length + ' loci · ref panel: ' + result.ref_panel_label;
+
+  var wrap = document.getElementById('plot-wrap');
+  wrap.style.display = 'block';
+
+  var loci = result.loci;
+  var totalSize = d3.sum(loci, function(l) { return l.size_bp; });
+
+  // Proportional width with a minimum-pixel floor; total may exceed the
+  // nominal target (page scrolls horizontally) so widths stay honestly
+  // proportional to each other rather than being squeezed to fit.
+  var widths = loci.map(function(l) {
+    return Math.max(MIN_LOCUS_PX, (l.size_bp / totalSize) * PLOT_W_TARGET);
+  });
+  var xOffsets = [];
+  var cum = 0;
+  widths.forEach(function(w) { xOffsets.push(cum); cum += w; });
+  var plotW = cum;
+  var plotH = HEADER_H + result.datasets.length * ROW_H;
+
+  var svg = d3.select('#plot-wrap').html('').append('svg')
+    .attr('width', LABEL_W + plotW)
+    .attr('height', plotH + 10);
+
+  var g = svg.append('g').attr('transform', 'translate(' + LABEL_W + ',0)');
+
+  // Chromosome band strip
+  var bandG = g.append('g');
+  var chrColorOf = {};
+  var seenChr = [];
+  loci.forEach(function(l) { if (seenChr.indexOf(l.chr) < 0) seenChr.push(l.chr); });
+  seenChr.forEach(function(c, i) { chrColorOf[c] = CHR_PALETTE[i % CHR_PALETTE.length]; });
+
+  bandG.selectAll('rect').data(loci).enter().append('rect')
+    .attr('x', function(d, i) { return xOffsets[i]; })
+    .attr('y', 0)
+    .attr('width', function(d, i) { return widths[i]; })
+    .attr('height', HEADER_H)
+    .attr('fill', function(d) { return chrColorOf[d.chr]; })
+    .attr('stroke', '#fff').attr('stroke-width', 0.5)
+    .on('mousemove', function(ev, d) { showTip(ev, '<div class="tt-title">chr' + d.chr + '</div>' + d.start.toLocaleString() + ' - ' + d.end.toLocaleString() + '<br>' + d.size_bp.toLocaleString() + ' bp'); })
+    .on('mouseleave', hideTip);
+
+  // Chromosome labels (only where the band is wide enough)
+  seenChr.forEach(function(c) {
+    var idxs = loci.map(function(l, i) { return l.chr === c ? i : -1; }).filter(function(i) { return i >= 0; });
+    var first = idxs[0], last = idxs[idxs.length - 1];
+    var bandW = (xOffsets[last] + widths[last]) - xOffsets[first];
+    if (bandW < 18) return;
+    g.append('text').attr('class', 'chr-label')
+      .attr('x', xOffsets[first] + bandW / 2)
+      .attr('y', HEADER_H - 8)
+      .attr('text-anchor', 'middle')
+      .text(c);
+  });
+
+  // Dataset row labels
+  svg.selectAll('.row-label').data(result.datasets).enter().append('text')
+    .attr('class', 'row-label')
+    .attr('x', LABEL_W - 10)
+    .attr('y', function(d, i) { return HEADER_H + i * ROW_H + ROW_H / 2 + 4; })
+    .attr('text-anchor', 'end')
+    .text(function(d) { return d.name; });
+
+  // Row separators
+  g.selectAll('.rowline').data(result.datasets).enter().append('line')
+    .attr('x1', 0).attr('x2', plotW)
+    .attr('y1', function(d, i) { return HEADER_H + i * ROW_H; })
+    .attr('y2', function(d, i) { return HEADER_H + i * ROW_H; })
+    .attr('stroke', '#e5e7eb');
+
+  // Cells
+  result.datasets.forEach(function(ds, di) {
+    g.selectAll('.cell-' + di).data(loci).enter().append('rect')
+      .attr('x', function(d, i) { return xOffsets[i]; })
+      .attr('y', HEADER_H + di * ROW_H)
+      .attr('width', function(d, i) { return widths[i]; })
+      .attr('height', ROW_H)
+      .attr('fill', function(d, i) {
+        var c = d.cells[ds.id];
+        var hasData = c && c.best_p !== null && c.best_p !== undefined;
+        if (hasData) return chrColorOf[d.chr];
+        return i % 2 === 0 ? '#ffffff' : '#f1f5f9'; // repeating white/light-gray so empty columns stay legible
+      })
+      .attr('stroke', '#fff').attr('stroke-width', 0.5)
+      .on('mousemove', function(ev, d) {
+        var c = d.cells[ds.id];
+        var html = '<div class="tt-title">' + ds.name + ' — ' + 'chr' + d.chr + ':' + d.start.toLocaleString() + '-' + d.end.toLocaleString() + '</div>';
+        if (c && c.best_p !== null) {
+          html += 'Best SNP: ' + (c.best_snp_id || '-') + '<br>p = ' + fmtP(c.best_p)
+            + '<br>N p&lt;5e-5: ' + c.n_p5e5 + ' · N p&lt;5e-8: ' + c.n_p5e8;
+        } else {
+          html += 'No SNPs in this dataset for this locus';
+        }
+        showTip(ev, html);
+      })
+      .on('mouseleave', hideTip);
+  });
+
+  // Chromosome boundary lines — drawn last so they sit on top of the bands and cells
+  var boundaries = [];
+  for (var bi = 1; bi < loci.length; bi++) {
+    if (loci[bi].chr !== loci[bi - 1].chr) boundaries.push(xOffsets[bi]);
+  }
+  g.selectAll('.chr-boundary').data(boundaries).enter().append('line')
+    .attr('x1', function(x) { return x; }).attr('x2', function(x) { return x; })
+    .attr('y1', 0).attr('y2', plotH)
+    .attr('stroke', '#000').attr('stroke-width', 1.25);
+
+  // Bottom axis line
+  g.append('line').attr('x1', 0).attr('x2', plotW)
+    .attr('y1', plotH).attr('y2', plotH).attr('stroke', '#cbd5e1');
+}
+
+function showTip(ev, html) {
+  var tt = document.getElementById('tooltip');
+  tt.innerHTML = html;
+  tt.style.display = 'block';
+  tt.style.left = (ev.clientX + 14) + 'px';
+  tt.style.top = (ev.clientY + 14) + 'px';
+}
+function hideTip() { document.getElementById('tooltip').style.display = 'none'; }
+
+load();
+</script>
+</body>
+</html>

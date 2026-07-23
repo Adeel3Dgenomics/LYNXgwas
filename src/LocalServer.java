@@ -175,6 +175,12 @@ public class LocalServer {
         http.createContext("/api/export-excel",      this::exportExcel);
         http.createContext("/api/export-progress",   this::exportProgressEndpoint);
         http.createContext("/api/export-projects-info", this::exportProjectsInfo);
+        http.createContext("/api/locus-matrix-run",      this::locusMatrixRun);
+        http.createContext("/api/locus-matrix-progress", this::locusMatrixProgressEndpoint);
+        http.createContext("/api/locus-matrix-jobs",     this::locusMatrixJobsList);
+        http.createContext("/api/locus-matrix-result",   this::locusMatrixResult);
+        http.createContext("/api/locus-matrix-export",   this::locusMatrixExport);
+        http.createContext("/api/locus-matrix-delete",   this::locusMatrixDelete);
         http.createContext("/pick-folder-native",    this::pickFolder);
 
         // ── Legacy endpoints (kept for backward compatibility) ───────────
@@ -1011,6 +1017,21 @@ public class LocalServer {
 
     private final Map<String, PluginEngine.RunResult> analysisJobs = new ConcurrentHashMap<>();
     private final Map<String, ProgressTracker> analysisJobProgress = new ConcurrentHashMap<>();
+
+    private final Map<String, MultiLocusProgress> locusMatrixJobProgress = new ConcurrentHashMap<>();
+    private final Map<String, MultiLocusResult>   locusMatrixJobs        = new ConcurrentHashMap<>();
+    private final Map<String, LocusMatrixJobMeta> locusMatrixJobMeta     = new ConcurrentHashMap<>();
+    private final List<String> locusMatrixJobOrder = new CopyOnWriteArrayList<>();
+
+    private static class LocusMatrixJobMeta {
+        String jobId;
+        String name;
+        List<String> projectIds;
+        List<String> datasetNames;
+        String refPanelId;
+        String refPanelLabel;
+        String createdAt;
+    }
     private final Set<String> cancelledJobs = ConcurrentHashMap.newKeySet();
 
     // GET /api/project/{id}/analysis/tools — discovered descriptors + param schemas
@@ -1550,6 +1571,12 @@ public class LocalServer {
         if (v != null && !v.isEmpty()) params.mergeDistanceBp = Integer.parseInt(v) * 1000;
         v = extractStr(body, "min_snps_per_locus");
         if (v != null && !v.isEmpty()) params.minSnpsPerLocus = Integer.parseInt(v);
+        v = extractStr(body, "clump_p2");
+        if (v != null && !v.isEmpty()) params.clumpP2 = Double.parseDouble(v);
+        v = extractStr(body, "clump_r2");
+        if (v != null && !v.isEmpty()) params.clumpR2 = Double.parseDouble(v);
+        v = extractStr(body, "clump_kb");
+        if (v != null && !v.isEmpty()) params.clumpKb = Integer.parseInt(v);
 
         // Reference panel path for chr:pos matching and PLINK clumping
         params.refPanelPath = projConfig.refPanelPath;
@@ -1664,17 +1691,32 @@ public class LocalServer {
         ExcelExporter.ExportProgress ep = new ExcelExporter.ExportProgress();
         exportProgressMap.put(projectId, ep);
 
+        export.GwasSchema schema = null;
+        try {
+            Config cfg = Config.loadFromProject(projectDir);
+            schema = new export.GwasSchema();
+            schema.gwasFile = cfg.gwasFile;
+            schema.colChr = cfg.colChr; schema.colPos = cfg.colPos;
+            schema.colEa = cfg.colEa; schema.colNea = cfg.colNea; schema.colPvalue = cfg.colPvalue;
+            schema.colRsid = cfg.colRsid; schema.colVarid = cfg.colVarid;
+            schema.colBeta = cfg.colBeta; schema.colOr = cfg.colOr; schema.colSe = cfg.colSe;
+            schema.colN = cfg.colN; schema.colMaf = cfg.colMaf; schema.colInfo = cfg.colInfo;
+        } catch (Exception e) {
+            System.err.println("[LocalServer] Could not load config for extra GWAS columns: " + e.getMessage());
+        }
+        final export.GwasSchema finalSchema = schema;
+
         if ("locus".equals(scope)) {
             String sIdx = extractStr(body, "locus_index");
             int locusIdx = sIdx != null ? Integer.parseInt(sIdx) : 1;
             outputPath = new File(exportsDir, projectId + "_locus" + locusIdx + "_" + date + ".xlsx").getAbsolutePath();
             String finalPath = outputPath;
-            new Thread(() -> ExcelExporter.exportLocus(projectDir, locusIdx, finalPath, ep),
+            new Thread(() -> ExcelExporter.exportLocus(projectDir, locusIdx, finalPath, ep, finalSchema),
                 "excel-" + projectId).start();
         } else {
             outputPath = new File(exportsDir, projectId + "_" + date + ".xlsx").getAbsolutePath();
             String finalPath = outputPath;
-            new Thread(() -> ExcelExporter.exportDataset(projectDir, finalPath, ep),
+            new Thread(() -> ExcelExporter.exportDataset(projectDir, finalPath, ep, finalSchema),
                 "excel-" + projectId).start();
         }
 
@@ -1771,6 +1813,235 @@ public class LocalServer {
             respond(ex, 500, "application/json",
                 ("{\"error\":\"" + escJ(e.getMessage()) + "\"}").getBytes());
         }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    //  LOCUS MATRIX (cross-dataset locus significance grid)
+    // ══════════════════════════════════════════════════════════════════════
+
+    // POST /api/locus-matrix-run — {"project_ids":[...], "ref_panel_id":"..."}
+    private void locusMatrixRun(HttpExchange ex) throws IOException {
+        cors(ex); if (preflight(ex)) return;
+        if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) {
+            respond(ex, 405, "application/json", "{\"error\":\"POST required\"}".getBytes()); return;
+        }
+        String body = new String(readAll(ex.getRequestBody()), "UTF-8");
+        List<String> projectIds = extractStringArray(body, "project_ids");
+        String refPanelId = extractStr(body, "ref_panel_id");
+        String requestedName = extractStr(body, "name");
+
+        if (projectIds.isEmpty()) {
+            respond(ex, 400, "application/json", "{\"error\":\"project_ids required\"}".getBytes()); return;
+        }
+        if (refPanelId == null || refPanelId.isEmpty()) {
+            respond(ex, 400, "application/json", "{\"error\":\"ref_panel_id required\"}".getBytes()); return;
+        }
+
+        GlobalConfig gc = GlobalConfig.load();
+        GlobalConfig.RefPanel panel = gc.findPanel(refPanelId);
+        if (panel == null || !panel.isValid()) {
+            respond(ex, 400, "application/json",
+                ("{\"error\":\"Reference panel not found or invalid: " + escJ(refPanelId) + "\"}").getBytes());
+            return;
+        }
+
+        List<Config> configs = new ArrayList<>();
+        for (String pid : projectIds) {
+            File dir = new File("projects/" + pid);
+            if (!dir.isDirectory()) {
+                respond(ex, 400, "application/json",
+                    ("{\"error\":\"Project not found: " + escJ(pid) + "\"}").getBytes());
+                return;
+            }
+            try {
+                configs.add(Config.loadFromProject(dir.getAbsolutePath()));
+            } catch (Exception e) {
+                respond(ex, 400, "application/json",
+                    ("{\"error\":\"Failed to load project '" + escJ(pid) + "': " + escJ(e.getMessage()) + "\"}").getBytes());
+                return;
+            }
+        }
+
+        List<String> datasetNames = new ArrayList<>();
+        for (String pid : projectIds) {
+            ProjectMetadata pm = ProjectMetadata.load(new File("projects/" + pid).getAbsolutePath());
+            datasetNames.add(pm != null && !pm.name.isEmpty() ? pm.name : pid);
+        }
+
+        String jobId = UUID.randomUUID().toString();
+        MultiLocusProgress progress = new MultiLocusProgress();
+        locusMatrixJobProgress.put(jobId, progress);
+
+        LocusMatrixJobMeta meta = new LocusMatrixJobMeta();
+        meta.jobId = jobId;
+        meta.name = (requestedName != null && !requestedName.trim().isEmpty())
+            ? requestedName.trim() : String.join(" + ", datasetNames);
+        meta.projectIds = projectIds;
+        meta.datasetNames = datasetNames;
+        meta.refPanelId = panel.id;
+        meta.refPanelLabel = panel.label;
+        meta.createdAt = java.time.Instant.now().toString();
+        locusMatrixJobMeta.put(jobId, meta);
+        locusMatrixJobOrder.add(jobId);
+
+        final GlobalConfig.RefPanel finalPanel = panel;
+        final List<String> finalProjectIds = projectIds;
+        final String finalJobName = meta.name;
+        new Thread(() -> {
+            try {
+                File jobDir = new File("output/multi_locus/" + jobId);
+                jobDir.mkdirs();
+                File mergedFile = new File(jobDir, "merged.tsv");
+
+                MultiLocusMerger.merge(configs, 5e-3, mergedFile, progress);
+
+                progress.phase = "identify";
+                LociIdentifier.Params params = new LociIdentifier.Params();
+                params.refPanelPath = finalPanel.plinkPath;
+                List<LociIdentifier.IdentifiedLocus> loci = LociIdentifier.identify(
+                    mergedFile.getAbsolutePath(), "chrom", "pos", "p", "", params, progress.identifyProgress);
+                progress.lociFound = loci.size();
+
+                GffParser gff = GffParser.parse(configs.get(0));
+
+                MultiLocusResult result = MultiLocusScanner.scan(configs, finalProjectIds, loci, gff, progress);
+                result.name = finalJobName;
+                result.refPanelId = finalPanel.id;
+                result.refPanelLabel = finalPanel.label;
+                result.createdAt = java.time.Instant.now().toString();
+
+                locusMatrixJobs.put(jobId, result);
+                progress.phase = "done";
+                progress.done = true;
+            } catch (Exception e) {
+                progress.phase = "error";
+                progress.error = e.getMessage();
+                progress.done = true;
+                System.err.printf("[LocusMatrix] Job '%s' failed: %s%n", jobId, e.getMessage());
+                e.printStackTrace(System.err);
+            }
+        }, "locus-matrix-" + jobId).start();
+
+        respond(ex, 202, "application/json", ("{\"job_id\":\"" + jobId + "\",\"status\":\"started\"}").getBytes());
+    }
+
+    // GET /api/locus-matrix-progress?job=<jobId>
+    private void locusMatrixProgressEndpoint(HttpExchange ex) throws IOException {
+        cors(ex); if (preflight(ex)) return;
+        String jobId = queryParam(ex, "job");
+        MultiLocusProgress p = jobId != null ? locusMatrixJobProgress.get(jobId) : null;
+        if (p == null) {
+            respond(ex, 200, "application/json",
+                "{\"pct\":0,\"phase\":\"merge\",\"dataset_index\":0,\"dataset_total\":0,\"current_dataset\":\"\",\"loci_found\":0,\"done\":false,\"error\":null}".getBytes());
+            return;
+        }
+        respond(ex, 200, "application/json", p.toJson().getBytes("UTF-8"));
+    }
+
+    // GET /api/locus-matrix-jobs — list all Locus Matrix runs this session, most recent first
+    private void locusMatrixJobsList(HttpExchange ex) throws IOException {
+        cors(ex); if (preflight(ex)) return;
+        StringBuilder j = new StringBuilder("[");
+        for (int i = locusMatrixJobOrder.size() - 1; i >= 0; i--) {
+            String jobId = locusMatrixJobOrder.get(i);
+            LocusMatrixJobMeta meta = locusMatrixJobMeta.get(jobId);
+            if (meta == null) continue;
+            MultiLocusProgress progress = locusMatrixJobProgress.get(jobId);
+            MultiLocusResult result = locusMatrixJobs.get(jobId);
+
+            String status = "running";
+            if (progress != null && progress.done) status = progress.error != null ? "error" : "done";
+
+            if (j.length() > 1) j.append(",");
+            j.append("{");
+            j.append("\"job_id\":\"").append(escJ(jobId)).append("\",");
+            j.append("\"name\":\"").append(escJ(meta.name)).append("\",");
+            j.append("\"datasets\":\"").append(escJ(String.join(", ", meta.datasetNames))).append("\",");
+            j.append("\"ref_panel_label\":\"").append(escJ(meta.refPanelLabel)).append("\",");
+            j.append("\"created_at\":\"").append(escJ(meta.createdAt)).append("\",");
+            j.append("\"status\":\"").append(status).append("\",");
+            j.append("\"loci_found\":").append(result != null ? result.loci.size() : 0).append(",");
+            j.append("\"error\":").append(progress != null && progress.error != null
+                ? "\"" + escJ(progress.error) + "\"" : "null");
+            j.append("}");
+        }
+        j.append("]");
+        respond(ex, 200, "application/json", j.toString().getBytes("UTF-8"));
+    }
+
+    // POST /api/locus-matrix-delete — {"job_id":"..."}
+    private void locusMatrixDelete(HttpExchange ex) throws IOException {
+        cors(ex); if (preflight(ex)) return;
+        if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) {
+            respond(ex, 405, "application/json", "{\"error\":\"POST required\"}".getBytes()); return;
+        }
+        String body = new String(readAll(ex.getRequestBody()), "UTF-8");
+        String jobId = extractStr(body, "job_id");
+        if (jobId == null || jobId.isEmpty()) {
+            respond(ex, 400, "application/json", "{\"error\":\"job_id required\"}".getBytes()); return;
+        }
+
+        locusMatrixJobOrder.remove(jobId);
+        locusMatrixJobMeta.remove(jobId);
+        locusMatrixJobProgress.remove(jobId);
+        locusMatrixJobs.remove(jobId);
+
+        try {
+            File jobDir = new File("output/multi_locus/" + jobId);
+            if (jobDir.isDirectory()) {
+                File merged = new File(jobDir, "merged.tsv");
+                if (merged.exists()) merged.delete();
+                jobDir.delete();
+            }
+        } catch (Exception ignored) {}
+
+        respond(ex, 200, "application/json", "{\"ok\":true}".getBytes());
+    }
+
+    // GET /api/locus-matrix-result?job=<jobId>
+    private void locusMatrixResult(HttpExchange ex) throws IOException {
+        cors(ex); if (preflight(ex)) return;
+        String jobId = queryParam(ex, "job");
+        MultiLocusResult result = jobId != null ? locusMatrixJobs.get(jobId) : null;
+        if (result == null) {
+            respond(ex, 404, "application/json", "{\"error\":\"Job not found or not complete\"}".getBytes());
+            return;
+        }
+        respond(ex, 200, "application/json", result.toJson().getBytes("UTF-8"));
+    }
+
+    // GET /api/locus-matrix-export?job=<jobId>
+    private void locusMatrixExport(HttpExchange ex) throws IOException {
+        cors(ex); if (preflight(ex)) return;
+        String jobId = queryParam(ex, "job");
+        MultiLocusResult result = jobId != null ? locusMatrixJobs.get(jobId) : null;
+        if (result == null) {
+            respond(ex, 404, "application/json", "{\"error\":\"Job not found or not complete\"}".getBytes());
+            return;
+        }
+        try {
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            MultiLocusExcelWriter.write(result, baos);
+            byte[] bytes = baos.toByteArray();
+            ex.getResponseHeaders().set("Content-Type",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+            ex.getResponseHeaders().set("Content-Disposition",
+                "attachment; filename=\"locus_matrix_" + jobId + ".xlsx\"");
+            ex.sendResponseHeaders(200, bytes.length);
+            try (OutputStream os = ex.getResponseBody()) { os.write(bytes); }
+        } catch (Exception e) {
+            respond(ex, 500, "application/json", ("{\"error\":\"" + escJ(e.getMessage()) + "\"}").getBytes());
+        }
+    }
+
+    private static String queryParam(HttpExchange ex, String key) throws IOException {
+        String query = ex.getRequestURI().getQuery();
+        if (query == null) return null;
+        for (String param : query.split("&")) {
+            String[] kv = param.split("=", 2);
+            if (kv.length == 2 && kv[0].equals(key)) return URLDecoder.decode(kv[1], "UTF-8");
+        }
+        return null;
     }
 
     // ══════════════════════════════════════════════════════════════════════

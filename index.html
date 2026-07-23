@@ -184,6 +184,9 @@ td.actions button { margin-right: 0.4rem; }
     <button class="btn btn-secondary" onclick="openMissingRsids()">
       Missing rsIDs
     </button>
+    <button class="btn btn-secondary" onclick="openLocusMatrix()">
+      Locus Matrix
+    </button>
     <button class="btn btn-secondary" onclick="exportProjectsInfo()">
       Info
     </button>
@@ -214,6 +217,27 @@ td.actions button { margin-right: 0.4rem; }
     <div class="empty" id="empty-state" style="display:none">
       <p>No projects yet.</p>
       <p>Click <b>+ New project</b> to create one, or add a project manually below.</p>
+    </div>
+  </div>
+
+  <div class="table-wrap" style="margin-top:1.5rem">
+    <h3 style="font-size:0.95rem;margin:0 0 0.5rem">Locus Matrix runs</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Datasets</th>
+          <th>Ref Panel</th>
+          <th>Loci</th>
+          <th>Status</th>
+          <th>Created</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="locus-matrix-tbody"></tbody>
+    </table>
+    <div class="empty" id="locus-matrix-empty" style="display:none">
+      <p>No Locus Matrix runs yet. Click <b>Locus Matrix</b> above to compare datasets.</p>
     </div>
   </div>
 
@@ -1159,6 +1183,16 @@ function lociRenderParams() {
     + '<div class="wiz-field"><label>Min SNPs per locus</label>'
     + '<input type="number" id="loci-minsnps" value="2" style="width:120px">'
     + '<div class="hint">Loci with fewer SNPs than this are discarded (filters noise).</div></div>'
+    + '<p style="margin:1rem 0 0.25rem"><b>PLINK clumping parameters</b></p>'
+    + '<div class="wiz-field"><label>Clump secondary p-value (clump-p2)</label>'
+    + '<input type="text" id="loci-clump-p2" value="5e-3" style="width:120px">'
+    + '<div class="hint">Nearby SNPs with p below this AND in LD with the lead SNP are absorbed as clump members.</div></div>'
+    + '<div class="wiz-field"><label>Clump LD threshold (clump-r2)</label>'
+    + '<input type="number" id="loci-clump-r2" value="0.6" step="0.05" min="0" max="1" style="width:120px">'
+    + '<div class="hint">Minimum r&sup2; with the lead SNP for a nearby SNP to be absorbed into the clump.</div></div>'
+    + '<div class="wiz-field"><label>Clump window (clump-kb)</label>'
+    + '<input type="number" id="loci-clump-kb" value="250" style="width:120px">'
+    + '<div class="hint">Max distance (kb) from the lead SNP to search for LD-linked members.</div></div>'
     + '<div style="display:flex;justify-content:flex-end;gap:0.5rem;margin-top:1rem">'
     + '<button class="btn btn-secondary" onclick="lociClose()">Cancel</button>'
     + '<button class="btn btn-primary" onclick="lociStart()">Process</button></div>';
@@ -1169,6 +1203,9 @@ async function lociStart() {
   var prefilter = document.getElementById('loci-prefilter').value || '5e-3';
   var mergeDist = document.getElementById('loci-mergedist').value || '250';
   var minSnps   = document.getElementById('loci-minsnps').value || '1';
+  var clumpP2   = document.getElementById('loci-clump-p2').value || '5e-3';
+  var clumpR2   = document.getElementById('loci-clump-r2').value || '0.6';
+  var clumpKb   = document.getElementById('loci-clump-kb').value || '250';
 
   try {
     await fetch(API + '/api/loci-identify', {
@@ -1178,7 +1215,10 @@ async function lociStart() {
         lead_p_threshold: seed,
         pre_filter_p: prefilter,
         merge_distance_kb: mergeDist,
-        min_snps_per_locus: minSnps
+        min_snps_per_locus: minSnps,
+        clump_p2: clumpP2,
+        clump_r2: clumpR2,
+        clump_kb: clumpKb
       })
     });
   } catch(e) { alert('Failed: ' + e.message); return; }
@@ -1447,6 +1487,195 @@ async function saveMissingRsid(idx) {
   } catch (e) {
     alert('Failed to save: ' + e.message);
     btn.disabled = false; btn.textContent = prevLabel;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Locus Matrix — cross-dataset locus significance grid
+// ═══════════════════════════════════════════════════════════════
+
+var locusMatrixSelected = {};
+var locusMatrixPollTimer = null;
+
+async function openLocusMatrix() {
+  var overlay = document.getElementById('locus-matrix-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'locus-matrix-overlay';
+    overlay.className = 'wizard-overlay';
+    overlay.innerHTML = '<div class="wizard-box" style="max-width:640px;width:90vw" id="locus-matrix-box"></div>';
+    overlay.addEventListener('click', function(e) { if (e.target === overlay) closeLocusMatrix(); });
+    document.body.appendChild(overlay);
+  }
+  locusMatrixSelected = {};
+  if (locusMatrixPollTimer) { clearInterval(locusMatrixPollTimer); locusMatrixPollTimer = null; }
+  renderLocusMatrixForm();
+  overlay.classList.add('open');
+}
+
+function closeLocusMatrix() {
+  var overlay = document.getElementById('locus-matrix-overlay');
+  if (overlay) overlay.classList.remove('open');
+  if (locusMatrixPollTimer) { clearInterval(locusMatrixPollTimer); locusMatrixPollTimer = null; }
+}
+
+async function renderLocusMatrixForm() {
+  var box = document.getElementById('locus-matrix-box');
+  box.innerHTML = '<h3>Locus Matrix</h3>'
+    + '<p style="color:#666;font-size:0.85rem;margin:0.5rem 0 1rem">'
+    + 'Pick two or more datasets to compare. Each SNP\'s best p-value across the selected '
+    + 'datasets is merged (filtered to p&le;5e-3), loci are identified against the reference '
+    + 'panel you choose, and the result is a dataset &times; locus significance grid.</p>'
+    + '<div style="font-size:0.85rem;font-weight:600;margin-bottom:0.4rem">Name (optional)</div>'
+    + '<input id="lm-name" type="text" placeholder="e.g. Hisp vs Wang" style="width:100%;padding:0.4rem;border:1px solid #cbd5e1;border-radius:6px;margin-bottom:1rem;box-sizing:border-box">'
+    + '<div style="font-size:0.85rem;font-weight:600;margin-bottom:0.4rem">Datasets</div>'
+    + '<div id="lm-dataset-list" style="max-height:220px;overflow-y:auto;border:1px solid #e5e7eb;border-radius:8px;padding:0.5rem;margin-bottom:1rem">Loading…</div>'
+    + '<div style="font-size:0.85rem;font-weight:600;margin-bottom:0.4rem">Reference panel</div>'
+    + '<select id="lm-refpanel" style="width:100%;padding:0.4rem;border:1px solid #cbd5e1;border-radius:6px;margin-bottom:1rem"><option>Loading…</option></select>'
+    + '<div id="lm-error" style="color:#dc2626;font-size:0.82rem;margin-bottom:0.5rem"></div>'
+    + '<div style="display:flex;justify-content:flex-end;gap:0.5rem">'
+    + '<button class="btn btn-secondary" onclick="closeLocusMatrix()">Cancel</button>'
+    + '<button class="btn btn-primary" onclick="runLocusMatrix()">Run</button></div>';
+
+  var listEl = document.getElementById('lm-dataset-list');
+  if (!projects.length) {
+    listEl.innerHTML = '<span style="color:#888;font-size:0.82rem">No projects yet.</span>';
+  } else {
+    listEl.innerHTML = projects.map(function(p) {
+      var name = p.name || p.id;
+      return '<label style="display:flex;align-items:center;gap:0.5rem;padding:0.25rem 0;font-size:0.85rem">'
+        + '<input type="checkbox" value="' + esc(p.id) + '" onchange="locusMatrixSelected[\'' + esc(p.id) + '\'] = this.checked">'
+        + '<span>' + esc(name) + '</span></label>';
+    }).join('');
+  }
+
+  var sel = document.getElementById('lm-refpanel');
+  try {
+    var gc = await (await fetch(API + '/api/global-config')).json();
+    var panels = (gc.reference_panels || []).filter(function(rp) { return rp.valid; });
+    if (!panels.length) {
+      sel.innerHTML = '<option value="">No valid reference panels configured</option>';
+    } else {
+      sel.innerHTML = panels.map(function(rp) {
+        return '<option value="' + esc(rp.id) + '">' + esc(rp.label) + ' (' + esc(rp.population) + ')</option>';
+      }).join('');
+    }
+  } catch (e) {
+    sel.innerHTML = '<option value="">Failed to load reference panels</option>';
+  }
+}
+
+async function runLocusMatrix() {
+  var ids = Object.keys(locusMatrixSelected).filter(function(k) { return locusMatrixSelected[k]; });
+  var errEl = document.getElementById('lm-error');
+  errEl.textContent = '';
+  if (ids.length < 1) { errEl.textContent = 'Select at least one dataset.'; return; }
+  var refPanelId = document.getElementById('lm-refpanel').value;
+  if (!refPanelId) { errEl.textContent = 'Choose a reference panel.'; return; }
+  var name = document.getElementById('lm-name').value.trim();
+
+  var box = document.getElementById('locus-matrix-box');
+  box.innerHTML = '<h3>Locus Matrix</h3>'
+    + '<div id="lm-progress" style="margin:1rem 0;font-size:0.85rem;color:#475569">Starting…</div>'
+    + '<div style="display:flex;justify-content:flex-end">'
+    + '<button class="btn btn-secondary" onclick="closeLocusMatrix()">Close</button></div>';
+
+  try {
+    var resp = await fetch(API + '/api/locus-matrix-run', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ project_ids: ids, ref_panel_id: refPanelId, name: name })
+    });
+    var d = await resp.json();
+    if (!resp.ok || d.error) {
+      document.getElementById('lm-progress').innerHTML = '<span style="color:#dc2626">' + esc(d.error || 'Failed to start') + '</span>';
+      return;
+    }
+    pollLocusMatrixProgress(d.job_id);
+    loadLocusMatrixJobs();
+  } catch (e) {
+    document.getElementById('lm-progress').innerHTML = '<span style="color:#dc2626">' + esc(e.message) + '</span>';
+  }
+}
+
+function pollLocusMatrixProgress(jobId) {
+  var el = document.getElementById('lm-progress');
+  var phaseLabels = { merge: 'Merging datasets', identify: 'Identifying loci', scan: 'Scanning datasets for locus stats', done: 'Done', error: 'Error' };
+  locusMatrixPollTimer = setInterval(async function() {
+    try {
+      var resp = await fetch(API + '/api/locus-matrix-progress?job=' + encodeURIComponent(jobId));
+      var p = await resp.json();
+      if (!el) return;
+      var label = phaseLabels[p.phase] || p.phase;
+      var detail = p.current_dataset ? (' &mdash; ' + esc(p.current_dataset) + (p.dataset_total ? ' (' + p.dataset_index + '/' + p.dataset_total + ')' : '')) : '';
+      el.innerHTML = label + detail + ' &mdash; ' + p.pct + '%'
+        + (p.loci_found ? '<br>' + p.loci_found + ' loci found so far' : '');
+      if (p.done) {
+        clearInterval(locusMatrixPollTimer); locusMatrixPollTimer = null;
+        if (p.error) {
+          el.innerHTML = '<span style="color:#dc2626">' + esc(p.error) + '</span>';
+        } else {
+          el.innerHTML = '<div style="color:#065f46;margin-bottom:0.75rem">Done &mdash; ' + p.loci_found + ' loci found.</div>'
+            + '<div style="display:flex;gap:0.5rem">'
+            + '<a class="btn btn-primary" href="locus_matrix.html?job=' + encodeURIComponent(jobId) + '" target="_blank">View Matrix &rarr;</a>'
+            + '<a class="btn btn-secondary" href="' + API + '/api/locus-matrix-export?job=' + encodeURIComponent(jobId) + '">Export Excel</a>'
+            + '</div>';
+        }
+        loadLocusMatrixJobs();
+      }
+    } catch (e) {
+      clearInterval(locusMatrixPollTimer); locusMatrixPollTimer = null;
+    }
+  }, 500);
+}
+
+async function loadLocusMatrixJobs() {
+  var tbody = document.getElementById('locus-matrix-tbody');
+  var empty = document.getElementById('locus-matrix-empty');
+  if (!tbody) return;
+  try {
+    var jobs = await (await fetch(API + '/api/locus-matrix-jobs')).json();
+    if (!jobs.length) {
+      tbody.innerHTML = '';
+      empty.style.display = '';
+      return;
+    }
+    empty.style.display = 'none';
+    tbody.innerHTML = jobs.map(function(j) {
+      var statusBadge = j.status === 'done'
+        ? '<span class="badge badge-ok">Done</span>'
+        : j.status === 'error'
+        ? '<span class="badge badge-error" title="' + escAttr(j.error || '') + '">Error</span>'
+        : '<span class="badge badge-proc">Running…</span>';
+      var actions = (j.status === 'done'
+        ? '<a class="btn btn-secondary" href="locus_matrix.html?job=' + encodeURIComponent(j.job_id) + '" target="_blank">View</a> '
+          + '<a class="btn btn-secondary" href="' + API + '/api/locus-matrix-export?job=' + encodeURIComponent(j.job_id) + '">Export</a> '
+        : '')
+        + '<button class="btn btn-danger" style="padding:0.2rem 0.6rem;font-size:0.75rem" onclick="deleteLocusMatrixJob(\'' + esc(j.job_id) + '\')">Delete</button>';
+      return '<tr>'
+        + '<td><b>' + esc(j.name) + '</b></td>'
+        + '<td class="desc">' + esc(j.datasets) + '</td>'
+        + '<td>' + esc(j.ref_panel_label) + '</td>'
+        + '<td>' + (j.status === 'done' ? j.loci_found : '—') + '</td>'
+        + '<td>' + statusBadge + '</td>'
+        + '<td>' + formatDate(j.created_at) + '</td>'
+        + '<td class="actions">' + actions + '</td>'
+        + '</tr>';
+    }).join('');
+  } catch (e) {
+    tbody.innerHTML = '';
+  }
+}
+
+async function deleteLocusMatrixJob(jobId) {
+  if (!confirm('Delete this Locus Matrix run? This cannot be undone.')) return;
+  try {
+    await fetch(API + '/api/locus-matrix-delete', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ job_id: jobId })
+    });
+    loadLocusMatrixJobs();
+  } catch (e) {
+    alert('Failed to delete: ' + e.message);
   }
 }
 
@@ -1739,6 +1968,7 @@ async function buildBaseArtifacts(projectId) {
 
 loadProjects();
 loadResources();
+loadLocusMatrixJobs();
 setInterval(loadProjects, 10000);
 </script>
 </body>

@@ -42,6 +42,7 @@ javac -encoding UTF-8 -d bin -cp "bin%LIBCP%" ^
   src\analysis\AnalysisColumnProvider.java ^
   src\analysis\BaseStepPipeline.java ^
   src\export\ColumnSpec.java ^
+  src\export\GwasSchema.java ^
   src\export\SnpContext.java ^
   src\export\LocusContext.java ^
   src\export\SnpColumnProvider.java ^
@@ -60,6 +61,11 @@ javac -encoding UTF-8 -d bin -cp "bin%LIBCP%" ^
   src\LociParser.java ^
   src\GwasParser.java ^
   src\GffParser.java ^
+  src\MultiLocusProgress.java ^
+  src\MultiLocusMerger.java ^
+  src\MultiLocusScanner.java ^
+  src\MultiLocusResult.java ^
+  src\MultiLocusExcelWriter.java ^
   src\PlinkSubsetter.java ^
   src\LdCalculator.java ^
   src\SnpAnnotator.java ^
@@ -82,6 +88,7 @@ if not exist output\assets mkdir output\assets
 
 copy /Y index.html output\index.html >nul 2>&1
 copy /Y viewer.html output\viewer.html >nul 2>&1
+copy /Y locus_matrix.html output\locus_matrix.html >nul 2>&1
 copy /Y annotations.js output\annotations.js >nul 2>&1
 if exist output\annotations.js (
     rem already copied from root

@@ -13,6 +13,12 @@ public class LocusContext {
     public double leadP = Double.NaN;
     public double leadBeta = Double.NaN;
     public double leadOr = Double.NaN;
+    public String leadEa = "";
+    public String leadNea = "";
+    public double leadSe = Double.NaN;
+    public double leadN = Double.NaN;
+    public double leadMaf = Double.NaN;
+    public double leadInfo = Double.NaN;
     public String nearestGene = "";
     public long nearestGeneDist = Long.MAX_VALUE;
     public int nSnps;
@@ -24,4 +30,7 @@ public class LocusContext {
     public String imd = "start";
     // Dynamic annotations
     public Map<String, String> annotations = new LinkedHashMap<>();
+    // Lead SNP's GWAS columns not part of the standardized pipeline (e.g. METAL's
+    // Direction/HetISq/HetChiSq/HetDf/HetPVal, MR-MEGA's per-cohort stats)
+    public Map<String, String> leadExtra = new LinkedHashMap<>();
 }

@@ -42,7 +42,7 @@ public class ExcelExporter {
      * Export the whole dataset (all loci).
      */
     public static void exportDataset(String projectDir, String outputPath,
-                                     ExportProgress progress) {
+                                     ExportProgress progress, GwasSchema schema) {
         try {
             progress.stepIndex = 1;
             progress.currentStep = "Loading project & manifest";
@@ -86,6 +86,12 @@ public class ExcelExporter {
                 allSnps.addAll(snps);
             }
 
+            List<SnpContext> snps5e5 = new ArrayList<>();
+            for (SnpContext s : allSnps) if (s.pvalue <= 5e-5) snps5e5.add(s);
+
+            List<String> extraCols = (schema != null)
+                ? populateExtraColumns(lociCtx, snps5e5, schema) : Collections.emptyList();
+
             progress.stepIndex = 5;
             progress.currentStep = "Computing summary";
 
@@ -124,10 +130,13 @@ public class ExcelExporter {
                 writeSummarySheet(xlsx, projectDir, lociCtx.size(), totalSnps, nP5e3, nP5e5, nP5e8);
 
                 // Sheet 2: Loci Summary
-                writeLociSheet(xlsx, lociCtx, locProvs);
+                writeLociSheet(xlsx, lociCtx, locProvs, extraCols);
 
                 // Sheet 3: SNPs
-                writeSnpsSheet(xlsx, allSnps, snpProvs);
+                writeSnpsSheet(xlsx, "SNPs", allSnps, snpProvs, Collections.emptyList());
+
+                // Sheet 4: SNPs with p < 5e-5 (with the GWAS's own extra columns, e.g. heterogeneity)
+                writeSnpsSheet(xlsx, "SNPs p<5e-5", snps5e5, snpProvs, extraCols);
 
                 xlsx.finish();
             }
@@ -148,7 +157,7 @@ public class ExcelExporter {
      * Export a single locus.
      */
     public static void exportLocus(String projectDir, int locusIndex,
-                                   String outputPath, ExportProgress progress) {
+                                   String outputPath, ExportProgress progress, GwasSchema schema) {
         try {
             progress.totalSteps = 3;
             progress.stepIndex = 1;
@@ -169,13 +178,21 @@ public class ExcelExporter {
             LocusContext lc = parseLocusContext(json, locusIndex);
             List<SnpContext> snps = parseSnpContexts(json, lc);
 
+            List<LocusContext> lociCtx = Collections.singletonList(lc);
+            List<SnpContext> snps5e5 = new ArrayList<>();
+            for (SnpContext s : snps) if (s.pvalue <= 5e-5) snps5e5.add(s);
+
+            List<String> extraCols = (schema != null)
+                ? populateExtraColumns(lociCtx, snps5e5, schema) : Collections.emptyList();
+
             progress.stepIndex = 2;
             progress.currentStep = "Writing workbook";
 
             new File(outputPath).getParentFile().mkdirs();
             try (XlsxWriter xlsx = new XlsxWriter(new FileOutputStream(outputPath))) {
-                writeLociSheet(xlsx, Collections.singletonList(lc), locProvs);
-                writeSnpsSheet(xlsx, snps, snpProvs);
+                writeLociSheet(xlsx, lociCtx, locProvs, extraCols);
+                writeSnpsSheet(xlsx, "SNPs", snps, snpProvs, Collections.emptyList());
+                writeSnpsSheet(xlsx, "SNPs p<5e-5", snps5e5, snpProvs, extraCols);
                 xlsx.finish();
             }
 
@@ -208,41 +225,144 @@ public class ExcelExporter {
     }
 
     private static void writeLociSheet(XlsxWriter xlsx, List<LocusContext> loci,
-                                       List<LocusColumnProvider> providers) {
+                                       List<LocusColumnProvider> providers, List<String> leadExtraCols) {
         XlsxWriter.Sheet s = xlsx.addSheet("Loci Summary").freezeHeader().autoFilter();
         // Header row
         List<ColumnSpec> allCols = new ArrayList<>();
         for (LocusColumnProvider p : providers)
             allCols.addAll(p.columns());
-        Object[] header = new Object[allCols.size()];
-        for (int i = 0; i < allCols.size(); i++) header[i] = allCols.get(i).header;
+        Object[] header = new Object[allCols.size() + leadExtraCols.size()];
+        int hi = 0;
+        for (ColumnSpec c : allCols) header[hi++] = c.header;
+        for (String extraName : leadExtraCols) header[hi++] = "Lead " + extraName;
         s.addRow(header);
         // Data rows
         for (LocusContext lc : loci) {
-            Object[] row = new Object[allCols.size()];
+            Object[] row = new Object[allCols.size() + leadExtraCols.size()];
             int ci = 0;
             for (LocusColumnProvider p : providers)
                 for (ColumnSpec col : p.columns())
                     row[ci++] = p.value(lc, col);
+            for (String extraName : leadExtraCols) {
+                String v = lc.leadExtra.get(extraName);
+                row[ci++] = (v == null || v.isEmpty()) ? "-" : v;
+            }
             s.addRow(row);
         }
     }
 
-    private static void writeSnpsSheet(XlsxWriter xlsx, List<SnpContext> snps,
-                                       List<SnpColumnProvider> providers) {
-        XlsxWriter.Sheet s = xlsx.addSheet("SNPs").freezeHeader().autoFilter();
+    /**
+     * Streams the project's raw GWAS file once to pick up columns that aren't part of the
+     * standardized pipeline (e.g. METAL's Direction/HetISq/HetChiSq/HetDf/HetPVal, MR-MEGA's
+     * per-cohort betas/heterogeneity stats), matched by chr:pos against each locus's lead SNP
+     * (populating LocusContext.leadExtra) and against the given SNP list (populating
+     * SnpContext.extraCols). Returns the extra column names in file-header order.
+     */
+    private static List<String> populateExtraColumns(List<LocusContext> lociCtx,
+                                                      List<SnpContext> extraSnps, GwasSchema schema) {
+        List<String> extraNames = new ArrayList<>();
+        if (schema == null || schema.gwasFile == null || schema.gwasFile.isEmpty()) return extraNames;
+
+        Map<String, List<Object>> byChrPos = new HashMap<>();
+        for (LocusContext lc : lociCtx) {
+            if (lc.leadSnpPos > 0 && lc.chr != null && !lc.chr.isEmpty()) {
+                byChrPos.computeIfAbsent(lc.chr + ":" + lc.leadSnpPos, k -> new ArrayList<>()).add(lc);
+            }
+        }
+        for (SnpContext sc : extraSnps) {
+            if (sc.pos > 0 && sc.chr != null && !sc.chr.isEmpty()) {
+                byChrPos.computeIfAbsent(sc.chr + ":" + sc.pos, k -> new ArrayList<>()).add(sc);
+            }
+        }
+        if (byChrPos.isEmpty()) return extraNames;
+
+        File gwasFile = new File(schema.gwasFile);
+        if (!gwasFile.exists()) return extraNames;
+
+        try (BufferedReader br = new BufferedReader(new FileReader(gwasFile), 1024 * 1024)) {
+            String header = br.readLine();
+            if (header == null) return extraNames;
+            String[] cols = header.trim().split("\t");
+
+            int iChr = colIdxOf(cols, schema.colChr);
+            int iPos = colIdxOf(cols, schema.colPos);
+            if (iChr < 0 || iPos < 0) return extraNames;
+
+            Set<Integer> mapped = new HashSet<>(Arrays.asList(
+                iChr, iPos,
+                colIdxOf(cols, schema.colPvalue), colIdxOf(cols, schema.colRsid),
+                colIdxOf(cols, schema.colVarid),  colIdxOf(cols, schema.colEa),
+                colIdxOf(cols, schema.colNea),    colIdxOf(cols, schema.colBeta),
+                colIdxOf(cols, schema.colOr),     colIdxOf(cols, schema.colSe),
+                colIdxOf(cols, schema.colMaf),    colIdxOf(cols, schema.colN),
+                colIdxOf(cols, schema.colInfo)));
+
+            List<Integer> extraIdx = new ArrayList<>();
+            for (int i = 0; i < cols.length; i++) {
+                if (!mapped.contains(i)) { extraIdx.add(i); extraNames.add(cols[i].trim()); }
+            }
+            if (extraIdx.isEmpty()) return extraNames;
+
+            int remaining = byChrPos.size();
+            String line;
+            while (remaining > 0 && (line = br.readLine()) != null) {
+                if (line.isEmpty()) continue;
+                String[] f = line.split("\t", -1);
+                if (f.length <= Math.max(iChr, iPos)) continue;
+
+                String chr = f[iChr].trim().replaceFirst("^chr", "");
+                long pos;
+                try { pos = Long.parseLong(f[iPos].trim()); }
+                catch (NumberFormatException e) { continue; }
+
+                List<Object> targets = byChrPos.remove(chr + ":" + pos);
+                if (targets == null) continue;
+
+                Map<String, String> extra = new LinkedHashMap<>();
+                for (int ci = 0; ci < extraIdx.size(); ci++) {
+                    int idx = extraIdx.get(ci);
+                    extra.put(extraNames.get(ci), idx < f.length ? f[idx].trim() : "");
+                }
+                for (Object target : targets) {
+                    if (target instanceof LocusContext) ((LocusContext) target).leadExtra.putAll(extra);
+                    else if (target instanceof SnpContext) ((SnpContext) target).extraCols.putAll(extra);
+                }
+                remaining--;
+            }
+        } catch (IOException e) {
+            System.err.println("[ExcelExporter] Failed to read extra GWAS columns: " + e.getMessage());
+        }
+        return extraNames;
+    }
+
+    private static int colIdxOf(String[] cols, String name) {
+        if (name == null || name.isEmpty()) return -1;
+        for (int i = 0; i < cols.length; i++)
+            if (cols[i].trim().equalsIgnoreCase(name)) return i;
+        return -1;
+    }
+
+    private static void writeSnpsSheet(XlsxWriter xlsx, String sheetName, List<SnpContext> snps,
+                                       List<SnpColumnProvider> providers, List<String> extraCols) {
+        XlsxWriter.Sheet s = xlsx.addSheet(sheetName).freezeHeader().autoFilter();
         List<ColumnSpec> allCols = new ArrayList<>();
         for (SnpColumnProvider p : providers)
             allCols.addAll(p.columns());
-        Object[] header = new Object[allCols.size()];
-        for (int i = 0; i < allCols.size(); i++) header[i] = allCols.get(i).header;
+        Object[] header = new Object[allCols.size() + extraCols.size()];
+        int hi = 0;
+        for (ColumnSpec c : allCols) header[hi++] = c.header;
+        for (String name : extraCols) header[hi++] = name;
         s.addRow(header);
         for (SnpContext snp : snps) {
-            Object[] row = new Object[allCols.size()];
+            Object[] row = new Object[allCols.size() + extraCols.size()];
             int ci = 0;
             for (SnpColumnProvider p : providers)
                 for (ColumnSpec col : p.columns())
                     row[ci++] = p.value(snp, col);
+            for (String name : extraCols) {
+                String v = snp.extraCols.get(name);
+                row[ci++] = (v == null || v.isEmpty()) ? "-" : v;
+            }
             s.addRow(row);
         }
     }
@@ -455,11 +575,19 @@ public class ExcelExporter {
             idx = objEnd + 1;
         }
 
-        // Backfill locus lead beta/OR from the matching SNP in gwas_snps
+        // Backfill locus lead SNP info from the matching SNP in gwas_snps
+        // (top_snp in the locus JSON only carries id/chr/pos/pvalue — the rest
+        // of the GWAS columns are only present on the gwas_snps entries)
         for (SnpContext sc : snps) {
             if (sc.isLead) {
                 if (Double.isNaN(lc.leadBeta) && !Double.isNaN(sc.beta)) lc.leadBeta = sc.beta;
                 if (Double.isNaN(lc.leadOr) && !Double.isNaN(sc.oddsRatio)) lc.leadOr = sc.oddsRatio;
+                if (lc.leadEa.isEmpty() && sc.ea != null) lc.leadEa = sc.ea;
+                if (lc.leadNea.isEmpty() && sc.nea != null) lc.leadNea = sc.nea;
+                if (Double.isNaN(lc.leadSe)) lc.leadSe = sc.se;
+                if (Double.isNaN(lc.leadN)) lc.leadN = sc.sampleN;
+                if (Double.isNaN(lc.leadMaf)) lc.leadMaf = sc.maf;
+                if (Double.isNaN(lc.leadInfo)) lc.leadInfo = sc.info;
                 break;
             }
         }

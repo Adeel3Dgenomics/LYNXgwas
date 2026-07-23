@@ -19,6 +19,7 @@ public class LociIdentifier {
     public static class Params {
         public double preFilterP       = 5e-3;
         public double leadPThreshold   = 5e-8;
+        public double clumpP2          = 5e-3;
         public double clumpR2          = 0.6;
         public int    clumpKb          = 250;
         public int    mergeDistanceBp  = 250_000;
@@ -76,6 +77,8 @@ public class LociIdentifier {
 
         Map<String, List<CandidateSnp>> byChr = new TreeMap<>(LociIdentifier::chrCompare);
         long totalLines = 0, stageA = 0;
+        // clump-p2 candidates must survive Stage A, so never filter tighter than clumpP2
+        double effectivePreFilterP = Math.max(params.preFilterP, params.clumpP2);
 
         try (BufferedReader br = new BufferedReader(new FileReader(gwasFile), 1024 * 1024)) {
             String header = br.readLine();
@@ -99,7 +102,7 @@ public class LociIdentifier {
                     pos = Long.parseLong(f[iPos].trim());
                 } catch (NumberFormatException e) { continue; }
 
-                if (p <= 0 || p > params.preFilterP) continue;
+                if (p <= 0 || p > effectivePreFilterP) continue;
                 stageA++;
 
                 String chr = f[iChr].trim();
@@ -308,7 +311,7 @@ public class LociIdentifier {
                 "--clump-snp-field", "SNP",
                 "--clump-field", "P",
                 "--clump-p1", String.valueOf(params.leadPThreshold),
-                "--clump-p2", String.valueOf(params.preFilterP),
+                "--clump-p2", String.valueOf(params.clumpP2),
                 "--clump-r2", String.valueOf(params.clumpR2),
                 "--clump-kb", String.valueOf(params.clumpKb),
                 "--chr", chr,

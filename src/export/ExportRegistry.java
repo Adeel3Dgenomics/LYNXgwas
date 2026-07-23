@@ -174,17 +174,29 @@ public class ExportRegistry {
         final List<ColumnSpec> cols = Arrays.asList(
             new ColumnSpec("lead_snp", "Lead SNP",   "Lead", TEXT,       10),
             new ColumnSpec("lead_pos", "Lead Pos",   "Lead", INT,        11),
-            new ColumnSpec("lead_p",   "Lead P",     "Lead", SCIENTIFIC, 12),
-            new ColumnSpec("lead_beta","Lead Beta",  "Lead", DOUBLE,     13),
-            new ColumnSpec("lead_or",  "Lead OR",    "Lead", DOUBLE,     14));
+            new ColumnSpec("lead_ea",  "Lead EA",    "Lead", TEXT,       12),
+            new ColumnSpec("lead_nea", "Lead NEA",   "Lead", TEXT,       13),
+            new ColumnSpec("lead_p",   "Lead P",     "Lead", SCIENTIFIC, 14),
+            new ColumnSpec("lead_beta","Lead Beta",  "Lead", DOUBLE,     15),
+            new ColumnSpec("lead_or",  "Lead OR",    "Lead", DOUBLE,     16),
+            new ColumnSpec("lead_se",  "Lead SE",    "Lead", DOUBLE,     17),
+            new ColumnSpec("lead_n",   "Lead N",     "Lead", INT,        18),
+            new ColumnSpec("lead_maf", "Lead MAF",   "Lead", DOUBLE,     19),
+            new ColumnSpec("lead_info","Lead Info",  "Lead", DOUBLE,     20));
         public List<ColumnSpec> columns() { return cols; }
         public Object value(LocusContext c, ColumnSpec col) {
             switch (col.key) {
                 case "lead_snp":  return c.leadSnpId;
                 case "lead_pos":  return c.leadSnpPos;
+                case "lead_ea":   return c.leadEa.isEmpty() ? "-" : c.leadEa;
+                case "lead_nea":  return c.leadNea.isEmpty() ? "-" : c.leadNea;
                 case "lead_p":    return Double.isNaN(c.leadP) ? "-" : c.leadP;
                 case "lead_beta": return Double.isNaN(c.leadBeta) ? "-" : c.leadBeta;
                 case "lead_or":   return Double.isNaN(c.leadOr) ? "-" : c.leadOr;
+                case "lead_se":   return Double.isNaN(c.leadSe) ? "-" : c.leadSe;
+                case "lead_n":    return Double.isNaN(c.leadN) ? "-" : (int) c.leadN;
+                case "lead_maf":  return Double.isNaN(c.leadMaf) ? "-" : c.leadMaf;
+                case "lead_info": return Double.isNaN(c.leadInfo) ? "-" : c.leadInfo;
                 default: return "";
             }
         }

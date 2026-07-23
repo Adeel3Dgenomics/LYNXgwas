@@ -349,8 +349,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
       <button class="modal-close" id="pdf-cfg-close">✕</button>
     </div>
     <div class="modal-body">
-      <!-- Loci selection -->
+      <!-- Export mode -->
       <div class="modal-section">
+        <h4>Export type</h4>
+        <div class="radio-group">
+          <label><input type="radio" name="pdf-mode" value="loci" checked> Per-locus panels</label>
+          <label><input type="radio" name="pdf-mode" value="genome"> Whole-genome overview</label>
+        </div>
+      </div>
+      <!-- Loci selection -->
+      <div class="modal-section" id="pdf-loci-section">
         <h4>Loci to export</h4>
         <div class="radio-group">
           <label><input type="radio" name="loci-range" value="all" checked> All loci (<span id="cfg-total">?</span> total)</label>
@@ -369,12 +377,26 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
       <!-- Layout -->
       <div class="modal-section">
         <h4>Layout</h4>
-        <div class="field-row">
+        <div class="field-row" id="pdf-loci-per-page-row">
           <label>Loci per page</label>
           <div class="radio-group">
             <label><input type="radio" name="loci-per-page" value="1"> 1</label>
             <label><input type="radio" name="loci-per-page" value="2" checked> 2</label>
             <label><input type="radio" name="loci-per-page" value="3"> 3</label>
+          </div>
+        </div>
+        <div class="field-row" id="pdf-chr-per-page-row" style="display:none">
+          <label>Chromosomes per page</label>
+          <div class="radio-group">
+            <label><input type="radio" name="chr-per-page" value="2" checked> 2</label>
+            <label><input type="radio" name="chr-per-page" value="3"> 3</label>
+            <label><input type="radio" name="chr-per-page" value="4"> 4</label>
+          </div>
+        </div>
+        <div class="field-row" id="pdf-squeeze-row" style="display:none">
+          <label>Y-axis</label>
+          <div class="check-group">
+            <label><input type="checkbox" id="cfg-squeeze" checked> Squeeze p&lt;5×10⁻¹⁰ region (keeps 1&ndash;5×10⁻¹⁰ at 60% of plot height, marked with a break)</label>
           </div>
         </div>
         <div class="field-row">
@@ -394,7 +416,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
         </div>
       </div>
       <!-- Tracks -->
-      <div class="modal-section">
+      <div class="modal-section" id="pdf-tracks-section">
         <h4>Tracks to include</h4>
         <div class="check-group">
           <label><input type="checkbox" id="cfg-ctx"   checked> Context sketch</label>
@@ -2681,6 +2703,19 @@ function setupPdfDialog() {
     })
   );
 
+  // Export mode — per-locus panels vs whole-genome overview
+  document.querySelectorAll('input[name="pdf-mode"]').forEach(r =>
+    r.addEventListener('change', () => {
+      const isGenome = r.value === 'genome' && r.checked;
+      if (!r.checked) return;
+      document.getElementById('pdf-loci-section').style.display          = isGenome ? 'none' : '';
+      document.getElementById('pdf-loci-per-page-row').style.display     = isGenome ? 'none' : '';
+      document.getElementById('pdf-chr-per-page-row').style.display      = isGenome ? '' : 'none';
+      document.getElementById('pdf-squeeze-row').style.display          = isGenome ? '' : 'none';
+      document.getElementById('pdf-tracks-section').style.display        = isGenome ? 'none' : '';
+    })
+  );
+
   // Folder Browse button — calls Java server
   document.getElementById('cfg-browse').addEventListener('click', async () => {
     try {
@@ -2700,7 +2735,8 @@ function setupPdfDialog() {
     const cfg = readPdfConfig();
     progModal.classList.add('open');
     pdfCancelled = false;
-    runPdfExport(cfg).finally(() => progModal.classList.remove('open'));
+    const run = cfg.mode === 'genome' ? runGenomePdfExport(cfg) : runPdfExport(cfg);
+    run.finally(() => progModal.classList.remove('open'));
   });
 
   document.getElementById('pdf-cancel-btn').addEventListener('click', () => {
@@ -2722,6 +2758,9 @@ function readPdfConfig() {
     lociList = lociOrder.slice(Math.max(0, from - 1), to);
   }
   return {
+    mode:        document.querySelector('input[name="pdf-mode"]:checked').value,
+    chrPerPage:  parseInt(document.querySelector('input[name="chr-per-page"]:checked').value) || 2,
+    squeezeExtreme: document.getElementById('cfg-squeeze').checked,
     lociList,
     lociPerPage: parseInt(document.querySelector('input[name="loci-per-page"]:checked').value),
     orientation: document.querySelector('input[name="orientation"]:checked').value,
@@ -2731,7 +2770,9 @@ function readPdfConfig() {
     inclGenes:   document.getElementById('cfg-genes').checked,
     inclLd:      document.getElementById('cfg-ld').checked,
     resolution:  parseInt(document.querySelector('input[name="pdf-resolution"]:checked').value) || 3,
-    filename:    document.getElementById('cfg-filename').value || 'gwas_loci_plots.pdf',
+    filename:    document.getElementById('cfg-filename').value ||
+                 (document.querySelector('input[name="pdf-mode"]:checked').value === 'genome'
+                   ? 'gwas_genome_overview.pdf' : 'gwas_loci_plots.pdf'),
     folder:      document.getElementById('cfg-folder').value.trim()
   };
 }
@@ -2888,6 +2929,253 @@ async function loadSkyline() {
     await loadScript(`${DATA_DIR}/genome_skyline.js`);
     if (window.GENOME_SKYLINE) _skyData = window.GENOME_SKYLINE;
   } catch(e) {}
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Whole-genome overview print/PDF mode
+// ═══════════════════════════════════════════════════════════════
+
+// Greedy lane packing for horizontal labels: sorted left-to-right, each item
+// goes in the first lane whose last-placed label doesn't overlap it (by
+// estimated text width), else a new lane. Returns items with `.lane` set;
+// callers draw a straight dashed leader from the locus's true x/edge up (or
+// down) to the label's lane row, so stacking never loses the visual link.
+function assignLanes(items, charWidthPx, gap) {
+  const sorted = items.slice().sort((a, b) => a.x - b.x);
+  const laneRight = [];
+  sorted.forEach(it => {
+    const halfW = (it.text.length * charWidthPx) / 2;
+    let lane = -1;
+    for (let li = 0; li < laneRight.length; li++) {
+      if (it.x - halfW > laneRight[li] + gap) { lane = li; break; }
+    }
+    if (lane < 0) { lane = laneRight.length; laneRight.push(-Infinity); }
+    it.lane = lane;
+    laneRight[lane] = it.x + halfW;
+  });
+  return { items: sorted, laneCount: laneRight.length };
+}
+
+function genomeLocusColor(topP) {
+  if (topP == null || isNaN(topP)) return null;
+  if (topP < 5e-8) return { fill: '#fecaca', line: '#b91c1c', label: '#991b1b' };
+  if (topP < 5e-5) return { fill: '#fef9c3', line: '#a16207', label: '#854d0e' };
+  return null;
+}
+
+function renderGenomeChromosomePanel(container, chr, chrOffset, chrLength, lociForChr, panelW, panelH, squeezeExtreme) {
+  const LANE_H = 11, MAX_LANES = 3;
+  const TOP_BAND = 12 + LANE_H * MAX_LANES;    // room for stacked SNP+p labels above the plot
+  const BOTTOM_BAND = 12 + LANE_H * MAX_LANES; // room for stacked gene-name labels below the plot
+  const AXIS_ML = 44, AXIS_MR = 10, BOTTOM_AXIS_LABEL = 14;
+  const plotY0 = TOP_BAND;
+  const plotH  = Math.max(30, panelH - TOP_BAND - BOTTOM_BAND - BOTTOM_AXIS_LABEL);
+  const plotX0 = AXIS_ML, plotW = panelW - AXIS_ML - AXIS_MR;
+
+  const svg = d3.select(container).append('svg').attr('width', panelW).attr('height', panelH);
+
+  // Chromosome name as a rotated label on the y-axis (like the -log10(P) axis title)
+  svg.append('text')
+    .attr('transform', 'rotate(-90)')
+    .attr('x', -(plotY0 + plotH / 2)).attr('y', 10)
+    .attr('text-anchor', 'middle').attr('font-size', '12px').attr('font-weight', '700').attr('fill', '#1e293b')
+    .text('Chr ' + chr);
+
+  function xSc(cumPos) { return plotX0 + ((cumPos - chrOffset) / chrLength) * plotW; }
+
+  const gwSig  = -Math.log10(5e-8);
+  const sugSig = -Math.log10(5e-5);
+  const binsInChr = (_skyData ? _skyData.bins : [])
+    .map(b => ({ cum: (b[0] + 0.5) * (_skyData.genome_length / _skyData.bin_count), v: b[1] }))
+    .filter(b => b.cum >= chrOffset && b.cum <= chrOffset + chrLength);
+  const maxV = binsInChr.length ? Math.max(...binsInChr.map(b => b.v)) : gwSig;
+  const yMax = Math.max(10, gwSig + 3, maxV + 1);
+
+  // Optional squeeze: p<5e-10 (very extreme hits) gets compressed into the top 40%
+  // of the plot, so the "normal" 1..5e-10 range always keeps 60% of the height —
+  // otherwise a handful of ultra-significant SNPs would flatten everything else.
+  const squeezeThresh = -Math.log10(5e-10); // ≈ 9.301
+  const squeezeSplitY = plotY0 + plotH * 0.4; // pixel y of the break line
+  function ySc(v) {
+    if (!squeezeExtreme || yMax <= squeezeThresh) {
+      return plotY0 + plotH - (Math.min(v, yMax) / yMax) * plotH;
+    }
+    if (v <= squeezeThresh) {
+      return (plotY0 + plotH) - (Math.min(v, squeezeThresh) / squeezeThresh) * (plotH * 0.6);
+    }
+    const frac = Math.min(1, (v - squeezeThresh) / (yMax - squeezeThresh));
+    return squeezeSplitY - frac * (squeezeSplitY - plotY0);
+  }
+
+  // Plot border + background
+  svg.append('rect').attr('x', plotX0).attr('y', plotY0).attr('width', plotW).attr('height', plotH)
+    .attr('fill', '#fafafa').attr('stroke', '#cbd5e1').attr('stroke-width', 1);
+
+  // Squeeze break marker: dashed line across the axis at the split point, plus a
+  // bracket spanning the compressed region above it (from the break up to the
+  // plot top) so the squeezed range is visually marked, not just the boundary.
+  if (squeezeExtreme && yMax > squeezeThresh) {
+    svg.append('line').attr('x1', plotX0).attr('x2', plotX0 + plotW)
+      .attr('y1', squeezeSplitY).attr('y2', squeezeSplitY)
+      .attr('stroke', '#7c3aed').attr('stroke-width', 1).attr('stroke-dasharray', '1,2').attr('opacity', 0.6);
+
+    const bx = plotX0 - 6;           // bracket vertical spine x (inside the axis-label margin)
+    const tickW = 3;                 // length of the top/bottom ticks
+    svg.append('path')
+      .attr('d', `M ${bx + tickW} ${plotY0} L ${bx} ${plotY0} L ${bx} ${squeezeSplitY} L ${bx + tickW} ${squeezeSplitY}`)
+      .attr('fill', 'none').attr('stroke', '#7c3aed').attr('stroke-width', 1.25);
+  }
+
+  // Threshold lines
+  svg.append('line').attr('x1', plotX0).attr('x2', plotX0 + plotW)
+    .attr('y1', ySc(sugSig)).attr('y2', ySc(sugSig))
+    .attr('stroke', '#a16207').attr('stroke-width', 1).attr('stroke-dasharray', '4,3').attr('opacity', 0.7);
+  svg.append('text').attr('x', plotX0 - 3).attr('y', ySc(sugSig) + 3)
+    .attr('text-anchor', 'end').attr('font-size', '8px').attr('fill', '#a16207').text('5×10⁻⁵');
+  svg.append('line').attr('x1', plotX0).attr('x2', plotX0 + plotW)
+    .attr('y1', ySc(gwSig)).attr('y2', ySc(gwSig))
+    .attr('stroke', '#dc2626').attr('stroke-width', 1.5).attr('stroke-dasharray', '6,3').attr('opacity', 0.8);
+  svg.append('text').attr('x', plotX0 - 3).attr('y', ySc(gwSig) + 3)
+    .attr('text-anchor', 'end').attr('font-size', '8px').attr('font-weight', '700').attr('fill', '#dc2626').text('5×10⁻⁸');
+
+  // Density curve
+  if (binsInChr.length) {
+    const area = d3.area().x(d => xSc(d.cum)).y0(ySc(0)).y1(d => ySc(d.v)).curve(d3.curveMonotoneX);
+    const line = d3.line().x(d => xSc(d.cum)).y(d => ySc(d.v)).curve(d3.curveMonotoneX);
+    svg.append('path').datum(binsInChr).attr('fill', '#166534').attr('opacity', 0.22).attr('d', area);
+    svg.append('path').datum(binsInChr).attr('fill', 'none').attr('stroke', '#166534').attr('stroke-width', 1.5).attr('d', line);
+  }
+
+  svg.append('text').attr('x', plotX0 + plotW / 2).attr('y', plotY0 + plotH + BOTTOM_AXIS_LABEL)
+    .attr('text-anchor', 'middle').attr('font-size', '9px').attr('fill', '#64748b')
+    .text('chr' + chr + ' (' + Math.round(chrLength / 1e6) + ' Mb)');
+
+  // Per-locus highlight boxes + marker lines
+  const topLabels = [], botLabels = [];
+  lociForChr.forEach(entry => {
+    const x1 = xSc(chrOffset + entry.start), x2 = xSc(chrOffset + entry.end);
+    const xMid = (x1 + x2) / 2;
+    const w = Math.max(3, x2 - x1);
+    const col = genomeLocusColor(entry.top_snp_pval);
+    if (col) {
+      svg.append('rect').attr('x', xMid - w / 2).attr('y', plotY0).attr('width', w).attr('height', plotH)
+        .attr('fill', col.fill).attr('opacity', 1).attr('rx', 1);
+    }
+    svg.append('line').attr('x1', xMid).attr('x2', xMid).attr('y1', plotY0).attr('y2', plotY0 + plotH)
+      .attr('stroke', col ? col.line : '#94a3b8').attr('stroke-width', col ? 1.5 : 1);
+
+    const snpText = (entry.top_snp || '?') + '  p=' + fmtP(entry.top_snp_pval);
+    topLabels.push({ x: xMid, text: snpText, color: col ? col.label : '#475569' });
+    const geneText = (entry.nearest_genes || []).slice(0, 2).join(', ') || '—';
+    botLabels.push({ x: xMid, text: geneText, color: col ? col.label : '#475569' });
+  });
+
+  // Above-plot: horizontal SNP + p-value labels, lane-stacked, dashed leader back to true x
+  const CHAR_W = 4.3; // rough px/char at 7.5px font, used only for lane collision estimates
+  const { items: topSlots } = assignLanes(topLabels, CHAR_W, 6);
+  topSlots.forEach(lb => {
+    const laneFromTop = MAX_LANES - 1 - Math.min(lb.lane, MAX_LANES - 1);
+    const labelY = 14 + laneFromTop * LANE_H;
+    svg.append('line').attr('x1', lb.x).attr('x2', lb.x).attr('y1', labelY + 3).attr('y2', plotY0 - 2)
+      .attr('stroke', lb.color).attr('stroke-width', 0.75).attr('stroke-dasharray', '2,2').attr('opacity', 0.8);
+    svg.append('text')
+      .attr('x', lb.x).attr('y', labelY)
+      .attr('text-anchor', 'middle').attr('font-size', '7.5px').attr('fill', lb.color)
+      .text(lb.text);
+  });
+
+  // Below-plot: horizontal gene-name labels, lane-stacked, dashed leader back to true x
+  const { items: botSlots } = assignLanes(botLabels, CHAR_W, 6);
+  botSlots.forEach(lb => {
+    const laneY0 = plotY0 + plotH + BOTTOM_AXIS_LABEL + 12;
+    const labelY = laneY0 + Math.min(lb.lane, MAX_LANES - 1) * LANE_H;
+    svg.append('line').attr('x1', lb.x).attr('x2', lb.x).attr('y1', plotY0 + plotH + 2).attr('y2', labelY - 3)
+      .attr('stroke', lb.color).attr('stroke-width', 0.75).attr('stroke-dasharray', '2,2').attr('opacity', 0.8);
+    svg.append('text')
+      .attr('x', lb.x).attr('y', labelY)
+      .attr('text-anchor', 'middle').attr('font-size', '7.5px').attr('font-style', 'italic').attr('fill', lb.color)
+      .text(lb.text);
+  });
+}
+
+async function runGenomePdfExport(cfg) {
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF({ orientation: cfg.orientation, unit: 'mm', format: cfg.pageSize });
+  const pageW = cfg.orientation === 'landscape' ? 297 : 210;
+  const pageH = cfg.orientation === 'landscape' ? 210 : 297;
+  const margin = 8;
+  const chrPerPage = cfg.chrPerPage;
+  const slotH = (pageH - (chrPerPage + 1) * margin) / chrPerPage;
+  const slotW = pageW - 2 * margin;
+
+  if (!_skyData) await loadSkyline();
+  if (!_skyData || !manifest) { showToast('Genome overview data not available for this project'); return; }
+
+  // Chromosomes with at least one locus, kept in genome order.
+  const chrsWithLoci = _skyData.chromosomes
+    .map(c => ({ ...c, loci: manifest.loci.filter(l => String(l.chr) === c.chr) }))
+    .filter(c => c.loci.length > 0);
+
+  if (!chrsWithLoci.length) { showToast('No loci to render'); return; }
+
+  const groups = [];
+  for (let i = 0; i < chrsWithLoci.length; i += chrPerPage) groups.push(chrsWithLoci.slice(i, i + chrPerPage));
+
+  const times = [];
+  for (let gi = 0; gi < groups.length; gi++) {
+    if (pdfCancelled) { showToast('Export cancelled'); return; }
+    const group = groups[gi];
+    document.getElementById('progress-fill').style.width = Math.round((gi / groups.length) * 100) + '%';
+    document.getElementById('progress-count').textContent = `Page ${gi + 1} / ${groups.length}`;
+    document.getElementById('progress-msg').textContent =
+      'Rendering chromosomes ' + group.map(c => c.chr).join(', ') + '…';
+
+    const tmp = document.createElement('div');
+    const pxPerMm = 96 / 25.4; // approximate CSS px per mm at 96dpi, scaled up by html2canvas resolution anyway
+    const panelWpx = Math.round(slotW * pxPerMm);
+    const panelHpx = Math.round(slotH * pxPerMm);
+    tmp.style.cssText = `position:fixed;top:-9999px;left:0;width:${panelWpx}px;background:#fff;`;
+    document.body.appendChild(tmp);
+
+    group.forEach(c => {
+      const panelDiv = document.createElement('div');
+      panelDiv.style.cssText = `width:${panelWpx}px;height:${panelHpx}px;`;
+      tmp.appendChild(panelDiv);
+      renderGenomeChromosomePanel(panelDiv, c.chr, c.offset, c.length, c.loci, panelWpx, panelHpx, cfg.squeezeExtreme);
+    });
+
+    await new Promise(r => setTimeout(r, 50));
+
+    const t0 = Date.now();
+    try {
+      const canvas = await html2canvas(tmp, { scale: cfg.resolution, useCORS: true });
+      const imgData = canvas.toDataURL('image/png');
+      if (gi > 0) pdf.addPage();
+      const nInGroup = group.length;
+      pdf.addImage(imgData, 'PNG', margin, margin, slotW, slotH * nInGroup + (nInGroup - 1) * margin, undefined, 'FAST');
+    } catch (e) { console.warn('html2canvas error group', gi, e); }
+
+    times.push(Date.now() - t0);
+    document.body.removeChild(tmp);
+  }
+
+  document.getElementById('progress-fill').style.width = '100%';
+  document.getElementById('progress-count').textContent = `${groups.length} / ${groups.length}`;
+  document.getElementById('progress-msg').textContent = 'Done! Saving file…';
+  await new Promise(r => setTimeout(r, 400));
+
+  if (cfg.folder) {
+    try {
+      const pdfData = pdf.output('datauristring');
+      const r = await fetch(`${SERVER}/save-pdf`, {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ filename: cfg.filename, folder: cfg.folder, data: pdfData })
+      });
+      if (r.ok) { showToast(`PDF saved to ${cfg.folder}/${cfg.filename}`); return; }
+    } catch (e) {}
+  }
+  pdf.save(cfg.filename);
+  showToast('PDF download started');
 }
 
 function renderSkyline() {

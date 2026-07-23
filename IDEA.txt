@@ -1,0 +1,2 @@
+so we need to add a tool, name it a proper name it should be in the header like the same leve of the "Process all updated" , the idea that the user can select some datasets, those datasets will be merged in the way taking foreach snp the best pvalue , even if the snp exist in
+  one we weill take this one pvalue , we then will filter the merged to take only the 5E-3 snps, the user will then select the reference panel the plot will be created out of this is on the y axis the datasets, and on the
