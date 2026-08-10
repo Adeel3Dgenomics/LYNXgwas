@@ -40,7 +40,7 @@ LYNXgwas is a local-first, multi-project GWAS analysis and visualization platfor
 
 - **Java 11+** (JDK for building, JRE for running)
 - **PLINK 1.9** (for LD computation and loci identification)
-- A reference panel in PLINK binary format (`.bed/.bim/.fam`)
+- A reference panel in PLINK2 binary format (`.bed/.bim/.fam`)
 - Optional: tabix-indexed dbSNP VCF files (for rsID recovery)
 
 ### Build & Run
