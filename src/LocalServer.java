@@ -110,6 +110,11 @@ public class LocalServer {
                     lo.nearestGenes = extractStringArray(json, "nearest_genes");
                     lo.genes = gff.overlapping(chr, l.paddedStart, l.paddedEnd);
 
+                    // Restore ref panel label for manifest accuracy after a lazy reload
+                    // (LocusOutput.refPanel defaults to "" otherwise).
+                    String refPanel = extractStr(json, "ref_panel");
+                    if (refPanel != null) lo.refPanel = refPanel;
+
                     // Parse top_snp so manifest summaries (top_snp/top_snp_pval) stay
                     // correct after a live mutation (create/split/delete/merge/reorder)
                     // that re-exports the manifest from this reconstructed state.
@@ -455,6 +460,8 @@ public class LocalServer {
             projectAnalysisBuildBase(ex, projectId, projectDir);
         } else if (action.equals("analysis/build-base-progress")) {
             projectAnalysisBuildBaseProgress(ex, projectId);
+        } else if (action.startsWith("analysis/locus-log/")) {
+            projectLocusBuildLog(ex, projectDir, action);
         } else if (action.equals("analysis/tools")) {
             projectAnalysisTools(ex);  // doesn't need project state
         } else if (action.equals("analysis/run")) {
@@ -665,6 +672,11 @@ public class LocalServer {
             respond(ex, 503, "application/json",
                 "{\"error\":\"Pipeline state not available\"}".getBytes()); return;
         }
+        LociMutationService ms = ensureMutationService(ps);
+        if (ms == null) {
+            respond(ex, 503, "application/json",
+                "{\"error\":\"Pipeline state not available\"}".getBytes()); return;
+        }
         String body = new String(readAll(ex.getRequestBody()), "UTF-8");
         String sOrigIdx = extractStr(body, "locus_index");
         if (sOrigIdx == null) {
@@ -674,15 +686,13 @@ public class LocalServer {
         if (regions.size() < 2) {
             respond(ex, 400, "application/json", "{\"error\":\"need at least 2 regions\"}".getBytes()); return;
         }
-        LocusUpdater.UpdateResult ur = LocusUpdater.split(
-            Integer.parseInt(sOrigIdx), regions, ps.config, ps.gff, ps.loci, ps.outputs);
-        if (ur.ok) {
-            String dataDir = projectDir + "/data";
-            byte[] manifestBytes = Files.readAllBytes(new File(dataDir + "/manifest.json").toPath());
-            respond(ex, 200, "application/json", manifestBytes);
+        LociMutationService.MutationResult mr = ms.split(
+            Integer.parseInt(sOrigIdx), regions);
+        if (mr.ok) {
+            respond(ex, 200, "application/json", mr.manifestJson.getBytes("UTF-8"));
         } else {
             respond(ex, 500, "application/json",
-                ("{\"error\":\"" + escJ(ur.error) + "\"}").getBytes());
+                ("{\"error\":\"" + escJ(mr.error) + "\"}").getBytes());
         }
     }
 
@@ -925,8 +935,8 @@ public class LocalServer {
             boolean allDone = status.values().stream().allMatch(v -> v);
             json.append(",\"ready\":").append(allDone);
             // Read consistency diagnostic summary if available
-            File diagFile = new File(BaseStepPipeline.analysisDir(ps.config, locus),
-                "ld/consistency_summary.json");
+            File analysisRoot = BaseStepPipeline.analysisDir(ps.config, locus);
+            File diagFile = new File(analysisRoot, "ld/consistency_summary.json");
             if (diagFile.exists()) {
                 try {
                     String diagJson = new String(java.nio.file.Files.readAllBytes(diagFile.toPath()), "UTF-8");
@@ -936,10 +946,27 @@ public class LocalServer {
                     if (flagged != null) json.append(",\"diagnostic_flagged\":").append(flagged);
                 } catch (Exception e) {}
             }
+            json.append(",\"has_log\":").append(new File(analysisRoot, "build.log").exists());
             json.append('}');
         }
         json.append("]}");
         respond(ex, 200, "application/json", json.toString().getBytes("UTF-8"));
+    }
+
+    // GET /api/project/{id}/analysis/locus-log/{locusId}
+    private void projectLocusBuildLog(HttpExchange ex, String projectDir, String action)
+            throws IOException {
+        String locusId = action.substring("analysis/locus-log/".length()).trim();
+        if (locusId.isEmpty()) {
+            respond(ex, 400, "text/plain", "locus_id required".getBytes()); return;
+        }
+        File logFile = new File(projectDir, "loci_analysis/" + locusId + "/build.log");
+        if (logFile.exists()) {
+            byte[] bytes = java.nio.file.Files.readAllBytes(logFile.toPath());
+            respond(ex, 200, "text/plain", bytes);
+        } else {
+            respond(ex, 404, "text/plain", "No build log found for this locus.".getBytes());
+        }
     }
 
     // POST /api/project/{id}/analysis/build-base
@@ -1004,13 +1031,23 @@ public class LocalServer {
         ProgressTracker pt = analysisProgress.get(projectId);
         if (pt == null) {
             respond(ex, 200, "application/json",
-                "{\"phase\":\"idle\",\"pct\":0,\"done\":true}".getBytes()); return;
+                "{\"phase\":\"idle\",\"pct\":0,\"done\":true,\"completed_loci\":[]}".getBytes()); return;
         }
-        String json = String.format(
-            "{\"phase\":\"%s\",\"locus\":%d,\"total\":%d,\"pct\":%d,\"done\":%s}",
-            escJ(pt.phase), pt.locusIndex, pt.totalLoci, pt.pct(),
-            pt.done ? "true" : "false");
-        respond(ex, 200, "application/json", json.getBytes());
+        StringBuilder json = new StringBuilder();
+        json.append("{\"phase\":\"").append(escJ(pt.phase)).append('"');
+        json.append(",\"locus\":").append(pt.locusIndex);
+        json.append(",\"total\":").append(pt.totalLoci);
+        json.append(",\"pct\":").append(pt.pct());
+        json.append(",\"done\":").append(pt.done);
+        json.append(",\"completed_loci\":[");
+        boolean first = true;
+        for (int idx : pt.completedLoci) {
+            if (!first) json.append(',');
+            json.append(idx);
+            first = false;
+        }
+        json.append("]}");
+        respond(ex, 200, "application/json", json.toString().getBytes());
     }
 
     // ── Analysis tool/run endpoints ────────────────────────────────
@@ -1106,14 +1143,11 @@ public class LocalServer {
                 runDir.mkdirs();
 
                 int sampleN = cfg.sampleN;
-                String nStr = params.get("sample_n");
-                if (nStr != null && !nStr.isEmpty() && !nStr.equals("0"))
-                    try { sampleN = Integer.parseInt(nStr); } catch (NumberFormatException e) {}
 
                 if (toolName.startsWith("cojo")) {
                     double pCutoff = 5e-8;
-                    try { pCutoff = Double.parseDouble(params.getOrDefault("p_cutoff", "5e-8")); } catch (NumberFormatException e) {}
                     double collinear = 0.9;
+                    try { pCutoff = Double.parseDouble(params.getOrDefault("p_cutoff", "5e-8")); } catch (NumberFormatException e) {}
                     try { collinear = Double.parseDouble(params.getOrDefault("collinear", "0.9")); } catch (NumberFormatException e) {}
                     String gctaBin = params.getOrDefault("gcta_path", "bin/gcta64.exe");
                     CojoAdapter.prepareRun(harmonizedDir, matchedDir, runDir, sampleN, pCutoff, collinear, gctaBin);

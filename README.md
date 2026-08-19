@@ -1,240 +1,751 @@
-<p align="center">
-  <img src="docs/images/icon.png" alt="LYNXgwas" width="200">
-</p>
+# LYNXgwas — Locus analYsis and geNomic eXplorer
 
-<h1 align="center">LYNXgwas</h1>
-
-<p align="center">
-  <strong>Locus analYsis and geNomic eXplorer</strong><br>
-  Multi-project GWAS visualization platform with loci identification, rsID recovery, LD computation, and interactive exploration
-</p>
-
-<p align="center">
-  <img src="https://img.shields.io/badge/language-Java-orange" alt="Java">
-  <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-blue" alt="Platform">
-  <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
-</p>
+Multi-project GWAS visualization platform: loci identification, rsID recovery, LD computation, fine-mapping, and interactive browser-based exploration. Runs entirely locally — no cloud dependencies.
 
 ---
 
-## Overview
+## Table of Contents
 
-LYNXgwas is a local-first, multi-project GWAS analysis and visualization platform. It takes GWAS summary statistics, identifies loci, recovers rsIDs, computes LD, and produces an interactive browser-based explorer — all from a single Java application with no cloud dependencies.
+1. [Architecture Overview](#architecture-overview)
+2. [Directory Structure](#directory-structure)
+3. [Java Backend — Source Packages](#java-backend--source-packages)
+4. [Frontend — Pages and UI Forms](#frontend--pages-and-ui-forms)
+5. [Pipeline Stages and Data Flow](#pipeline-stages-and-data-flow)
+6. [Analysis Tools (YAML Descriptors)](#analysis-tools-yaml-descriptors)
+7. [API Endpoints Reference](#api-endpoints-reference)
+8. [Per-Project Directory Layout](#per-project-directory-layout)
+9. [Configuration Reference](#configuration-reference)
+10. [Build and Run](#build-and-run)
+11. [Key Design Decisions](#key-design-decisions)
 
-### What LYNXgwas Can Do
+---
 
-| Capability | Description |
-|---|---|
-| **Multi-project management** | Create, configure, process, and compare multiple GWAS projects from a single home page. Each project has independent data, configuration, and annotations. |
-| **Loci identification** | Identify genomic risk loci from GWAS summary statistics using PLINK LD-based clumping with reference panel matching. Configurable thresholds (p-value, merge distance, clump r²). |
-| **rsID recovery** | Recover rsIDs for SNPs lacking them using a local tabix-indexed dbSNP database (HTSJDK, ~99.8% recovery), with optional API completion via NCBI dbSNP and gnomAD (~99.9% combined). |
-| **LD computation** | Compute pairwise LD (r²) against a reference panel (e.g. 1000 Genomes) using PLINK, with LD heatmap triangles and Gabriel-style block detection. |
-| **Interactive viewer** | Per-locus Manhattan plots, gene tracks (GENCODE GFF3), LD triangles, context sketches, genome-wide skyline overview, and annotation overlays — all in the browser. |
-| **Annotation system** | Overlay custom SNP-level and locus-level annotations (fine-mapping PIP, colocalization PP.H4, conditional signals, etc.) with configurable tracks, channels, and visual styles. |
-| **PDF export** | Export loci to PDF with configurable resolution (1x–4x), page layout, and track selection. |
-| **Project wizard** | Step-by-step guided project creation: file selection, GWAS column mapping with auto-detection, parameter configuration, and processing. |
+## Architecture Overview
 
-## Quick Start
-
-### Prerequisites
-
-- **Java 11+** (JDK for building, JRE for running)
-- **PLINK 1.9** (for LD computation and loci identification)
-- A reference panel in PLINK2 binary format (`.bed/.bim/.fam`)
-- Optional: tabix-indexed dbSNP VCF files (for rsID recovery)
-
-### Build & Run
-
-```bash
-# Compile
-build.bat
-
-# Start the server (opens home page at http://localhost:8765/)
-run.bat
+```
+Browser (index.html / viewer.html)
+        │  HTTP (port 8765)
+        ▼
+LocalServer.java  ──────────────────────────────────────────────────────
+   │  orchestrates                                                       │
+   ├── Main.runPipeline()          4-phase pipeline per project          │
+   │     Phase 1: GwasParser, LociParser, GffParser, GenomeSkyline      │
+   │     Phase 2: PlinkSubsetter  (PLINK 1.9 subprocess)                │
+   │     Phase 3: LdCalculator   (PLINK 1.9 subprocess)                 │
+   │     Phase 4: JsonExporter   (per-locus JSON + manifest)            │
+   │                                                                      │
+   ├── RsidPipeline               rsID recovery (HTSJDK + optional API)  │
+   ├── LociIdentifier             GWAS → PLINK clump → loci.txt          │
+   ├── LocusUpdater               live resize / split / create loci      │
+   └── PluginEngine               run R/binary analysis tools per locus  │
+                                                                          │
+projects/{id}/data/               ◄──── static JSON served directly ─────┘
 ```
 
-The home page lists all projects with live status. Use the wizard to create new projects or manage existing ones.
+---
 
-### Command-line Options
-
-```bash
-run.bat                      # Start server, show home page (no auto-processing)
-run.bat --all                # Process all stale projects, then start server
-run.bat --project=myproject  # Process only this project, then start server
-```
-
-## Home Page
-
-The home page at `http://localhost:8765/` provides:
-
-- **Project table** with name, loci count, SNP count, annotation sources, status, rsID status, and loci source
-- **+ New project** button with step-by-step wizard
-- **Reprocess / Edit / Delete** actions per project
-- **Get Loci** button for projects without a loci file
-- **Add rsIDs** button for projects without rsID annotations
-- **Resources & Settings** panel for managing SNP databases and reference panels
-- **Process all updated** bulk action
-
-## Workflows
-
-### 1. Create a New Project
-
-**Via wizard (recommended):**
-1. Click **+ New project** on the home page
-2. Step 1: Enter project name and ID
-3. Step 2: Browse for GWAS file, GFF3 annotation, and optionally a loci file and reference panel
-4. Step 3: Map GWAS columns (auto-detected from file header)
-5. Step 4: Configure locus parameters and LD settings
-6. Step 5: Review and process
-
-**Manual:**
-1. Copy `projects/config.properties.template` to `projects/{your_id}/config.properties`
-2. Edit the config file with your paths and column mappings
-3. Run `run.bat --project={your_id}`
-
-### 2. Identify Loci (Get Loci)
-
-For projects without a loci file:
-1. Click **Get Loci** on the home page
-2. Configure: seed p-value threshold (5e-8 genome-wide or 5e-5 suggestive), merge distance, min SNPs per locus
-3. The pipeline streams the GWAS file, matches against the reference panel by chr:pos, runs PLINK clumping (r² 0.6), and merges clump intervals within 250kb
-4. Output: `loci.txt` (meta_chr, meta_start, meta_end) + `loci_detail.tsv` with lead SNPs
-
-### 3. Recover rsIDs (Add rsIDs)
-
-For projects where SNPs lack rsID annotations:
-1. Click **Add rsIDs** on the home page
-2. Select a configured SNP database (dbSNP, tabix-indexed VCF)
-3. Optionally enable API completion (NCBI + gnomAD) for remaining unmatched SNPs
-4. The pipeline queries dbSNP per-locus via HTSJDK, matches by chr:pos with forward/reverse allele verification, and patches locus JSONs in-place — no full reprocess needed
-5. Typical recovery: ~99.8% local, ~99.9% with API completion
-
-### 4. View and Explore
-
-Click any project row to open the interactive viewer:
-- Navigate between loci with keyboard arrows or the loci sidebar
-- Toggle tracks: context sketch, gene structure, LD triangle, annotations
-- Search by locus index, gene name, or rsID
-- Resize locus boundaries and recompute on the fly
-- Split loci and create new ones from the viewer
-- Export to PDF at configurable resolution
-
-## Configuration
-
-### Per-project: `projects/{id}/config.properties`
-
-| Key | Description | Required |
-|---|---|---|
-| `gwas.file` | GWAS summary statistics (tab-delimited) | Yes |
-| `loci.file` | Locus definitions (meta_chr, meta_start, meta_end) | No (use Get Loci) |
-| `gff3.file` | GENCODE GFF3 annotation file | Yes |
-| `ref.panel.path` | PLINK bfile prefix for LD reference panel | No |
-| `ref.panel.population` | Population label (EUR, EAS, AFR, etc.) | No |
-| `col.chr` | GWAS column name for chromosome | Yes |
-| `col.pos` | GWAS column name for position | Yes |
-| `col.pvalue` | GWAS column name for p-value | Yes |
-| `col.ea` | GWAS column name for effect allele | Yes |
-| `col.nea` | GWAS column name for other allele | Yes |
-| `col.rsid` | GWAS column name for rsID (if present) | No |
-| `col.beta`, `col.or`, `col.se`, `col.n`, `col.maf`, `col.info` | Optional GWAS columns carried through to viewer | No |
-| `locus.padding` | Display padding each side of loci (bp, default 200000) | No |
-| `ld.enabled` | Enable LD computation (default false) | No |
-| `ld.triangle.boundary` | SNPs each side for LD triangle (default 100) | No |
-
-### Global: `config/global.json`
-
-Manages shared resources across all projects:
-- **Reference panels**: PLINK bfile paths with population, build, and validation
-- **SNP databases**: tabix-indexed dbSNP VCF folders with per-chromosome file detection
-- **API settings**: NCBI and gnomAD configuration for rsID API completion
-
-## Project Structure
+## Directory Structure
 
 ```
 LYNXgwas/
-├── src/                        # Java source files
-│   ├── Main.java               #   Pipeline orchestrator + multi-project management
-│   ├── Config.java             #   Configuration loading + validation
-│   ├── ProjectMetadata.java    #   Fingerprinting, staleness detection, project.json
-│   ├── GwasParser.java         #   GWAS summary stats streaming parser
-│   ├── LociParser.java         #   Locus definitions parser
-│   ├── GffParser.java          #   GFF3 gene annotation parser
-│   ├── LdCalculator.java       #   Pairwise LD computation via PLINK
-│   ├── PlinkSubsetter.java     #   Reference panel subsetting via PLINK
-│   ├── GenomeSkyline.java      #   Genome-wide binned Manhattan skyline
-│   ├── SnpAnnotator.java       #   NCBI rsID annotation for lead SNPs
-│   ├── JsonExporter.java       #   Per-locus JSON + manifest generation
-│   ├── LocusUpdater.java       #   Live locus boundary updates + splitting
-│   ├── LocalServer.java        #   HTTP server (API endpoints + static files)
-│   ├── ProgressTracker.java    #   Thread-safe phased progress tracking
-│   ├── rsid/                   #   rsID recovery module
-│   │   ├── RsidRecovery.java   #     HTSJDK-based dbSNP region query
-│   │   ├── RsidMatcher.java    #     Forward/reverse allele matching
-│   │   ├── RsidPipeline.java   #     Full recovery pipeline + locus JSON patching
-│   │   ├── RsidDetector.java   #     Auto-detect rsID column in GWAS file
-│   │   ├── GlobalConfig.java   #     Global resources config (ref panels, SNP dbs)
-│   │   ├── RsidApiCompleter.java #   API completion orchestrator (NCBI + gnomAD)
-│   │   ├── NcbiDbSnpProvider.java #  NCBI Variation Services provider
-│   │   ├── GnomadProvider.java #     gnomAD GraphQL provider
-│   │   ├── RateLimiter.java    #     Token-bucket rate limiter
-│   │   └── RsidApiCache.java   #     Disk-backed API result cache
-│   └── loci/                   #   Loci identification module
-│       ├── LociIdentifier.java #     GWAS → ref-panel match → PLINK clump → merge
-│       └── LociProgress.java   #     Progress tracker for loci identification
 │
-├── index.html                  # Home page (project table + wizard + rsID/loci modals)
-├── viewer.html                 # Interactive locus viewer (project-aware)
-├── assets/                     # Static assets (icon)
-├── docs/images/                # Project documentation images
+├── src/                          # Java source (all compiled to bin/)
+│   ├── Main.java
+│   ├── Config.java
+│   ├── LocalServer.java
+│   ├── GwasParser.java
+│   ├── LociParser.java
+│   ├── GffParser.java
+│   ├── LdCalculator.java
+│   ├── PlinkSubsetter.java
+│   ├── GenomeSkyline.java
+│   ├── SnpAnnotator.java
+│   ├── JsonExporter.java
+│   ├── LocusUpdater.java
+│   ├── LociMutationService.java
+│   ├── ProjectMetadata.java
+│   ├── ProgressTracker.java
+│   ├── Locus.java
+│   ├── LocusOutput.java
+│   ├── Snp.java
+│   ├── Gene.java / Transcript.java / Exon.java
+│   │
+│   ├── rsid/                     # rsID recovery module
+│   │   ├── RsidPipeline.java
+│   │   ├── RsidRecovery.java
+│   │   ├── RsidMatcher.java
+│   │   ├── RsidDetector.java
+│   │   ├── RsidApiCompleter.java
+│   │   ├── NcbiDbSnpProvider.java
+│   │   ├── GnomadProvider.java
+│   │   ├── RsidApiCache.java
+│   │   ├── RateLimiter.java
+│   │   ├── GlobalConfig.java
+│   │   ├── RsidProgress.java
+│   │   ├── RsidApiProvider.java
+│   │   ├── DbSnpRecord.java
+│   │   └── MatchResult.java
+│   │
+│   ├── loci/                     # Loci identification module
+│   │   ├── LociIdentifier.java
+│   │   └── LociProgress.java
+│   │
+│   ├── analysis/                 # Fine-mapping / analysis tools module
+│   │   ├── PluginEngine.java
+│   │   ├── BaseStepPipeline.java
+│   │   ├── ToolDescriptor.java
+│   │   ├── InputContractWriter.java
+│   │   ├── OutputContractValidator.java
+│   │   ├── LocusGwasExtractor.java
+│   │   ├── SnpMatcher.java
+│   │   ├── AlleleHarmonizer.java
+│   │   ├── LdMatrixComputer.java
+│   │   ├── LdGwasDiagnostic.java
+│   │   ├── StepManifest.java
+│   │   ├── ContentHasher.java
+│   │   ├── StableSnpId.java
+│   │   ├── AnalysisColumnProvider.java
+│   │   ├── SusieAdapter.java
+│   │   ├── FinemapAdapter.java
+│   │   └── CojoAdapter.java
+│   │
+│   └── export/                   # Excel export module
+│       ├── ExcelExporter.java
+│       ├── XlsxWriter.java
+│       ├── ExportRegistry.java
+│       ├── ColumnSpec.java
+│       ├── SnpContext.java
+│       ├── LocusContext.java
+│       ├── SnpColumnProvider.java
+│       └── LocusColumnProvider.java
 │
-├── projects/                   # Per-project directories
-│   ├── config.properties.template  # Template for manual project creation
+├── index.html                    # Home page + project wizard (single file)
+├── viewer.html                   # Per-locus interactive viewer (single file)
+│
+├── tools/                        # Analysis tool descriptors (YAML)
+│   ├── susie_finemapping.yaml
+│   ├── finemap.yaml
+│   ├── cojo_conditional.yaml
+│   ├── coloc.yaml
+│   └── gwama_meta.yaml
+│
+├── projects/                     # One subdirectory per project (runtime)
 │   └── {project_id}/
-│       ├── config.properties   #   Project pipeline configuration
-│       ├── project.json        #   Metadata, fingerprints, rsID status
-│       ├── annotations.yaml    #   Project-specific annotation config
-│       └── data/               #   Generated locus JSONs + manifest
+│       ├── config.properties
+│       ├── project.json
+│       ├── annotations.yaml
+│       ├── loci.txt
+│       ├── loci_detail.tsv
+│       ├── data/                 # Generated JSON files
+│       ├── plink_subsets/        # PLINK .bed/.bim/.fam per locus
+│       └── ld_results/           # Temp LD files (deleted after reading)
 │
 ├── config/
-│   └── global.json             # Global resources (ref panels, SNP databases)
+│   └── global.json               # Shared ref panels + SNP databases
 │
-├── lib/                        # HTSJDK + dependencies (for rsID recovery)
-├── input/                      # Shared input files (GWAS, loci)
-├── resources/                  # Shared resources (GENCODE GFF3)
-├── build.bat                   # Compile script
-└── run.bat                     # Run script
+├── resources/
+│   └── gencode.v37.annotation.gff3
+│
+├── input/                        # GWAS summary statistics files
+├── lib/                          # HTSJDK + dependencies (JAR files)
+├── bin/                          # Compiled Java classes (output of build.bat)
+│
+├── build.bat                     # Compile all Java sources → bin/
+├── run.bat                       # Start server on port 8765
+├── checks.json                   # Validation rules / quality checks
+└── assets/
+    └── lynxgwas-icon.svg
 ```
 
-## API Endpoints
+---
+
+## Java Backend — Source Packages
+
+### Core (`src/*.java`)
+
+| File | Role |
+|---|---|
+| `Main.java` | Entry point. Parses CLI args (`--all`, `--project=`, `--server`). Runs `runPipeline()` for one project or `runMultiProject()` for all. Also contains `PipelineResult` data class. |
+| `Config.java` | Loads `config.properties`, resolves all column names, LD settings, dataset metadata. Auto-enables LD if `ref.panel.path` is set. `applyJson()` used by wizard POST. `writeProperties()` is the single canonical config writer. |
+| `LocalServer.java` | Built-in HTTP server (Java `com.sun.net.httpserver`, port 8765). Registers all API endpoints. Per-project state held in `ConcurrentHashMap<String, ProjectState>`. Background threads per project for pipeline, rsID, loci, analysis. |
+| `GwasParser.java` | Streams GWAS TSV once. Builds per-chromosome interval lookup (sorted by `paddedStart`) so SNPs are correctly assigned to loci even if the GWAS file is not sorted by position. |
+| `LociParser.java` | Reads `loci.txt` (columns: `meta_chr`, `meta_start`, `meta_end`). Returns `List<Locus>`. |
+| `GffParser.java` | Parses GENCODE GFF3. Builds an in-memory gene/transcript/exon tree. `overlapping()` returns genes within a padded window. `nearestGeneNames()` finds closest genes outside the window. |
+| `LdCalculator.java` | For each locus: (A) selects a 100-SNP window around the top SNP from the PLINK subset BIM, (B) runs `plink --r2 --ld-snp` to get r² of all SNPs vs. the top SNP → `r2ByPos` map, (C) runs `plink --r2 square` on the window → pairwise matrix filtered to GWAS SNP positions → `LdTriangle`. All temp files are deleted after reading. Runs in parallel via `ExecutorService`. |
+| `PlinkSubsetter.java` | Runs `plink --bfile --chr --from-bp --to-bp --make-bed` to cut a region from the reference panel per locus. Also runs `plink --clump` for loci identification. `findPlink()` searches PATH and common install locations. |
+| `GenomeSkyline.java` | Builds a genome-wide binned Manhattan signal array. Written to `data/skyline.json`. Powers the mini-overview strip in the viewer. |
+| `SnpAnnotator.java` | Queries NCBI dbSNP E-utilities to fetch rsIDs for lead SNPs that lack them. Used when no rsID column is mapped and no top SNP file is provided. |
+| `JsonExporter.java` | Serializes `LocusOutput` to JSON (hand-built, no library). Writes `locus_N.json`, `locus_N.js` (JSONP wrapper), and `manifest.json`. `exportManifest()` writes the project-level locus index. |
+| `LocusUpdater.java` | Handles live locus operations from the viewer: `update()` (resize boundaries), `create()` (new locus), `split()` (divide into sub-loci), `validateSplit()` (cross-region LD check). Each operation re-streams GWAS, re-runs PLINK, and re-exports JSON for the affected locus. |
+| `LociMutationService.java` | Higher-level service wrapping `LocusUpdater`; handles the merge + re-export + manifest rebuild after mutations. |
+| `ProjectMetadata.java` | Stores `project.json` (loci count, SNP count, fingerprints, rsID status). `checkStaleness()` compares fingerprints of GWAS, loci, GFF3, config, annotations, and pipeline version. |
+| `ProgressTracker.java` | Thread-safe phased progress (phase name, step count, advance). Polled by `/api/project/{id}/progress`. |
+| `Locus.java` | `index`, `chr`, `start`, `end`, `paddedStart`, `paddedEnd`, `snps`. `chrInt()` / `chrToInt()` for numeric sorting. |
+| `LocusOutput.java` | Full locus output model: `gwasSnps`, `genes`, `ldTriangle`, `topSnp`, `refPanel`, `locusContext` (prev/next navigation), etc. `LdTriangle` is a nested class with `snps[]`, `matrix[][]`, `topSnpRank`. |
+| `Snp.java` | `id`, `chr`, `pos`, `pvalue`, `ea`, `nea`, `beta`, `se`, `oddsRatio`, `r2`, `maf`, `infoScore`, `sampleN`. |
+
+### `src/rsid/` — rsID Recovery
+
+| File | Role |
+|---|---|
+| `RsidPipeline.java` | Orchestrates full rsID recovery: local dbSNP query → optional API completion → patch locus JSONs in-place. |
+| `RsidRecovery.java` | Uses HTSJDK to query tabix-indexed dbSNP VCF files per-locus region. Returns `DbSnpRecord` list. |
+| `RsidMatcher.java` | Matches GWAS SNPs to dbSNP records by chr:pos + allele verification (forward/reverse strand). |
+| `RsidDetector.java` | Auto-detects rsID column in GWAS file header by scanning for `rs\d+` patterns in first few rows. |
+| `RsidApiCompleter.java` | For SNPs not matched locally: queries NCBI Variation Services and/or gnomAD GraphQL API. Manages rate limiting and disk cache. |
+| `NcbiDbSnpProvider.java` | NCBI E-utilities / Variation Services HTTP client. |
+| `GnomadProvider.java` | gnomAD GraphQL HTTP client. |
+| `RsidApiCache.java` | Disk-backed cache for API responses (avoid re-querying on repeated runs). |
+| `RateLimiter.java` | Token-bucket rate limiter shared across API providers. |
+| `GlobalConfig.java` | Loads/saves `config/global.json`. Manages reference panels and SNP database registrations shared across all projects. |
+
+### `src/loci/` — Loci Identification
+
+| File | Role |
+|---|---|
+| `LociIdentifier.java` | Full loci pipeline: (1) stream GWAS to find candidate SNPs by p-value threshold, (2) match candidates to reference panel by chr:pos, (3) write a PLINK-compatible summary stats file, (4) run `plink --clump` (r² 0.6 default), (5) parse clumped intervals, (6) merge intervals within `mergeDistanceBp`. Writes `loci.txt` + `loci_detail.tsv`. |
+| `LociProgress.java` | Progress data class for loci identification (step names, counts, done flag). |
+
+### `src/analysis/` — Analysis Tools Engine
+
+| File | Role |
+|---|---|
+| `PluginEngine.java` | Discovers tool YAML descriptors from `tools/`, runs them per locus. Manages job lifecycle, cancellation, and result storage. |
+| `ToolDescriptor.java` | Parses a tool YAML into a descriptor: `tool`, `label`, `language`, `command`, `requires`, `params`, `output_mapping`. |
+| `BaseStepPipeline.java` | Abstract pipeline for each tool run: (1) extract GWAS for locus, (2) harmonize alleles, (3) match to ref panel, (4) compute LD matrix, (5) run LD-GWAS diagnostic, (6) write input contract, (7) execute tool subprocess, (8) validate output contract, (9) store results. |
+| `LocusGwasExtractor.java` | Extracts SNPs for a single locus into a `harmonized_gwas.tsv` for tool input. |
+| `AlleleHarmonizer.java` | Aligns GWAS alleles to reference panel alleles (handles strand flips, palindromic SNPs). |
+| `SnpMatcher.java` | Matches GWAS SNPs to reference panel variants for the analysis input. |
+| `LdMatrixComputer.java` | Computes the full LD r/r² matrix for analysis tools (dense square matrix, written to `ld_r.matrix`). |
+| `LdGwasDiagnostic.java` | DENTIST-style LD–GWAS consistency check. Flags SNPs whose z-score is inconsistent with LD neighbours. Writes `consistency_report.tsv`. |
+| `InputContractWriter.java` | Writes all input files (`harmonized_gwas.tsv`, `matched_ref.txt`, `ld_r.matrix`, `ld_snp_order.txt`) expected by tool scripts. |
+| `OutputContractValidator.java` | Validates tool output files against the `output_mapping` spec. |
+| `SusieAdapter.java` | Adapts SuSiE output columns (`chr`, `pos`, `susie_pip`, `susie_cs`, `susie_cs_coverage`) into the annotation system. Requires sample size N to be set. |
+| `FinemapAdapter.java` | Adapts FINEMAP output columns (`chr`, `pos`, `finemap_pip`, `finemap_log10bf`) into the annotation system. Falls back to ref-panel allele frequency when the GWAS row's own MAF is missing or out of range. Requires sample size N to be set. |
+| `CojoAdapter.java` | Prepares GCTA `--cojo-slct` input with allele/freq orientation verified against the ref panel, runs conditional & joint selection plus a `--cojo-cond` pass for conditional p-values on every SNP, and auto-retries at a looser collinearity threshold when the joint estimates look like artifacts (effect inflation, sign flips). Adapts output columns (`cojo_pJ`, `cojo_bJ`, `cojo_bJ_se`, `cojo_pC`, `cojo_bC`, `cojo_bC_se`, `cojo_selected`, plus `chr`/`pos`) into the annotation system, and writes a reliability verdict + artifact flags to `cojo_diag.json`. |
+| `StepManifest.java` | Records which pipeline steps completed, their timestamps and content hashes (for caching/skip logic). |
+| `ContentHasher.java` | SHA-256 hashing of input files to detect changes between runs. |
+| `StableSnpId.java` | Generates stable SNP identifiers (chr:pos:a1:a2 canonical form) for cross-step matching. |
+| `AnalysisColumnProvider.java` | Registers analysis tool output columns in the export system. |
+
+### `src/export/` — Excel Export
+
+| File | Role |
+|---|---|
+| `ExcelExporter.java` | Orchestrates full Excel export: iterates loci, collects SNP+locus rows, writes XLSX. |
+| `XlsxWriter.java` | Low-level XLSX writer (uses Apache POI-style byte construction without POI dependency). |
+| `ExportRegistry.java` | Central registry of all exportable columns (GWAS stats + annotation columns). |
+| `ColumnSpec.java` | Column definition: `id`, `label`, `type`, `scope` (per_snp / per_locus). |
+| `SnpContext.java` | All per-SNP data bundled for export (SNP + locus metadata + annotations). |
+| `LocusContext.java` | All per-locus data bundled for export. |
+| `SnpColumnProvider.java` | Provides standard GWAS SNP column values for export. |
+| `LocusColumnProvider.java` | Provides locus-level column values for export. |
+
+---
+
+## Frontend — Pages and UI Forms
+
+### `index.html` — Home Page
+
+Single-file frontend (~1,800 lines). No external dependencies except inline D3.js usage for the skyline.
+
+#### Project Table
+
+The main table shows all projects with columns:
+- Project name (click to open viewer)
+- Loci count, SNP count
+- Annotation sources (badge count)
+- Status: `up_to_date` | `needs_reprocessing` | `processing` | `never_processed`
+- rsID status: `present` | `recovered` | `not_recovered` | `none`
+- Loci source: `identified` | `manual` | `none`
+
+Actions per row: **Open**, **Reprocess**, **Edit**, **Delete**, **Get Loci**, **Add rsIDs**, **Analysis**
+
+---
+
+#### Project Wizard (New / Edit Project)
+
+Triggered by **+ New project** or **Edit**. 5 steps:
+
+**Step 1 — Basics**
+- Project name (text input; auto-generates project ID as slug)
+- Description (optional text input)
+- Project ID (text input, locked when editing)
+
+**Step 2 — Files**
+- GWAS summary statistics path (text + Browse button → `/pick-file` dialog)
+- Loci definition file path (text + Browse; optional — can be generated later)
+- GFF3 gene annotation path (text + Browse)
+- Reference panel PLINK prefix (text + Browse; `.bed/.bim/.fam` extension stripped automatically)
+
+**Step 3 — Column mapping**
+- Auto-detected from GWAS file header via `/api/peek-file-header`
+- Required dropdowns (5): Chromosome, Position, P-value, Effect allele (A1), Other allele (A2)
+- Optional dropdowns (7): rsID, Variant ID, Beta, Odds Ratio, Standard Error, Sample size N, MAF, Info score
+
+**Step 4 — Parameters**
+
+*Locus parameters:*
+- Locus padding (number, default 200,000 bp)
+- Max SNPs per locus (number, default 5,000)
+
+*LD computation:*
+- Enable LD checkbox (requires ref panel)
+- LD triangle boundary — SNPs each side (number, default 100)
+- Parallel LD jobs (number, default 4)
+
+*Reference panel:*
+- Population label (text, e.g. EUR, EAS)
+
+*Dataset metadata (required for analysis tools):*
+- Sample size N (number, required for COJO/SuSiE/FINEMAP)
+- Trait type (dropdown: Not specified / Quantitative / Binary)
+- N cases (number)
+- N controls (number)
+- Effect type (dropdown: Auto-detect / Beta / Odds Ratio / Log Odds Ratio)
+- Genome build (dropdown: GRCh37/hg19 / GRCh38/hg38)
+- Ancestry / Population (text, e.g. EUR, EAS, Hispanic)
+
+**Step 5 — Preview**
+- Summary table of all settings before submit
+- Submit button: **Process** (new) or **Save & reprocess** (edit)
+
+---
+
+#### Get Loci Modal
+
+Triggered by **Get Loci** button. Parameters:
+- Seed p-value threshold (number, default 5e-8)
+- Lead p-value threshold (number, default 5e-8)
+- Merge distance (kb, default 250)
+- Min SNPs per locus (number, default 5)
+
+Progress polling via `/api/loci-progress?project_id=`.
+
+---
+
+#### Add rsIDs Modal
+
+Triggered by **Add rsIDs** button. Parameters:
+- SNP database selector (populated from `global.json` SNP databases)
+- Enable API completion checkbox (NCBI + gnomAD)
+
+Progress polling via `/api/rsid-progress?project_id=`.
+
+---
+
+#### Resources & Settings Panel
+
+Accessed from the top-right settings icon.
+
+*Reference panels tab:*
+- Table of registered panels (path, population, build)
+- Add panel form: path (Browse), population label, genome build
+- Remove button per panel
+
+*SNP databases tab:*
+- Table of registered dbSNP VCF folders
+- Add database form: label, folder path (Browse), genome build, file pattern
+- Remove button per database
+
+*API settings tab:*
+- NCBI API toggle + API key field + rate limit
+- gnomAD toggle
+- Restrict to lead SNPs toggle
+
+Saved to `config/global.json` via `POST /api/global-config`.
+
+---
+
+#### Analysis Panel
+
+Per-project analysis (triggered from **Analysis** button).
+
+*Tool list view:*
+- Lists all discovered tools from `tools/*.yaml`
+- Each tool shows: label, description, status, last-run results
+- **Run** button opens tool parameter form
+- Base-status table: one row per locus with dots for extract/match/harmonize/LD completion, the LD&ndash;GWAS
+  diagnostic verdict (`pass` / `warn` / `high_warn`, the last flagging likely reference-panel ancestry
+  mismatch), and a **Log** link that opens that locus's `build.log` (narrates each base pipeline step)
+
+*Tool run form:*
+- Dynamically generated from tool YAML `params` list
+- Field types: `string` (text input), `int`/`float` (number input), `boolean` (checkbox), `select` (dropdown)
+- **Run** triggers `POST /api/project/{id}/analysis/run-tool`
+
+*Locus-level analysis view (opened from viewer):*
+- Same tool list but scoped to a single locus
+- Shows per-locus run log and results
+- Results columns (PIP, CS, p-values) are added as annotation tracks
+
+---
+
+### `viewer.html` — Interactive Locus Viewer
+
+Single-file viewer (~4,500 lines). Uses D3.js for all rendering.
+
+#### Main Layout (per locus panel)
+
+From top to bottom:
+1. **Panel header**: locus name, chromosome:start-end, top SNP rsID, ref panel population, prev/next navigation
+2. **Annotation tracks**: configurable tracks above the Manhattan plot (point, bar, flag styles)
+3. **Manhattan plot**: -log10(p) vs position; SNPs colored by LD r² (red→blue gradient); hover tooltip
+4. **Context sketch**: mini overview of chromosome with locus position indicator
+5. **Gene track**: GENCODE genes (protein-coding = blue, non-coding = green); exon structures; hover gene name
+6. **LD triangle**: pairwise r² heatmap (200×200 max); Gabriel-style block outlines; top SNP marker
+
+#### Viewer Controls
+
+- **Loci sidebar**: searchable locus list (by gene name, rsID, chr:pos); click to jump
+- **Search bar**: find locus by gene or rsID
+- **Track toggles**: Context / Genes / LD / Annotations
+- **Zoom**: scroll-wheel on x-axis; all tracks zoom together
+- **Locus resize**: drag left/right handles on context sketch → calls `/api/project/{id}/locus/{n}/update`
+- **Split locus**: button in panel header → split dialog with LD cross-region validation
+- **New locus**: draw region on chromosome sketch → calls `/api/project/{id}/locus/create`
+- **Reorder Loci**: renumbers all loci to match genomic (chr:pos) order → `POST /api/project/{id}/reorder-loci`.
+  Manually created loci keep their original append-order index otherwise, so this is a manual, reversible action
+  rather than something the viewer does automatically — navigation order always follows the server's genomic
+  sort regardless.
+
+#### PDF Export Modal (`#pdf-config-modal`)
+
+- Export mode: **per-locus panels** or **whole-genome overview**
+- Per-locus mode: resolution (1×–4×), page layout (portrait/landscape), loci-per-page, track selection, locus selection (all/current/range)
+- Whole-genome mode: chromosomes-per-page (2/3/4), and a squeeze option that compresses the
+  p&lt;5×10⁻¹⁰ region to 60% of plot height (with a visible axis break) so extreme peaks don't
+  flatten the rest of the signal
+- **Export** button → generates client-side PDF via canvas
+
+#### Annotation Wizard (in viewer)
+
+5-step inline wizard for adding annotation tracks:
+1. Select TSV file (Browse)
+2. Map join columns (chr, pos, allele columns)
+3. Choose columns to display
+4. Configure track style (point / bar / flag) and Manhattan channel (color / size / shape)
+5. Save → writes `annotations.yaml` via `POST /api/project/{id}/annotation-config`
+
+---
+
+## Pipeline Stages and Data Flow
+
+```
+Input files                   Pipeline phase          Output
+───────────────────────────────────────────────────────────────────────────
+loci.txt (meta_chr/start/end) ─┐
+GWAS summary stats (.tsv)     ─┤─ Phase 1: Parse ─► Locus list + SNP lists
+GFF3 annotation (.gff3)        │                     Gene tree
+                               │                     Skyline data
+                               │                     Top SNP per locus
+                               └─────────────────────────────────────────
+
+Top SNP + Locus regions        ─┬─ Phase 2: PLINK ─► plink_subsets/locus_N.bed
+Reference panel (.bed/.bim/.fam)─┘  subset            plink_subsets/locus_N.bim
+                                                       plink_subsets/locus_N.fam
+
+plink_subsets/locus_N.*        ─┬─ Phase 3: LD ───► r2ByPos map per locus
+Top SNP BIM IDs                ─┘  computation        LdTriangle (pairwise matrix)
+                                                       [temp .ld files deleted]
+
+All of the above               ─── Phase 4: Export ► data/locus_N.json
+                                                      data/locus_N.js (JSONP)
+                                                      data/manifest.json
+                                                      data/skyline.json
+```
+
+### GwasParser — How SNPs Are Assigned to Loci
+
+The parser streams the GWAS file once regardless of sort order:
+1. Builds a per-chromosome map of loci sorted by `paddedStart`
+2. For each GWAS row, binary-searches the sorted list to find the upper bound where `paddedStart > pos`
+3. Scans back through loci with `paddedStart <= pos` and collects those where `paddedEnd >= pos`
+
+This correctly assigns SNPs even when the GWAS file is unsorted within chromosomes.
+
+---
+
+## Analysis Tools (YAML Descriptors)
+
+Tool descriptors live in `tools/*.yaml`. New tools are auto-discovered at startup.
+
+### Schema
+
+```yaml
+tool: <id>              # unique tool identifier
+version: "1.0"
+label: "Display Name"
+description: "..."
+language: R | python | binary
+command: "source('{run_dir}/script.R')"   # {run_dir} = locus working dir
+requires:               # input files the BaseStepPipeline must provide
+  - harmonized_gwas     # harmonized_gwas.tsv
+  - matched_ref         # matched_ref.txt + ld_r.matrix + ld_snp_order.txt
+  - ld_r                # ld_r.matrix only
+params:
+  - name: param_name
+    type: int | float | string | boolean | select
+    default: "value"
+    label: "UI label"
+    description: "hint text"
+    options: [a, b, c]  # for select type only
+output_mapping:
+  - raw: column_name_in_output    # column in tool's output TSV
+    as:  annotation_column_id    # name used in annotation system
+    scope: per_snp | per_credible_set
+    type: double | int | string
+```
+
+### Available Tools
+
+| File | Tool | Language | Outputs |
+|---|---|---|---|
+| `susie_finemapping.yaml` | SuSiE Fine-Mapping | R | `susie_pip`, `susie_cs`, `susie_cs_coverage` |
+| `finemap.yaml` | FINEMAP (ABF) | R | `finemap_pip`, `finemap_log10bf`, `finemap_cs` |
+| `cojo_conditional.yaml` | COJO Conditional & Joint (GCTA `--cojo-slct`) | R | `cojo_pJ`, `cojo_bJ`, `cojo_bJ_se`, `cojo_pC`, `cojo_bC`, `cojo_bC_se`, `cojo_selected` |
+| `coloc.yaml` | Colocalisation (coloc) | R | `coloc_pp_h4`, `coloc_pp_h3`, `coloc_pp_h0` |
+| `gwama_meta.yaml` | GWAMA Meta-Analysis | binary | `gwama_beta`, `gwama_se`, `gwama_p`, `gwama_direction`, `gwama_i2` |
+
+---
+
+## API Endpoints Reference
+
+All endpoints served by `LocalServer.java` on port 8765.
+
+### Project Management
 
 | Endpoint | Method | Description |
 |---|---|---|
-| `/api/projects` | GET | List all projects with live status |
-| `/api/projects/process` | POST | Process stale projects |
-| `/api/project/{id}/manifest` | GET | Project manifest |
-| `/api/project/{id}/locus/{n}` | GET | Locus data |
-| `/api/project/{id}/config` | GET/POST | Read/write project config |
-| `/api/project/{id}/progress` | GET | Pipeline progress |
-| `/api/delete-project` | POST | Delete a project |
-| `/api/peek-file-header` | GET | Read file header columns |
-| `/api/global-config` | GET/POST | Global resources config |
-| `/api/rsid-recover` | POST | Start rsID recovery |
-| `/api/rsid-progress` | GET | rsID recovery progress |
-| `/api/rsid-detect` | GET | Auto-detect rsID column |
-| `/api/loci-identify` | POST | Start loci identification |
-| `/api/loci-progress` | GET | Loci identification progress |
-| `/pick-file` | GET | Native file picker dialog |
+| `/api/projects` | GET | List all projects with status, counts, staleness |
+| `/api/projects/process` | POST | `{"id":"x"}` or `{"all_stale":true}` — trigger pipeline |
+| `/api/project/{id}/progress` | GET | Pipeline progress (phase, step, done flag, completed loci indices) |
+| `/api/project/{id}/config` | GET | Read project config as JSON |
+| `/api/project/{id}/config` | POST | Write project config (wizard submit) |
+| `/api/project/{id}/manifest` | GET | Locus index (names, coords, top SNPs) |
+| `/api/project/{id}/locus/{n}` | GET | Full locus JSON (SNPs, genes, LD, annotations) |
+| `/api/project-delete` | POST | `{"id":"x"}` — delete project directory |
 
-## Staleness Detection
+### Locus Mutations (from viewer)
 
-Projects are automatically detected as stale when:
-1. `project.json` doesn't exist (never processed)
-2. Pipeline version changed (code update)
-3. Input files changed (GWAS, loci, GFF3, config, or reference panel)
-4. Annotation config changed (annotations.yaml or referenced files)
+| Endpoint | Method | Description |
+|---|---|---|
+| `/api/project/{id}/locus/{n}/update` | POST | Resize locus boundaries; re-streams GWAS + re-runs PLINK |
+| `/api/project/{id}/locus/create` | POST | Create new locus from a chr:start-end region |
+| `/api/project/{id}/locus/{n}/split` | POST | Split locus into named sub-regions |
+| `/api/project/{id}/locus/{n}/validate-split` | POST | Check cross-region LD before confirming split |
+| `/api/project/{id}/reorder-loci` | POST | Renumber all loci to genomic (chr:pos) order |
 
-Stale projects show "Needs reprocessing" on the home page. Use the **Reprocess** button to update.
+### rsID Recovery
 
-## License
+| Endpoint | Method | Description |
+|---|---|---|
+| `/api/rsid-recover` | POST | Start rsID recovery (`project_id`, `db_id`, `use_api`) |
+| `/api/rsid-progress` | GET | `?project_id=x` — recovery progress |
+| `/api/rsid-detect` | GET | `?project_id=x` — auto-detect rsID column in GWAS |
 
-MIT
+### Loci Identification
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/api/loci-identify` | POST | Start loci identification (`project_id`, thresholds, distances) |
+| `/api/loci-progress` | GET | `?project_id=x` — identification progress |
+
+### Analysis Tools
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/api/project/{id}/analysis/base-status` | GET | Status of base pipeline steps (harmonize, LD, diagnostic) |
+| `/api/project/{id}/analysis/run-base` | POST | Run base analysis pipeline for a locus |
+| `/api/project/{id}/analysis/tools` | GET | List available tool descriptors |
+| `/api/project/{id}/analysis/run-tool` | POST | Run a tool (`tool_id`, `locus_id`, params) |
+| `/api/project/{id}/analysis/tool-status` | GET | Status of a running tool job |
+| `/api/project/{id}/analysis/tool-result` | GET | Get tool output columns |
+| `/api/project/{id}/analysis/cancel-tool` | POST | Cancel a running tool job |
+| `/api/project/{id}/analysis/locus-log/{locusId}` | GET | Read a locus's `build.log` from the base pipeline |
+
+### Annotations and Export
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/api/project/{id}/annotation-config` | GET | Read `annotations.yaml` |
+| `/api/project/{id}/annotation-config` | POST | Write `annotations.yaml` |
+| `/api/annotation-file` | GET | `?path=...` — read a TSV annotation file as JSON |
+| `/api/export-excel` | POST | Start Excel export; returns job ID |
+| `/api/export-progress` | GET | Export progress |
+
+### Utilities
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/api/global-config` | GET | Read `config/global.json` |
+| `/api/global-config` | POST | Write `config/global.json` |
+| `/api/peek-file-header` | GET | `?path=...` — read column names from TSV header |
+| `/api/detect-rsid-column` | GET | `?path=...` — scan file for rsID column |
+| `/pick-file` | GET | Opens native file picker dialog; returns `{"path":"..."}` |
+
+---
+
+## Per-Project Directory Layout
+
+```
+projects/{project_id}/
+│
+├── config.properties         # All pipeline configuration (see below)
+├── project.json              # Metadata: loci count, SNP count, fingerprints, rsID status
+├── annotations.yaml          # Annotation track configuration (written by wizard)
+├── loci.txt                  # Locus definitions: meta_chr, meta_start, meta_end
+├── loci_detail.tsv           # Lead SNPs, p-values, clump sizes per locus
+│
+├── data/                     # Served directly as static files
+│   ├── manifest.json         # [{locusIndex, chr, start, end, topSnp, locusName}, ...]
+│   ├── skyline.json          # Genome-wide binned signal
+│   ├── locus_1.json          # Full locus data for locus 1
+│   ├── locus_1.js            # JSONP wrapper: window.LOCUS_DATA[1] = {...}
+│   ├── locus_2.json
+│   └── ...
+│
+├── plink_subsets/            # PLINK binary subsets (one per locus)
+│   ├── locus_1.bed
+│   ├── locus_1.bim
+│   ├── locus_1.fam
+│   └── ...
+│
+└── ld_results/               # Temporary LD computation directory
+    │                         # (files deleted after reading; directory persists)
+    └── consistency_report.tsv  # DENTIST-style LD diagnostic (if analysis run)
+```
+
+### `locus_N.json` Schema
+
+```json
+{
+  "id": "uuid",
+  "locus_index": 1,
+  "locus_name": "Locus 1",
+  "chr": "1",
+  "start": 992819,
+  "end": 1191870,
+  "padded_start": 792819,
+  "padded_end": 1391870,
+  "ref_panel": "EAS",
+  "top_snp": { "id": "rs123", "chr": "1", "pos": 1050000, "pvalue": 5e-12, ... },
+  "gwas_snps": [ { "id": "rs...", "pos": ..., "pvalue": ..., "r2": 0.95, ... }, ... ],
+  "genes": [ { "gene_name": "GENE1", "strand": "+", "start": ..., "transcripts": [...] } ],
+  "nearest_genes": ["GENE1", "GENE2"],
+  "ld_triangle": {
+    "snp_count": 201,
+    "top_snp_rank": 100,
+    "snps": [ { "bim_id": "rs...", "pos": ..., "is_top_snp": false } ],
+    "matrix": [[1.0, 0.8, ...], ...]
+  },
+  "locus_context": {
+    "prev_locus": { "index": 0, "chr": "1", "start": ..., "distance_bp": 500000 },
+    "next_locus": { "index": 2, ... }
+  }
+}
+```
+
+---
+
+## Configuration Reference
+
+### Per-project: `config.properties`
+
+| Key | Default | Required | Description |
+|---|---|---|---|
+| `gwas.file` | — | Yes | Path to GWAS summary statistics (tab-delimited TSV) |
+| `loci.file` | `input/loci.txt` | No | Path to loci definitions (`meta_chr`, `meta_start`, `meta_end`). Generated by "Get Loci" if absent. |
+| `gff3.file` | `resources/gencode.v37.annotation.gff3` | Yes | Path to GENCODE GFF3 annotation |
+| `ref.panel.path` | — | No | PLINK bfile prefix (without `.bed`/`.bim`/`.fam`) |
+| `ref.panel.population` | `EAS` | No | Population label shown in UI |
+| `col.chr` | `chrom` | Yes | GWAS column name for chromosome |
+| `col.pos` | `pos` | Yes | GWAS column name for position (integer) |
+| `col.pvalue` | `p` | Yes | GWAS column name for p-value |
+| `col.ea` | `ea` | Yes | GWAS column name for effect allele |
+| `col.nea` | `nea` | Yes | GWAS column name for non-effect allele |
+| `col.rsid` | — | No | GWAS column name for rsID (if present in file) |
+| `col.varid` | `varid` | No | GWAS column name for variant ID (chr:pos fallback) |
+| `col.beta` | — | No | Beta effect size column |
+| `col.or` | — | No | Odds ratio column |
+| `col.se` | — | No | Standard error column |
+| `col.n` | — | No | Sample size per SNP column |
+| `col.maf` | — | No | Minor allele frequency column |
+| `col.info` | — | No | Imputation info score column |
+| `locus.padding` | `200000` | No | Bp added each side of locus for display |
+| `ld.enabled` | `false` | No | Enable LD computation (auto-true if `ref.panel.path` set) |
+| `ld.triangle.boundary` | `100` | No | SNPs each side of top SNP in LD triangle |
+| `ld.r2.threshold` | `0.0` | No | Minimum r² to report |
+| `ld.parallel.jobs` | `4` | No | Parallel PLINK LD jobs |
+| `threads` | `4` | No | Pipeline threads |
+| `max.snps.per.locus` | `5000` | No | Downsample loci exceeding this |
+| `split.ld.threshold` | `0.2` | No | r² threshold for cross-region LD warning when splitting |
+| `split.min.distance.bp` | `250000` | No | Minimum bp gap between split sub-loci |
+| `sample.n` | `0` | **Yes** | Total sample size. Required by COJO, SuSiE, and FINEMAP; the wizard blocks Step 3 without it. |
+| `n.cases` / `n.controls` | `0` | **Yes** | Case/control counts, enforced by the wizard alongside `sample.n` (at least one of the pair must be set) |
+| `trait.type` | — | No | `quantitative` or `binary` |
+| `effect.type` | — | No | `beta`, `OR`, or `logOR` |
+| `genome.build` | `GRCh37` | No | `GRCh37` or `GRCh38` |
+| `ancestry` | — | No | Population label for analysis tools (e.g. `EAS`, `EUR`) |
+
+### Global: `config/global.json`
+
+```json
+{
+  "reference_panels": [
+    { "id": "...", "path": "...", "population": "EAS", "build": "GRCh37" }
+  ],
+  "snp_databases": [
+    { "id": "dbsnp_hg19", "label": "dbSNP (hg19)", "build": "hg19",
+      "folder": "/path/to/vcf/", "file_pattern": "{chr}.vcf.gz" }
+  ],
+  "ncbi_api": {
+    "enabled": false, "api_key": "", "rate_limit_per_sec": 3,
+    "restrict_to_lead_snps": true
+  }
+}
+```
+
+---
+
+## Build and Run
+
+### Prerequisites
+
+- Java 11+ (JDK)
+- PLINK 1.9 (on PATH or discoverable)
+- Reference panel in PLINK binary format (`.bed/.bim/.fam`)
+- GENCODE GFF3 annotation file
+
+### Build
+
+```bat
+build.bat
+```
+
+Compiles all Java sources to `bin/`. Also copies `index.html`, `viewer.html`, and assets to `output/`.
+
+### Run
+
+```bat
+run.bat                       # Start server, open http://localhost:8765/
+run.bat --all                 # Process all stale projects, then start server
+run.bat --project=myproject   # Process one project, then start server
+```
+
+The server stays running until Ctrl+C. The browser UI is served at `http://localhost:8765/`.
+
+---
+
+## Key Design Decisions
+
+| Decision | Reason |
+|---|---|
+| **Single-file frontend** (`index.html`, `viewer.html`) | No build toolchain required; easy to deploy and diff |
+| **GWAS parser uses interval lookup, not sorted streaming** | GWAS files are often not sorted by position within chromosomes; the interval lookup assigns SNPs correctly regardless of file order |
+| **PLINK temp files deleted after reading** | `ld_results/` contains only transient files; the permanent LD data lives in `data/locus_N.json` |
+| **Concurrent per-project threads** | Each project's pipeline, loci identification, rsID recovery, and analysis jobs run in independent background threads; different projects can run simultaneously |
+| **Fingerprint-based staleness** | SHA-256 of input files + annotation config + pipeline version; avoids unnecessary reprocessing |
+| **Tool descriptors as YAML** | New analysis tools can be added without recompiling Java; the engine auto-discovers `tools/*.yaml` at startup |
+| **JSONP wrapper (`locus_N.js`)** | Enables static file serving without CORS issues when opening from a local filesystem |
+| **rsID patching in-place** | rsID recovery patches existing locus JSONs without a full pipeline rerun; fingerprint updated to avoid re-patching |

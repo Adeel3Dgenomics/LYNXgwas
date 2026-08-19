@@ -53,22 +53,22 @@ main { max-width: 1600px; margin: 0 auto; padding: 1.5rem 2rem; }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* ── Table ───────────────────────────────────────── */
-.table-wrap { background: #fff; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); overflow-x: auto; min-height: 300px; }
+.table-wrap { background: #fff; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); overflow: hidden; min-height: 300px; }
 .btn-danger { background: #dc2626; color: #fff; }
 .btn-danger:hover { background: #b91c1c; }
-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
 thead th {
-  text-align: left; padding: 0.5rem 0.6rem; font-weight: 600;
+  text-align: left; padding: 0.4rem 0.45rem; font-weight: 600;
   background: #f9fafb; border-bottom: 2px solid #e5e7eb;
-  white-space: nowrap; font-size: 0.75rem; color: #555;
+  white-space: nowrap; font-size: 0.7rem; color: #555;
   text-transform: uppercase; letter-spacing: 0.3px;
 }
 tbody tr { border-bottom: 1px solid #f0f0f0; cursor: pointer; transition: background 0.1s; }
 tbody tr:hover { background: #f0faf6; }
-td { padding: 0.45rem 0.6rem; white-space: nowrap; }
-td.desc { white-space: normal; max-width: 200px; color: #666; }
-td.actions { white-space: nowrap; }
-td.actions button { margin-right: 0.4rem; }
+td { padding: 0.35rem 0.45rem; white-space: nowrap; max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
+td.desc { white-space: normal; color: #666; }
+td.actions { overflow: visible; max-width: none; white-space: nowrap; }
+td.actions button { margin-right: 0.3rem; }
 
 /* ── Badges ──────────────────────────────────────── */
 .badge {
@@ -352,13 +352,13 @@ function render() {
     const badge = statusBadge(p);
 
     return '<tr onclick="openProject(\'' + esc(p.id) + '\')" data-id="' + esc(p.id) + '">'
-      + '<td><b>' + esc(name) + '</b></td>'
-      + '<td class="desc">' + esc(desc) + '</td>'
-      + '<td>' + loci + '</td>'
-      + '<td>' + snps + '</td>'
-      + '<td>' + snpSrc + '</td>'
-      + '<td>' + locSrc + '</td>'
-      + '<td>' + last + '</td>'
+      + '<td title="' + escAttr(name) + '"><b>' + esc(name) + '</b></td>'
+      + '<td class="desc" title="' + escAttr(desc) + '">' + esc(desc) + '</td>'
+      + '<td title="' + escAttr(String(loci)) + '">' + loci + '</td>'
+      + '<td title="' + escAttr(String(snps)) + '">' + snps + '</td>'
+      + '<td title="' + escAttr(String(snpSrc)) + '">' + snpSrc + '</td>'
+      + '<td title="' + escAttr(String(locSrc)) + '">' + locSrc + '</td>'
+      + '<td title="' + escAttr(last) + '">' + last + '</td>'
       + '<td>' + badge + '</td>'
       + '<td>' + rsidBadge(p) + '</td>'
       + '<td>' + lociBadge(p) + '</td>'
@@ -518,6 +518,13 @@ function wizValidateStep() {
     if (!wiz.cfg['col.pvalue']) return 'P-value column mapping is required.';
     if (!wiz.cfg['col.ea']) return 'Effect allele (A1) column mapping is required.';
     if (!wiz.cfg['col.nea']) return 'Other allele (A2) column mapping is required.';
+  }
+  if (wiz.step === 3) {
+    var sn = parseInt(wiz.cfg['sample.n'], 10);
+    if (!sn || sn <= 0) return 'Sample size (N) is required for analysis tools (COJO, SuSiE, FINEMAP).';
+    var nc = parseInt(wiz.cfg['n.cases'], 10);
+    var nctrl = parseInt(wiz.cfg['n.controls'], 10);
+    if ((!nc || nc <= 0) && (!nctrl || nctrl <= 0)) return 'N cases and N controls are required.';
   }
   return null;
 }
@@ -688,21 +695,21 @@ function wizRenderParams(c) {
     + '<div class="wiz-field"><label>Population label</label>'
     + '<input data-wiz-key="ref.panel.population" value="' + escAttr(cfg['ref.panel.population'] || 'EUR') + '">'
     + '<div class="hint">Shown in UI headers (e.g. EUR, EAS, AFR).</div></div>'
-    + '<div class="wiz-section-title">Dataset metadata (for analysis tools)</div>'
-    + '<div class="wiz-field"><label>Sample size (N)</label>'
-    + '<input type="number" data-wiz-key="sample.n" value="' + (cfg['sample.n'] || 0) + '">'
-    + '<div class="hint">Total sample size. Required by COJO, SuSiE, FINEMAP.</div></div>'
+    + '<div class="wiz-section-title">Dataset metadata (required for analysis tools)</div>'
+    + '<div class="wiz-field wiz-col-required"><label>Sample size (N)</label>'
+    + '<input type="number" data-wiz-key="sample.n" value="' + (cfg['sample.n'] || '') + '" required>'
+    + '<div class="hint">Total sample size. Mandatory — used by COJO, SuSiE, FINEMAP.</div></div>'
     + '<div class="wiz-field"><label>Trait type</label>'
     + '<select data-wiz-key="trait.type">'
     + '<option value=""' + (!cfg['trait.type'] ? ' selected' : '') + '>Not specified</option>'
     + '<option value="quantitative"' + (cfg['trait.type'] === 'quantitative' ? ' selected' : '') + '>Quantitative</option>'
     + '<option value="binary"' + (cfg['trait.type'] === 'binary' ? ' selected' : '') + '>Binary (case/control)</option>'
     + '</select></div>'
-    + '<div class="wiz-field"><label>N cases</label>'
-    + '<input type="number" data-wiz-key="n.cases" value="' + (cfg['n.cases'] || 0) + '">'
-    + '<div class="hint">For binary traits only.</div></div>'
-    + '<div class="wiz-field"><label>N controls</label>'
-    + '<input type="number" data-wiz-key="n.controls" value="' + (cfg['n.controls'] || 0) + '">'
+    + '<div class="wiz-field wiz-col-required"><label>N cases</label>'
+    + '<input type="number" data-wiz-key="n.cases" value="' + (cfg['n.cases'] || '') + '" required>'
+    + '</div>'
+    + '<div class="wiz-field wiz-col-required"><label>N controls</label>'
+    + '<input type="number" data-wiz-key="n.controls" value="' + (cfg['n.controls'] || '') + '" required>'
     + '</div>'
     + '<div class="wiz-field"><label>Effect type</label>'
     + '<select data-wiz-key="effect.type">'
@@ -737,6 +744,8 @@ function wizRenderPreview(c) {
     ['Locus padding', (cfg['locus.padding'] || 200000) + ' bp'],
     ['LD enabled', cfg['ld.enabled'] === true || cfg['ld.enabled'] === 'true' ? 'Yes' : 'No'],
     ['Sample N', cfg['sample.n'] || '(not set)'],
+    ['N cases', cfg['n.cases'] || '(not set)'],
+    ['N controls', cfg['n.controls'] || '(not set)'],
     ['Trait type', cfg['trait.type'] || '(not set)'],
     ['Genome build', cfg['genome.build'] || 'GRCh37'],
     ['Ancestry', cfg['ancestry'] || cfg['ref.panel.population'] || '(not set)']
@@ -1707,7 +1716,7 @@ async function openProjectAnalysis(projectId) {
     var loci = data.loci || [];
 
     var readyCount = loci.filter(function(l) { return l.ready; }).length;
-    var warnCount = loci.filter(function(l) { return l.diagnostic === 'warn' || l.diagnostic === 'fail'; }).length;
+    var warnCount = loci.filter(function(l) { return l.diagnostic === 'warn' || l.diagnostic === 'high_warn'; }).length;
 
     var html = '<div style="font-size:0.85rem;margin-bottom:0.75rem">'
       + '<b>' + readyCount + '</b> / ' + loci.length + ' loci have base artifacts built';
@@ -1718,20 +1727,24 @@ async function openProjectAnalysis(projectId) {
     html += '<div style="max-height:300px;overflow-y:auto;border:1px solid #e5e7eb;border-radius:8px">'
       + '<table style="width:100%;font-size:0.8rem"><thead><tr>'
       + '<th style="padding:4px 8px;text-align:left">Locus</th>'
-      + '<th>Base</th><th>Match</th><th>Harmonize</th><th>LD</th><th>Diag</th>'
+      + '<th>Base</th><th>Match</th><th>Harmonize</th><th>LD</th><th>Diag</th><th>Log</th>'
       + '</tr></thead><tbody>';
     loci.forEach(function(l) {
       var dot = function(v) { return v ? '<span style="color:#059669">&#9679;</span>' : '<span style="color:#d1d5db">&#9675;</span>'; };
       var diag = l.diagnostic === 'pass' ? '<span style="color:#059669">pass</span>'
         : l.diagnostic === 'warn' ? '<span style="color:#d97706">warn</span>'
-        : l.diagnostic === 'fail' ? '<span style="color:#dc2626">fail</span>'
+        : l.diagnostic === 'high_warn' ? '<span style="color:#dc2626;font-weight:600" title="' + (l.diagnostic_flagged || 0) + ' SNPs flagged — LD reference panel mismatch likely">high warn</span>'
         : '<span style="color:#d1d5db">—</span>';
+      var logBtn = l.has_log
+        ? '<a href="#" onclick="showLocusBuildLog(\'' + esc(projectId) + '\',\'' + esc(l.id) + '\',event);return false" style="color:#4f46e5;font-size:0.75rem;text-decoration:none" title="View build log">Log</a>'
+        : '<span style="color:#d1d5db;font-size:0.75rem">—</span>';
       html += '<tr><td style="padding:3px 8px">Locus ' + l.index + '</td>'
         + '<td style="text-align:center">' + dot(l.base) + '</td>'
         + '<td style="text-align:center">' + dot(l.matched) + '</td>'
         + '<td style="text-align:center">' + dot(l.harmonized) + '</td>'
         + '<td style="text-align:center">' + dot(l.ld) + '</td>'
-        + '<td style="text-align:center">' + diag + '</td></tr>';
+        + '<td style="text-align:center">' + diag + '</td>'
+        + '<td style="text-align:center">' + logBtn + '</td></tr>';
     });
     html += '</tbody></table></div>';
 
@@ -1923,6 +1936,26 @@ async function openLocusAnalysis(projectId) {
   });
 }
 
+async function showLocusBuildLog(projectId, locusId, ev) {
+  if (ev) ev.preventDefault();
+  try {
+    var resp = await fetch(API + '/api/project/' + encodeURIComponent(projectId) + '/analysis/locus-log/' + encodeURIComponent(locusId));
+    var text = await resp.text();
+    var dlg = document.createElement('div');
+    dlg.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:1100';
+    dlg.innerHTML = '<div style="background:#fff;border-radius:12px;padding:1.5rem;max-width:700px;width:90%;max-height:80vh;display:flex;flex-direction:column">'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem">'
+      + '<h4 style="margin:0;font-size:0.95rem">Build Log</h4>'
+      + '<button onclick="this.closest(\'div[style*=fixed]\').remove()" style="border:none;background:none;font-size:1.2rem;cursor:pointer">&times;</button></div>'
+      + '<pre style="flex:1;overflow:auto;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;font-size:0.78rem;line-height:1.6;white-space:pre-wrap;margin:0">'
+      + esc(text) + '</pre></div>';
+    document.body.appendChild(dlg);
+    dlg.addEventListener('click', function(e) { if (e.target === dlg) dlg.remove(); });
+  } catch(e) {
+    alert('Failed to load log: ' + e.message);
+  }
+}
+
 async function buildBaseArtifacts(projectId) {
   var btn = document.getElementById('build-base-btn');
   if (btn) { btn.textContent = 'Building...'; btn.disabled = true; }
@@ -1949,13 +1982,31 @@ async function buildBaseArtifacts(projectId) {
         var fill = document.getElementById('analysis-build-fill');
         var status = document.getElementById('analysis-build-status');
         if (fill) fill.style.width = p.pct + '%';
-        if (status) status.textContent = p.phase + ' (' + p.pct + '%)';
+        var completedSet = new Set(p.completed_loci || []);
+        var doneCount = completedSet.size;
+        if (status) status.textContent = p.phase + ' — ' + doneCount + '/' + (p.total || '?') + ' loci (' + p.pct + '%)';
+        // Update table rows in real time
+        var rows = document.querySelectorAll('#analysis-content tbody tr');
+        rows.forEach(function(row) {
+          var cell = row.querySelector('td');
+          if (!cell) return;
+          var m = cell.textContent.match(/Locus (\d+)/);
+          if (m && completedSet.has(parseInt(m[1]))) {
+            var dots = row.querySelectorAll('td:not(:first-child):not(:last-child)');
+            dots.forEach(function(d) {
+              if (d.innerHTML.indexOf('9675') >= 0) d.innerHTML = '<span style="color:#059669">&#9679;</span>';
+            });
+          }
+        });
+        // Update summary count
+        var summaryEl = document.querySelector('#analysis-content > div:first-child b');
+        if (summaryEl) summaryEl.textContent = String(doneCount);
         if (p.done) {
           clearInterval(pollId);
           if (fill) fill.style.width = '100%';
-          if (status) status.innerHTML = '<span style="color:#059669;font-weight:600">Build complete</span>';
+          if (status) status.innerHTML = '<span style="color:#059669;font-weight:600">Build complete — ' + doneCount + '/' + p.total + ' loci</span>';
           if (btn) { btn.textContent = 'Done'; }
-          // Refresh the status table
+          // Full refresh to get diagnostic results
           setTimeout(function() { openProjectAnalysis(projectId); }, 1000);
         }
       } catch(e) {}

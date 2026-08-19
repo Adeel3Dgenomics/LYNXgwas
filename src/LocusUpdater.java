@@ -226,6 +226,8 @@ public class LocusUpdater {
                     Map<Integer, PlinkSubsetter.SubsetResult> subsets =
                         PlinkSubsetter.subsetAll(singleList, topMap, plinkBin, config, null);
                     subset = subsets.get(newIndex);
+                    // subsetAll may have replaced topSnp with a fallback
+                    topSnp = topMap.get(newIndex);
 
                     if (subset != null && subset.ok) {
                         new File(config.ldResultsDir()).mkdirs();
@@ -558,27 +560,28 @@ public class LocusUpdater {
                     (next.start + next.end) / 2, dist);
             }
         }
-        // Patch just the locus_context field of each EXISTING on-disk file, rather
-        // than re-serializing the whole LocusOutput from memory. In-memory outputs
-        // for loci other than the one just created/split may only carry minimal
-        // navigation fields (e.g. after a lazy state reload — see
-        // LocalServer.ensureProjectState), which lack gwas_snps/top_snp/ld_triangle.
-        // A full re-serialize here would silently wipe that data for every locus.
+        // Re-export locus JSONs with updated context + manifest.
+        // For skeleton LocusOutputs (lazy-loaded, missing gwasSnps/topSnp/ldTriangle —
+        // see LocalServer.ensureProjectState), only patch the locus_context field in the
+        // existing JSON to avoid overwriting LD matrix, SNP data, etc. with empty values.
         try {
             String dataDir = config.outputDir + "/data";
             for (LocusOutput lo : allOutputs) {
-                File jsonFile = new File(dataDir, "locus_" + lo.locusIndex + ".json");
-                if (!jsonFile.exists()) continue;
-                String json = new String(Files.readAllBytes(jsonFile.toPath()), "UTF-8");
-                json = patchLocusContext(json, lo.locusContext);
-                try (PrintWriter pw = new PrintWriter(new BufferedWriter(new FileWriter(jsonFile)))) {
-                    pw.print(json);
-                }
-                try (PrintWriter pw = new PrintWriter(new BufferedWriter(
-                        new FileWriter(dataDir + "/locus_" + lo.locusIndex + ".js")))) {
-                    pw.print("(function(){window.LOCUS_DATA=window.LOCUS_DATA||{};");
-                    pw.print("window.LOCUS_DATA[" + lo.locusIndex + "]=" + json + ";");
-                    pw.print("})();");
+                boolean hasFullData = lo.topSnp != null || !lo.gwasSnps.isEmpty();
+                if (hasFullData) {
+                    String json = JsonExporter.locusToJson(lo);
+                    try (PrintWriter pw = new PrintWriter(new BufferedWriter(
+                            new FileWriter(dataDir + "/locus_" + lo.locusIndex + ".json")))) {
+                        pw.print(json);
+                    }
+                    try (PrintWriter pw = new PrintWriter(new BufferedWriter(
+                            new FileWriter(dataDir + "/locus_" + lo.locusIndex + ".js")))) {
+                        pw.print("(function(){window.LOCUS_DATA=window.LOCUS_DATA||{};");
+                        pw.print("window.LOCUS_DATA[" + lo.locusIndex + "]=" + json + ";");
+                        pw.print("})();");
+                    }
+                } else {
+                    patchLocusContextOnDisk(dataDir, lo);
                 }
             }
             JsonExporter.exportManifest(allOutputs, config);
@@ -587,28 +590,48 @@ public class LocusUpdater {
         }
     }
 
-    /** Replaces only the "locus_context" value in an existing locus JSON string. */
-    private static String patchLocusContext(String json, LocusOutput.LocusContext ctx) {
-        String marker = "\"locus_context\":";
-        int i = json.indexOf(marker);
-        if (i < 0) return json;
-        int valueStart = i + marker.length();
-        int outerEnd = json.lastIndexOf('}');
-        if (outerEnd < valueStart) return json;
-        return json.substring(0, valueStart) + locusContextJson(ctx) + json.substring(outerEnd);
+    private static void patchLocusContextOnDisk(String dataDir, LocusOutput lo) throws IOException {
+        File jsonFile = new File(dataDir + "/locus_" + lo.locusIndex + ".json");
+        if (!jsonFile.exists()) return;
+
+        String existing = new String(Files.readAllBytes(jsonFile.toPath()), "UTF-8");
+
+        // Build the replacement locus_context JSON fragment
+        StringBuilder ctx = new StringBuilder("\"locus_context\":");
+        if (lo.locusContext != null) {
+            ctx.append("{\"prev_locus\":");
+            appendLocusRef(ctx, lo.locusContext.prevLocus);
+            ctx.append(",\"next_locus\":");
+            appendLocusRef(ctx, lo.locusContext.nextLocus);
+            ctx.append('}');
+        } else {
+            ctx.append("null");
+        }
+
+        int ctxStart = existing.lastIndexOf("\"locus_context\"");
+        if (ctxStart < 0) return;
+
+        String patched = existing.substring(0, ctxStart) + ctx.toString() + "}";
+        try (PrintWriter pw = new PrintWriter(new BufferedWriter(new FileWriter(jsonFile)))) {
+            pw.print(patched);
+        }
+        File jsFile = new File(dataDir + "/locus_" + lo.locusIndex + ".js");
+        try (PrintWriter pw = new PrintWriter(new BufferedWriter(new FileWriter(jsFile)))) {
+            pw.print("(function(){window.LOCUS_DATA=window.LOCUS_DATA||{};");
+            pw.print("window.LOCUS_DATA[" + lo.locusIndex + "]=" + patched + ";");
+            pw.print("})();");
+        }
     }
 
-    private static String locusContextJson(LocusOutput.LocusContext ctx) {
-        if (ctx == null) return "null";
-        return "{\"prev_locus\":" + locusRefJson(ctx.prevLocus)
-             + ",\"next_locus\":" + locusRefJson(ctx.nextLocus) + "}";
-    }
-
-    private static String locusRefJson(LocusOutput.LocusRef ref) {
-        if (ref == null) return "null";
-        return String.format(
-            "{\"index\":%d,\"chr\":\"%s\",\"start\":%d,\"end\":%d,\"mid\":%d,\"distance_bp\":%d}",
-            ref.index, ref.chr, ref.start, ref.end, ref.mid, ref.distanceBp);
+    private static void appendLocusRef(StringBuilder sb, LocusOutput.LocusRef ref) {
+        if (ref == null) { sb.append("null"); return; }
+        sb.append("{\"index\":").append(ref.index);
+        sb.append(",\"chr\":\"").append(ref.chr).append('"');
+        sb.append(",\"start\":").append(ref.start);
+        sb.append(",\"end\":").append(ref.end);
+        sb.append(",\"mid\":").append(ref.mid);
+        sb.append(",\"distance_bp\":").append(ref.distanceBp);
+        sb.append('}');
     }
 
     private static void streamGwasForLocus(Locus locus, Config config) throws IOException {
