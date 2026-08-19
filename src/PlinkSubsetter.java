@@ -38,11 +38,34 @@ public class PlinkSubsetter {
             if (topSnp != null && result.ok) {
                 String key = topSnp.chr + ":" + topSnp.pos;
                 result.topSnpBimId = result.chrPosToVarid.get(key);
-                if (result.topSnpBimId == null) {
-                    System.err.printf("[WARN] Locus %d: top SNP %s (%s) absent from ref panel%n",
-                        locus.index, topSnp.id, key);
-                } else {
+                if (result.topSnpBimId != null) {
                     topSnp.bimId = result.topSnpBimId;
+                } else {
+                    // Top SNP absent from ref panel — fall back to the most
+                    // significant GWAS SNP that IS in the panel.
+                    Snp fallback = null;
+                    for (Snp s : locus.snps) {
+                        String sk = s.chr + ":" + s.pos;
+                        if (result.chrPosToVarid.containsKey(sk)) {
+                            if (fallback == null || s.pvalue < fallback.pvalue) {
+                                fallback = s;
+                            }
+                        }
+                    }
+                    if (fallback != null) {
+                        String fbKey = fallback.chr + ":" + fallback.pos;
+                        result.topSnpBimId = result.chrPosToVarid.get(fbKey);
+                        fallback.bimId = result.topSnpBimId;
+                        topSnps.put(locus.index, fallback);
+                        System.out.printf("[Subset] Locus %d: top SNP %s (%s) absent from ref panel, " +
+                            "using fallback %s (%s, p=%.2e)%n",
+                            locus.index, topSnp.id, key,
+                            fallback.id, fbKey, fallback.pvalue);
+                    } else {
+                        System.err.printf("[WARN] Locus %d: top SNP %s (%s) absent from ref panel " +
+                            "and no GWAS SNPs found in panel%n",
+                            locus.index, topSnp.id, key);
+                    }
                 }
             }
 

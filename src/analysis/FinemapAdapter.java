@@ -11,6 +11,8 @@ public class FinemapAdapter {
 
     public static void prepareRun(File harmonizedDir, File ldDir, File matchedDir,
                                    File runDir, int sampleN, int maxCausal) throws IOException {
+        if (sampleN <= 0)
+            throw new IOException("Sample size (N) is required for FINEMAP. Set it in the project configuration.");
         runDir.mkdirs();
 
         // Read SNP order from LD step
@@ -48,6 +50,22 @@ public class FinemapAdapter {
             }
         }
 
+        // Load ref panel frequencies (pre-computed by base pipeline)
+        Map<String, Double> refFreq = new LinkedHashMap<>();
+        File refFreqFile = new File(matchedDir, "ref_freq.tsv");
+        if (refFreqFile.exists()) {
+            try (BufferedReader br = new BufferedReader(new FileReader(refFreqFile))) {
+                br.readLine();
+                String line;
+                while ((line = br.readLine()) != null) {
+                    String[] f = line.split("\t", -1);
+                    if (f.length < 3) continue;
+                    try { refFreq.put(f[0], Double.parseDouble(f[2])); }
+                    catch (NumberFormatException ignored) {}
+                }
+            }
+        }
+
         // Write z-file (FINEMAP format: rsid chromosome position allele1 allele2 maf beta se)
         File zFile = new File(runDir, "finemap.z");
         File gwasFile = new File(harmonizedDir, "harmonized_gwas.tsv");
@@ -65,17 +83,26 @@ public class FinemapAdapter {
                 if (f.length < 8) continue;
                 String chr = f[1], pos = f[2], ea = f[3], nea = f[4];
                 String beta = f[6], se = f[7];
-                String maf = f.length > 10 ? f[10] : "0.5";
+                String mafStr = f.length > 10 ? f[10] : "NA";
 
                 if (beta.equals("NA") || se.equals("NA")) continue;
                 if (!posLookup.containsKey(chr + ":" + pos)) continue;
-                if (maf.equals("NA")) maf = "0.5";
 
                 String refId = posToRefId.get(chr + ":" + pos);
                 String useId = refId != null ? refId : f[0];
 
-                pw.printf("%s %s %s %s %s %s %s %s%n",
-                    useId, chr, pos, ea, nea, maf, beta, se);
+                // Frequency: prefer GWAS MAF, fall back to ref panel
+                double freq = 0.5;
+                if (!mafStr.equals("NA")) {
+                    try { freq = Double.parseDouble(mafStr); } catch (NumberFormatException e) {}
+                }
+                if (mafStr.equals("NA") || freq <= 0 || freq >= 1) {
+                    Double rf = refFreq.get(useId);
+                    if (rf != null && rf > 0 && rf < 1) freq = rf;
+                }
+
+                pw.printf("%s %s %s %s %s %.4f %s %s%n",
+                    useId, chr, pos, ea, nea, freq, beta, se);
                 count++;
             }
         }
@@ -167,6 +194,8 @@ public class FinemapAdapter {
             // Write result
             pw.println("result <- data.frame(");
             pw.println("  snp_id = gwas$rsid,");
+            pw.println("  chr = gwas$chromosome,");
+            pw.println("  pos = gwas$position,");
             pw.println("  finemap_pip = round(pip, 6),");
             pw.println("  finemap_log10bf = round(log_abf / log(10), 4),");
             pw.println("  finemap_cs = cs,");
@@ -177,6 +206,8 @@ public class FinemapAdapter {
             // Manifest
             pw.println("manifest <- paste0('{\"schema_version\":\"1.0\",\"method\":\"finemap\",\"method_version\":\"1.0\",');");
             pw.println("manifest <- paste0(manifest, '\"parameters\":{},\"columns\":[');");
+            pw.println("manifest <- paste0(manifest, '{\"name\":\"chr\",\"type\":\"string\",\"scope\":\"per_snp\",\"method\":\"finemap\",\"method_version\":\"1.0\"},');");
+            pw.println("manifest <- paste0(manifest, '{\"name\":\"pos\",\"type\":\"int\",\"scope\":\"per_snp\",\"method\":\"finemap\",\"method_version\":\"1.0\"},');");
             pw.println("manifest <- paste0(manifest, '{\"name\":\"finemap_pip\",\"type\":\"double\",\"scope\":\"per_snp\",\"method\":\"finemap\",\"method_version\":\"1.0\"},');");
             pw.println("manifest <- paste0(manifest, '{\"name\":\"finemap_log10bf\",\"type\":\"double\",\"scope\":\"per_snp\",\"method\":\"finemap\",\"method_version\":\"1.0\"},');");
             pw.println("manifest <- paste0(manifest, '{\"name\":\"finemap_cs\",\"type\":\"int\",\"scope\":\"per_credible_set\",\"method\":\"finemap\",\"method_version\":\"1.0\"}');");

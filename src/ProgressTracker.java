@@ -1,9 +1,13 @@
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+
 /** Thread-safe pipeline progress shared between Main and LocalServer's /progress endpoint. */
 public class ProgressTracker {
     public volatile String phase      = "Initializing";
     public volatile int    locusIndex = 0;
     public volatile int    totalLoci  = 0;
     public volatile boolean done      = false;
+    public final Set<Integer> completedLoci = ConcurrentHashMap.newKeySet();
 
     // Overall progress: each phase gets a weight, progress within phase is per-locus
     private volatile int    phaseIndex  = 0;

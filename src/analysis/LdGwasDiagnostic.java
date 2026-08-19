@@ -214,7 +214,7 @@ public class LdGwasDiagnostic {
         if (severeFlags == 0 && result.flaggedSnps == 0) {
             result.verdict = "pass";
         } else if (severeFlags > validZ * 0.05) {
-            result.verdict = "fail";
+            result.verdict = "high_warn";
         } else {
             result.verdict = "warn";
         }

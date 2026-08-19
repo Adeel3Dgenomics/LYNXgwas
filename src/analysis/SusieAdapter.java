@@ -12,6 +12,8 @@ public class SusieAdapter {
     public static void prepareRun(File harmonizedDir, File matchedDir, File runDir,
                                    int sampleN, int maxCausal, double coverage,
                                    double ldShrink, int windowKb) throws IOException {
+        if (sampleN <= 0)
+            throw new IOException("Sample size (N) is required for SuSiE. Set it in the project configuration.");
         runDir.mkdirs();
 
         // Write matched GWAS in the format the R script expects (SNP BP A1 A2 BETA SE P)
@@ -153,7 +155,8 @@ public class SusieAdapter {
             pw.println();
 
             // Write result
-            pw.println("result <- data.frame(snp_id=df$SNP, susie_pip=round(pips,6),");
+            pw.println("result <- data.frame(snp_id=df$SNP, chr=bim_m$CHR, pos=df$BP,");
+            pw.println("  susie_pip=round(pips,6),");
             pw.println("  susie_cs=cs_member, susie_cs_coverage=round(cs_cover,4), stringsAsFactors=FALSE)");
             pw.println("write.table(result, out_tsv, sep='\\t', quote=FALSE, row.names=FALSE)");
             pw.println();
@@ -161,6 +164,8 @@ public class SusieAdapter {
             // Write manifest
             pw.println("manifest <- paste0('{\"schema_version\":\"1.0\",\"method\":\"susie_finemapping\",\"method_version\":\"1.0\",');");
             pw.println("manifest <- paste0(manifest, '\"parameters\":{},\"columns\":[');");
+            pw.println("manifest <- paste0(manifest, '{\"name\":\"chr\",\"type\":\"string\",\"scope\":\"per_snp\",\"method\":\"susie_finemapping\",\"method_version\":\"1.0\"},');");
+            pw.println("manifest <- paste0(manifest, '{\"name\":\"pos\",\"type\":\"int\",\"scope\":\"per_snp\",\"method\":\"susie_finemapping\",\"method_version\":\"1.0\"},');");
             pw.println("manifest <- paste0(manifest, '{\"name\":\"susie_pip\",\"type\":\"double\",\"scope\":\"per_snp\",\"method\":\"susie_finemapping\",\"method_version\":\"1.0\"},');");
             pw.println("manifest <- paste0(manifest, '{\"name\":\"susie_cs\",\"type\":\"int\",\"scope\":\"per_credible_set\",\"method\":\"susie_finemapping\",\"method_version\":\"1.0\"},');");
             pw.println("manifest <- paste0(manifest, '{\"name\":\"susie_cs_coverage\",\"type\":\"double\",\"scope\":\"per_credible_set\",\"method\":\"susie_finemapping\",\"method_version\":\"1.0\"}');");

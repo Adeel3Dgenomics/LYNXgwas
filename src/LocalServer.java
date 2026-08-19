@@ -1113,8 +1113,10 @@ public class LocalServer {
                 if (toolName.startsWith("cojo")) {
                     double pCutoff = 5e-8;
                     try { pCutoff = Double.parseDouble(params.getOrDefault("p_cutoff", "5e-8")); } catch (NumberFormatException e) {}
-                    String gctaBin = params.getOrDefault("gcta_path", "gcta64");
-                    CojoAdapter.prepareRun(harmonizedDir, matchedDir, runDir, sampleN, pCutoff, gctaBin);
+                    double collinear = 0.9;
+                    try { collinear = Double.parseDouble(params.getOrDefault("collinear", "0.9")); } catch (NumberFormatException e) {}
+                    String gctaBin = params.getOrDefault("gcta_path", "bin/gcta64.exe");
+                    CojoAdapter.prepareRun(harmonizedDir, matchedDir, runDir, sampleN, pCutoff, collinear, gctaBin);
                 } else if (toolName.equals("susie_finemapping")) {
                     int maxCausal = 10;
                     double coverage = 0.95, ldShrink = 0.1;

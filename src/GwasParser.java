@@ -2,8 +2,8 @@ import java.io.*;
 import java.util.*;
 
 /**
- * Streams the GWAS TSV once (sorted by chr:pos) and collects SNPs into each locus window.
- * Uses an active-loci approach: O(n + m) where n = GWAS rows, m = locus count.
+ * Streams the GWAS TSV once and collects SNPs into each locus window.
+ * Uses a per-chromosome interval lookup so the GWAS file does not need to be sorted.
  */
 public class GwasParser {
 
@@ -43,9 +43,15 @@ public class GwasParser {
             int iMaf  = optionalCol(cols, "col.maf",  config.colMaf,  "minor allele freq", avail);
             int iInfo = optionalCol(cols, "col.info", config.colInfo, "imputation info",   avail);
 
-            List<Locus> activeLoci = new ArrayList<>();
-            int nextLocusIdx = 0;
-            String currentChr = null;
+            // Build per-chromosome sorted loci list for position lookup that works
+            // regardless of whether the GWAS file is sorted by position.
+            Map<String, List<Locus>> lociByChrom = new LinkedHashMap<>();
+            for (Locus locus : sorted) {
+                lociByChrom.computeIfAbsent(locus.chr, k -> new ArrayList<>()).add(locus);
+            }
+            for (List<Locus> cl : lociByChrom.values()) {
+                cl.sort(Comparator.comparingLong(l -> l.paddedStart));
+            }
 
             String line;
             while ((line = br.readLine()) != null) {
@@ -65,24 +71,21 @@ public class GwasParser {
                     continue;
                 }
 
-                if (!chr.equals(currentChr)) {
-                    activeLoci.clear();
-                    currentChr = chr;
-                    while (nextLocusIdx < sorted.size()
-                           && sorted.get(nextLocusIdx).chrInt() < Locus.chrToInt(chr)) {
-                        nextLocusIdx++;
-                    }
-                }
+                List<Locus> chromLoci = lociByChrom.get(chr);
+                if (chromLoci == null) continue;
 
-                while (nextLocusIdx < sorted.size()) {
-                    Locus candidate = sorted.get(nextLocusIdx);
-                    if (candidate.chrInt() != Locus.chrToInt(chr)) break;
-                    if (candidate.paddedStart > pos) break;
-                    activeLoci.add(candidate);
-                    nextLocusIdx++;
+                // Binary search: first index where paddedStart > pos
+                int bsHi = chromLoci.size(), bsLo = 0;
+                while (bsLo < bsHi) {
+                    int mid = (bsLo + bsHi) >>> 1;
+                    if (chromLoci.get(mid).paddedStart <= pos) bsLo = mid + 1; else bsHi = mid;
                 }
-
-                activeLoci.removeIf(l -> l.paddedEnd < pos);
+                // All loci at indices [0..bsLo-1] have paddedStart <= pos; collect those that also cover pos
+                List<Locus> activeLoci = new ArrayList<>();
+                for (int ai = 0; ai < bsLo; ai++) {
+                    Locus l = chromLoci.get(ai);
+                    if (l.paddedEnd >= pos) activeLoci.add(l);
+                }
                 if (activeLoci.isEmpty()) continue;
 
                 // Build SNP

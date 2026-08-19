@@ -72,64 +72,163 @@ public class BaseStepPipeline {
         pr.locusId = locus.id;
 
         File root = analysisDir(config, locus);
+        root.mkdirs();
         File baseDir       = new File(root, "base");
         File matchedDir    = new File(root, "matched");
         File harmonizedDir = new File(root, "harmonized");
         File ldDir         = new File(root, "ld");
 
         boolean allCached = true;
+        List<String> log = new ArrayList<>();
+        log.add(String.format("=== Base pipeline: Locus %d (id=%s) ===", locus.index, locus.id));
+        log.add(String.format("Region: chr%s:%d-%d (padded %d-%d)", locus.chr, locus.start, locus.end, locus.paddedStart, locus.paddedEnd));
+        log.add(String.format("Ref panel: %s (%s)", config.refPanelPath, config.refPanelPopulation));
+        log.add(String.format("LD window: %d SNPs each side", ldWindow));
+        log.add("");
 
         // Step 1: Extract
+        log.add("[Step 1] GWAS extraction...");
         LocusGwasExtractor.Result ext = LocusGwasExtractor.run(config, locus, baseDir);
         if (!ext.ok) {
             pr.error = "Extract failed: " + ext.error;
+            log.add("  FAILED: " + ext.error);
+            writeLog(root, log);
             return pr;
         }
         pr.gwasSnps = ext.gwasSnpCount;
+        log.add(String.format("  OK: %d GWAS SNPs extracted", ext.gwasSnpCount));
 
         // Step 2: Match (requires ref panel)
         if (config.refPanelPath.isEmpty()) {
             pr.error = "No reference panel configured";
+            log.add("  FAILED: No reference panel configured");
+            writeLog(root, log);
             return pr;
         }
 
+        log.add("[Step 2] SNP matching...");
         SnpMatcher.Result match = SnpMatcher.run(baseDir, matchedDir, config);
         if (!match.ok) {
             pr.error = "Match failed: " + match.error;
+            log.add("  FAILED: " + match.error);
+            writeLog(root, log);
             return pr;
         }
         pr.matchedSnps = match.matchedCount;
+        log.add(String.format("  OK: %d SNPs matched to ref panel", match.matchedCount));
+
+        // Step 2.5: Compute ref panel allele frequencies
+        File refFreqFile = new File(matchedDir, "ref_freq.tsv");
+        if (!refFreqFile.exists()) {
+            log.add("[Step 2.5] Computing ref panel allele frequencies...");
+            String plinkBin = PlinkSubsetter.findPlink(config);
+            if (plinkBin != null) {
+                try {
+                    String bfile = new File(matchedDir, "matched_ref").getAbsolutePath();
+                    String freqPrefix = new File(matchedDir, "ref_freq_tmp").getAbsolutePath();
+                    ProcessBuilder pb = new ProcessBuilder(plinkBin,
+                        "--bfile", bfile, "--freq", "--out", freqPrefix, "--silent");
+                    pb.redirectErrorStream(true);
+                    Process proc = pb.start();
+                    proc.getInputStream().transferTo(java.io.OutputStream.nullOutputStream());
+                    proc.waitFor(120, java.util.concurrent.TimeUnit.SECONDS);
+
+                    File plinkFrq = new File(freqPrefix + ".frq");
+                    if (plinkFrq.exists()) {
+                        // Convert PLINK .frq to clean TSV: snp_id \t a1 \t freq
+                        int freqCount = 0;
+                        try (BufferedReader fbr = new BufferedReader(new FileReader(plinkFrq));
+                             PrintWriter fpw = new PrintWriter(new BufferedWriter(new FileWriter(refFreqFile)))) {
+                            fpw.println("snp_id\ta1\tfreq");
+                            fbr.readLine(); // skip header
+                            String fl;
+                            while ((fl = fbr.readLine()) != null) {
+                                String[] ff = fl.trim().split("\\s+");
+                                if (ff.length >= 5) {
+                                    fpw.printf("%s\t%s\t%s%n", ff[1], ff[2], ff[4]);
+                                    freqCount++;
+                                }
+                            }
+                        }
+                        plinkFrq.delete();
+                        new File(freqPrefix + ".log").delete();
+                        new File(freqPrefix + ".nosex").delete();
+                        log.add(String.format("  OK: %d SNP frequencies computed from ref panel", freqCount));
+                    } else {
+                        log.add("  Skipped: PLINK --freq produced no output");
+                    }
+                } catch (Exception e) {
+                    log.add("  Skipped: " + e.getMessage());
+                }
+            } else {
+                log.add("  Skipped: PLINK not found");
+            }
+        } else {
+            log.add("[Step 2.5] Ref panel frequencies already computed.");
+        }
 
         // Step 3: Harmonize
+        log.add("[Step 3] Allele harmonization...");
         AlleleHarmonizer.Result harm = AlleleHarmonizer.run(matchedDir, harmonizedDir);
         if (!harm.ok) {
             pr.error = "Harmonize failed: " + harm.error;
+            log.add("  FAILED: " + harm.error);
+            writeLog(root, log);
             return pr;
         }
         pr.harmonizedSnps = harm.kept + harm.flipped + harm.complemented;
+        log.add(String.format("  OK: %d kept, %d flipped, %d complemented",
+            harm.kept, harm.flipped, harm.complemented));
 
         // Step 4: LD
+        log.add("[Step 4] LD matrix computation...");
         LdMatrixComputer.Result ld = LdMatrixComputer.run(matchedDir, harmonizedDir, ldDir, config, ldWindow);
         if (!ld.ok) {
             pr.error = "LD computation failed: " + ld.error;
+            log.add("  FAILED: " + ld.error);
+            writeLog(root, log);
             return pr;
         }
         pr.ldSnps = ld.snpCount;
+        log.add(String.format("  OK: %d SNPs in LD matrix", ld.snpCount));
 
         // Step 5: LD-GWAS consistency diagnostic
+        log.add("[Step 5] LD-GWAS consistency diagnostic...");
         try {
             LdGwasDiagnostic.DiagnosticResult diag = LdGwasDiagnostic.run(harmonizedDir, ldDir);
             if (diag.ok) {
                 pr.diagnosticVerdict = diag.verdict;
                 pr.diagnosticFlagged = diag.flaggedSnps;
+                log.add(String.format("  Verdict: %s (%d/%d SNPs flagged)",
+                    diag.verdict, diag.flaggedSnps, diag.totalSnps));
+                if ("high_warn".equals(diag.verdict)) {
+                    log.add("  NOTE: High warning — >5% of SNPs show LD-GWAS inconsistency.");
+                    log.add("  This typically indicates LD reference panel population mismatch.");
+                    log.add("  Fine-mapping results (COJO/SuSiE) may be less reliable for this locus.");
+                }
+            } else if (diag.error != null) {
+                log.add("  Skipped: " + diag.error);
             }
         } catch (Exception e) {
+            log.add("  Error (non-fatal): " + e.getMessage());
             System.err.printf("[BaseStepPipeline] Diagnostic failed (non-fatal): %s%n", e.getMessage());
         }
 
+        log.add("");
+        log.add("Pipeline complete.");
         pr.ok = true;
         pr.allCached = allCached;
+        writeLog(root, log);
         return pr;
+    }
+
+    private static void writeLog(File root, List<String> lines) {
+        try (PrintWriter pw = new PrintWriter(new BufferedWriter(
+                new FileWriter(new File(root, "build.log"))))) {
+            for (String line : lines) pw.println(line);
+        } catch (IOException e) {
+            System.err.printf("[BaseStepPipeline] Failed to write build.log: %s%n", e.getMessage());
+        }
     }
 
     /**
@@ -159,6 +258,7 @@ public class BaseStepPipeline {
                 if (progress != null)
                     progress.update("Building base artifacts", i, loci.size());
                 results.add(runOneSafe(config, locus, ldWindow));
+                if (progress != null) progress.completedLoci.add(locus.index);
             }
             if (progress != null) progress.update("Base artifacts complete", loci.size(), loci.size());
             return results;
@@ -173,9 +273,11 @@ public class BaseStepPipeline {
             futures.add(pool.submit(() -> {
                 PipelineResult pr = runOneSafe(config, locus, ldWindow);
                 int completed = done.incrementAndGet();
-                if (progress != null)
+                if (progress != null) {
                     progress.update("Building base artifacts (" + threads + " threads)",
                         completed, total);
+                    progress.completedLoci.add(locus.index);
+                }
                 return pr;
             }));
         }
