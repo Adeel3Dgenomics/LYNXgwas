@@ -13,6 +13,8 @@ params:
   - {name: p1, type: float, default: "1e-4", label: "Prior p1", description: "Prior probability a SNP is causal for trait 1"}
   - {name: p2, type: float, default: "1e-4", label: "Prior p2", description: "Prior probability a SNP is causal for trait 2"}
   - {name: p12, type: float, default: "1e-5", label: "Prior p12", description: "Prior probability a SNP is causal for both traits"}
+  - {name: restrict_to_finemapped, type: boolean, default: "false", label: "Restrict to fine-mapped SNPs", description: "Only test SNPs already flagged as plausibly causal by a prior SuSiE/FINEMAP/COJO run at this locus, instead of every SNP in the locus."}
+  - {name: finemap_pip_threshold, type: float, default: "0.1", label: "PIP threshold (if restricting)", description: "Minimum susie_pip/finemap_pip to include a SNP when restricting to fine-mapped SNPs (COJO uses cojo_selected instead)."}
 output_mapping:
   - {raw: SNP.PP.H4, as: coloc_pp_h4, scope: per_snp, type: double}
   - {raw: SNP.PP.H3, as: coloc_pp_h3, scope: per_snp, type: double}

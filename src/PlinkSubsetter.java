@@ -90,6 +90,7 @@ public class PlinkSubsetter {
             "--from-bp", String.valueOf(locus.paddedStart),
             "--to-bp",   String.valueOf(locus.paddedEnd),
             "--make-bed",
+            "--allow-extra-chr",
             "--out",     prefix,
             "--silent"
         );

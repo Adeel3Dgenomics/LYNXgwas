@@ -12,6 +12,14 @@ import java.util.*;
  */
 public class AlleleHarmonizer {
 
+    // Palindromic (A/T or C/G) SNPs can't be strand-resolved from allele letters alone — "GWAS ea=A,
+    // nea=T matches ref A1=A,A2=T" looks identical whether the true strand matches or is flipped.
+    // Resolve via MAF instead: if the ref panel's A1 frequency and the GWAS's own effect-allele
+    // frequency are both far enough from 0.5 to be informative, the orientation whose frequency they
+    // agree on (to within AMBIGUOUS_MAF_MARGIN) wins; otherwise the SNP is dropped rather than guessed.
+    private static final double AMBIGUOUS_MAF_BAND = 0.10;   // freq within [0.4,0.6] is never resolvable
+    private static final double AMBIGUOUS_MAF_MARGIN = 0.10; // required separation between the two hypotheses
+
     public static class Result {
         public boolean ok;
         public String error;
@@ -19,13 +27,17 @@ public class AlleleHarmonizer {
         public int flipped;
         public int complemented;
         public int dropped;
+        public int droppedPalindromic;
         public String inputHash;
     }
 
     public static String computeInputHash(File matchedDir) throws IOException {
+        File refFreqFile = new File(matchedDir, "ref_freq.tsv");
+        String refFreqHash = refFreqFile.exists() ? ContentHasher.hashFile(refFreqFile) : "none";
         return ContentHasher.combineHashes(
             ContentHasher.hashFile(new File(matchedDir, "matched_gwas.tsv")),
-            ContentHasher.hashFile(new File(matchedDir, "matched_ref.bim"))
+            ContentHasher.hashFile(new File(matchedDir, "matched_ref.bim")),
+            refFreqHash
         );
     }
 
@@ -52,7 +64,7 @@ public class AlleleHarmonizer {
             return result;
         }
 
-        Map<String, String[]> refAlleles = new LinkedHashMap<>();
+        Map<String, String[]> refAlleles = new LinkedHashMap<>(); // chr:pos -> {a1, a2, snpId}
         try (BufferedReader br = new BufferedReader(new FileReader(bimFile))) {
             String line;
             while ((line = br.readLine()) != null) {
@@ -63,7 +75,26 @@ public class AlleleHarmonizer {
                 String pos = f[3].trim();
                 String a1 = f[4].trim().toUpperCase();
                 String a2 = f[5].trim().toUpperCase();
-                refAlleles.put(chr + ":" + pos, new String[]{a1, a2});
+                refAlleles.put(chr + ":" + pos, new String[]{a1, a2, f[1]});
+            }
+        }
+
+        // Ref panel A1 frequencies (pre-computed by BaseStepPipeline Step 2.5), keyed by ref SNP id —
+        // used only to resolve palindromic SNPs below.
+        Map<String, Double> refA1Freq = new LinkedHashMap<>();
+        File refFreqFile = new File(matchedDir, "ref_freq.tsv");
+        if (refFreqFile.exists()) {
+            try (BufferedReader br = new BufferedReader(new FileReader(refFreqFile))) {
+                br.readLine();
+                String line;
+                while ((line = br.readLine()) != null) {
+                    String[] f = line.split("\t", -1);
+                    if (f.length < 3) continue;
+                    try {
+                        double freq = Double.parseDouble(f[2]);
+                        if (freq > 0 && freq < 1) refA1Freq.put(f[0], freq);
+                    } catch (NumberFormatException ignored) {}
+                }
             }
         }
 
@@ -72,7 +103,7 @@ public class AlleleHarmonizer {
         File gwasOut = new File(harmonizedDir, "harmonized_gwas.tsv");
         File alignOut = new File(harmonizedDir, "allele_alignment.tsv");
 
-        int kept = 0, flipped = 0, complemented = 0, dropped = 0;
+        int kept = 0, flipped = 0, complemented = 0, dropped = 0, droppedPalindromic = 0;
 
         try (BufferedReader br = new BufferedReader(new FileReader(gwasIn));
              PrintWriter pw = new PrintWriter(new BufferedWriter(new FileWriter(gwasOut)));
@@ -109,7 +140,7 @@ public class AlleleHarmonizer {
                 String key = chr + ":" + pos;
                 String[] ref = refAlleles.get(key);
                 if (ref == null) { dropped++; continue; }
-                String refA1 = ref[0], refA2 = ref[1];
+                String refA1 = ref[0], refA2 = ref[1], refSnpId = ref[2];
 
                 SnpMatcher.AlleleMatch match = SnpMatcher.matchAlleles(ea, nea, refA1, refA2);
                 if (match == SnpMatcher.AlleleMatch.NONE) {
@@ -117,6 +148,23 @@ public class AlleleHarmonizer {
                         snpId, chr, pos, ea, nea, refA1, refA2);
                     dropped++;
                     continue;
+                }
+
+                // Palindromic SNPs (A/T or C/G) match FORWARD/REVERSE by letters alone even when the
+                // true strand is flipped — resolve by MAF instead, or drop if not resolvable.
+                if ((match == SnpMatcher.AlleleMatch.FORWARD || match == SnpMatcher.AlleleMatch.REVERSE)
+                        && isPalindromic(ea, nea)) {
+                    Double rf = refA1Freq.get(refSnpId);
+                    Double gf = parseFreqInRange(maf);
+                    SnpMatcher.AlleleMatch resolved = resolvePalindromic(rf, gf);
+                    if (resolved == null) {
+                        al.printf("%s\t%s\t%s\t%s\t%s\t%s\t%s\tdropped_palindromic\t\t\t%n",
+                            snpId, chr, pos, ea, nea, refA1, refA2);
+                        dropped++;
+                        droppedPalindromic++;
+                        continue;
+                    }
+                    match = resolved;
                 }
 
                 String harmEa = ea, harmNea = nea;
@@ -167,6 +215,7 @@ public class AlleleHarmonizer {
         result.flipped = flipped;
         result.complemented = complemented;
         result.dropped = dropped;
+        result.droppedPalindromic = droppedPalindromic;
         result.ok = true;
 
         StepManifest manifest = new StepManifest();
@@ -177,11 +226,43 @@ public class AlleleHarmonizer {
         manifest.outputs.put("flipped", String.valueOf(flipped));
         manifest.outputs.put("complemented", String.valueOf(complemented));
         manifest.outputs.put("dropped", String.valueOf(dropped));
+        manifest.outputs.put("dropped_palindromic", String.valueOf(droppedPalindromic));
         manifest.write(harmonizedDir);
 
-        System.out.printf("[Harmonizer] %d kept, %d flipped, %d complemented, %d dropped%n",
-            kept, flipped, complemented, dropped);
+        System.out.printf("[Harmonizer] %d kept, %d flipped, %d complemented, %d dropped (%d palindromic/unresolvable)%n",
+            kept, flipped, complemented, dropped, droppedPalindromic);
         return result;
+    }
+
+    private static boolean isPalindromic(String ea, String nea) {
+        return (ea.equals("A") && nea.equals("T")) || (ea.equals("T") && nea.equals("A"))
+            || (ea.equals("C") && nea.equals("G")) || (ea.equals("G") && nea.equals("C"));
+    }
+
+    /** Parses a frequency string, returning null if missing/out of (0,1) range. */
+    private static Double parseFreqInRange(String s) {
+        if (s == null || s.equals("NA") || s.isEmpty()) return null;
+        try {
+            double v = Double.parseDouble(s);
+            return (v > 0 && v < 1) ? v : null;
+        } catch (NumberFormatException e) { return null; }
+    }
+
+    /**
+     * Resolves a palindromic SNP's true orientation by comparing the ref panel's A1 frequency against
+     * the GWAS's own effect-allele frequency. Returns FORWARD (ea matches ref A1's true strand),
+     * REVERSE (ea is actually ref A2's strand), or null if not confidently resolvable.
+     */
+    private static SnpMatcher.AlleleMatch resolvePalindromic(Double refA1Freq, Double gwasEaf) {
+        if (refA1Freq == null || gwasEaf == null) return null;
+        // MAF too close to 0.5 in either dataset is fundamentally unresolvable regardless of the other.
+        if (Math.abs(refA1Freq - 0.5) < AMBIGUOUS_MAF_BAND / 2 || Math.abs(gwasEaf - 0.5) < AMBIGUOUS_MAF_BAND / 2)
+            return null;
+        double distForward = Math.abs(gwasEaf - refA1Freq);       // ea is on the same strand as ref A1
+        double distReverse = Math.abs(gwasEaf - (1.0 - refA1Freq)); // ea is actually ref A2's strand
+        if (distForward + AMBIGUOUS_MAF_MARGIN < distReverse) return SnpMatcher.AlleleMatch.FORWARD;
+        if (distReverse + AMBIGUOUS_MAF_MARGIN < distForward) return SnpMatcher.AlleleMatch.REVERSE;
+        return null; // too close to call
     }
 
     private static String flipValue(String val) {

@@ -137,7 +137,10 @@ public class SusieAdapter {
             // Run SuSiE
             pw.println("z <- df$BETA / df$SE");
             pw.println("cat(sprintf('Running susie_rss: %d SNPs, N=%d, L=%d\\n', length(z), n_samples, L))");
-            pw.println("fit <- susie_rss(z=z, R=R, n=n_samples, L=L, coverage=coverage, verbose=FALSE)");
+            // estimate_residual_variance=TRUE assumes R is the true in-sample LD matrix; R here comes
+            // from a reference panel (bigsnpr), not in-sample genotypes, so it must be FALSE or
+            // susie_rss can fail with "Estimating residual variance failed: the estimated value is negative".
+            pw.println("fit <- susie_rss(z=z, R=R, n=n_samples, L=L, coverage=coverage, estimate_residual_variance=FALSE, verbose=FALSE)");
             pw.println("pips <- susie_get_pip(fit)");
             pw.println();
 

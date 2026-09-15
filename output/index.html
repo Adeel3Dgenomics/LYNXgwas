@@ -187,6 +187,9 @@ td.actions button { margin-right: 0.3rem; }
     <button class="btn btn-secondary" onclick="openLocusMatrix()">
       Locus Matrix
     </button>
+    <button class="btn btn-secondary" onclick="openSusiex()">
+      SuSiEx
+    </button>
     <button class="btn btn-secondary" onclick="exportProjectsInfo()">
       Info
     </button>
@@ -367,6 +370,7 @@ function render() {
       + '<button class="btn btn-secondary" onclick="reprocess(\'' + esc(p.id) + '\')" title="Reprocess">Reprocess</button>'
       + '<button class="btn btn-secondary" onclick="exportExcel(\'' + esc(p.id) + '\')" title="Export Excel">Excel</button>'
       + '<button class="btn btn-secondary" style="background:#d1fae5;color:#065f46" onclick="openProjectAnalysis(\'' + esc(p.id) + '\')" title="Build analysis base artifacts">Analyze</button>'
+      + '<button class="btn btn-secondary" onclick="openGwasQc(\'' + esc(p.id) + '\')" title="Genomic inflation / confounding triage">QC</button>'
       + '<button class="btn btn-danger" style="padding:0.2rem 0.6rem;font-size:0.75rem" onclick="deleteProject(\'' + esc(p.id) + '\')" title="Delete project">Delete</button>'
       + '</td></tr>';
   }).join('');
@@ -1637,6 +1641,255 @@ function pollLocusMatrixProgress(jobId) {
   }, 500);
 }
 
+// ── SuSiEx: cross-ancestry, cross-project fine-mapping ─────────────
+var susiexSelected = {};      // project_id -> true/false
+var susiexLocusChoice = {};   // project_id -> locus_index (string)
+var susiexPollTimer = null;
+
+async function openSusiex() {
+  var overlay = document.getElementById('susiex-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'susiex-overlay';
+    overlay.className = 'wizard-overlay';
+    overlay.innerHTML = '<div class="wizard-box" style="max-width:680px;width:90vw" id="susiex-box"></div>';
+    overlay.addEventListener('click', function(e) { if (e.target === overlay) closeSusiex(); });
+    document.body.appendChild(overlay);
+  }
+  susiexSelected = {};
+  susiexLocusChoice = {};
+  if (susiexPollTimer) { clearInterval(susiexPollTimer); susiexPollTimer = null; }
+  renderSusiexForm();
+  overlay.classList.add('open');
+}
+
+function closeSusiex() {
+  var overlay = document.getElementById('susiex-overlay');
+  if (overlay) overlay.classList.remove('open');
+  if (susiexPollTimer) { clearInterval(susiexPollTimer); susiexPollTimer = null; }
+}
+
+function renderSusiexForm() {
+  var box = document.getElementById('susiex-box');
+  box.innerHTML = '<h3>SuSiEx &mdash; Cross-Ancestry Fine-Mapping</h3>'
+    + '<p style="color:#666;font-size:0.85rem;margin:0.5rem 0 1rem">'
+    + 'Pick two or more projects (different ancestries/cohorts) and, for each, the locus that '
+    + 'corresponds to the shared region. Each project must already have loci identified, a sample '
+    + 'size (N) configured, and a reference panel. Requires a local <a href="https://github.com/getian107/SuSiEx" '
+    + 'target="_blank" rel="noopener">SuSiEx</a> installation.</p>'
+    + '<div style="font-size:0.85rem;font-weight:600;margin-bottom:0.4rem">Projects</div>'
+    + '<div id="sx-project-list" style="max-height:180px;overflow-y:auto;border:1px solid #e5e7eb;border-radius:8px;padding:0.5rem;margin-bottom:0.75rem">Loading…</div>'
+    + '<div id="sx-locus-pickers" style="margin-bottom:1rem"></div>'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin-bottom:1rem">'
+    + '<label style="font-size:0.82rem">Max causal signals (L)<input id="sx-max-causal" type="number" value="5" min="1" max="10" style="width:100%;padding:0.35rem;border:1px solid #cbd5e1;border-radius:6px;margin-top:0.25rem"></label>'
+    + '<label style="font-size:0.82rem">P-value threshold<input id="sx-pval" type="text" value="1e-5" style="width:100%;padding:0.35rem;border:1px solid #cbd5e1;border-radius:6px;margin-top:0.25rem"></label>'
+    + '<label style="font-size:0.82rem">MAF threshold<input id="sx-maf" type="text" value="0.005" style="width:100%;padding:0.35rem;border:1px solid #cbd5e1;border-radius:6px;margin-top:0.25rem"></label>'
+    + '<label style="font-size:0.82rem">PLINK path<input id="sx-plink" type="text" value="plink" style="width:100%;padding:0.35rem;border:1px solid #cbd5e1;border-radius:6px;margin-top:0.25rem"></label>'
+    + '</div>'
+    + '<label style="font-size:0.82rem;display:block;margin-bottom:1rem">SuSiEx.py path'
+    + '<input id="sx-susiex-path" type="text" placeholder="/path/to/SuSiEx/SuSiEx.py" style="width:100%;padding:0.35rem;border:1px solid #cbd5e1;border-radius:6px;margin-top:0.25rem;box-sizing:border-box"></label>'
+    + '<div id="sx-error" style="color:#dc2626;font-size:0.82rem;margin-bottom:0.5rem"></div>'
+    + '<div style="display:flex;justify-content:flex-end;gap:0.5rem">'
+    + '<button class="btn btn-secondary" onclick="closeSusiex()">Cancel</button>'
+    + '<button class="btn btn-primary" onclick="runSusiex()">Run</button></div>';
+
+  var listEl = document.getElementById('sx-project-list');
+  if (!projects.length) {
+    listEl.innerHTML = '<span style="color:#888;font-size:0.82rem">No projects yet.</span>';
+  } else {
+    listEl.innerHTML = projects.map(function(p) {
+      var name = p.name || p.id;
+      return '<label style="display:flex;align-items:center;gap:0.5rem;padding:0.25rem 0;font-size:0.85rem">'
+        + '<input type="checkbox" value="' + esc(p.id) + '" onchange="onSusiexProjectToggle(\'' + esc(p.id) + '\', this.checked)">'
+        + '<span>' + esc(name) + '</span></label>';
+    }).join('');
+  }
+}
+
+async function onSusiexProjectToggle(pid, checked) {
+  susiexSelected[pid] = checked;
+  var container = document.getElementById('sx-locus-pickers');
+  if (!checked) {
+    var el = document.getElementById('sx-locus-row-' + pid);
+    if (el) el.remove();
+    delete susiexLocusChoice[pid];
+    return;
+  }
+  var row = document.createElement('div');
+  row.id = 'sx-locus-row-' + pid;
+  row.style.cssText = 'margin-bottom:0.5rem';
+  var proj = projects.find(function(p) { return p.id === pid; });
+  row.innerHTML = '<div style="font-size:0.82rem;font-weight:600;margin-bottom:0.25rem">' + esc((proj && proj.name) || pid) + ' — locus</div>'
+    + '<select id="sx-locus-select-' + esc(pid) + '" style="width:100%;padding:0.35rem;border:1px solid #cbd5e1;border-radius:6px" onchange="susiexLocusChoice[\'' + esc(pid) + '\'] = this.value">Loading…</select>';
+  container.appendChild(row);
+
+  var sel = document.getElementById('sx-locus-select-' + pid);
+  try {
+    var m = await (await fetch(API + '/api/project/' + encodeURIComponent(pid) + '/manifest')).json();
+    var loci = m.loci || [];
+    if (!loci.length) {
+      sel.innerHTML = '<option value="">No loci identified for this project</option>';
+    } else {
+      sel.innerHTML = loci.map(function(lo) {
+        return '<option value="' + lo.index + '">Locus ' + lo.index + ': chr' + esc(lo.chr) + ':' + lo.start + '-' + lo.end
+          + (lo.top_snp ? ' (top ' + esc(lo.top_snp) + ')' : '') + '</option>';
+      }).join('');
+      susiexLocusChoice[pid] = String(loci[0].index);
+    }
+  } catch (e) {
+    sel.innerHTML = '<option value="">Failed to load loci</option>';
+  }
+}
+
+async function runSusiex() {
+  var errEl = document.getElementById('sx-error');
+  errEl.textContent = '';
+  var pids = Object.keys(susiexSelected).filter(function(k) { return susiexSelected[k]; });
+  if (pids.length < 2) { errEl.textContent = 'Select at least two projects.'; return; }
+  var members = [];
+  for (var i = 0; i < pids.length; i++) {
+    var idx = susiexLocusChoice[pids[i]];
+    if (idx === undefined || idx === '') { errEl.textContent = 'Choose a locus for every selected project.'; return; }
+    members.push({ project_id: pids[i], locus_index: parseInt(idx, 10) });
+  }
+  var susiexPath = document.getElementById('sx-susiex-path').value.trim();
+  if (!susiexPath) { errEl.textContent = 'Path to SuSiEx.py is required.'; return; }
+
+  var params = {
+    max_causal: document.getElementById('sx-max-causal').value,
+    pval_thresh: document.getElementById('sx-pval').value,
+    maf_thresh: document.getElementById('sx-maf').value,
+    susiex_path: susiexPath,
+    plink_path: document.getElementById('sx-plink').value.trim() || 'plink'
+  };
+
+  var box = document.getElementById('susiex-box');
+  box.innerHTML = '<h3>SuSiEx</h3>'
+    + '<div id="sx-progress" style="margin:1rem 0;font-size:0.85rem;color:#475569">Starting…</div>'
+    + '<div style="display:flex;justify-content:flex-end">'
+    + '<button class="btn btn-secondary" onclick="closeSusiex()">Close</button></div>';
+
+  try {
+    var resp = await fetch(API + '/api/susiex-run', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ members: members, params: params })
+    });
+    var d = await resp.json();
+    if (!resp.ok || d.error) {
+      document.getElementById('sx-progress').innerHTML = '<span style="color:#dc2626">' + esc(d.error || 'Failed to start') + '</span>';
+      return;
+    }
+    pollSusiexProgress(d.job_id);
+  } catch (e) {
+    document.getElementById('sx-progress').innerHTML = '<span style="color:#dc2626">' + esc(e.message) + '</span>';
+  }
+}
+
+function pollSusiexProgress(jobId) {
+  var el = document.getElementById('sx-progress');
+  susiexPollTimer = setInterval(async function() {
+    try {
+      var resp = await fetch(API + '/api/susiex-progress?job=' + encodeURIComponent(jobId));
+      var p = await resp.json();
+      if (!el) return;
+      if (p.status === 'running') {
+        el.textContent = 'Running SuSiEx… this can take a few minutes.';
+        return;
+      }
+      clearInterval(susiexPollTimer); susiexPollTimer = null;
+      if (p.status === 'error') {
+        el.innerHTML = '<pre style="color:#dc2626;white-space:pre-wrap;font-size:0.78rem">' + esc(p.error || 'Failed') + '</pre>';
+        return;
+      }
+      var r = await (await fetch(API + '/api/susiex-result?job=' + encodeURIComponent(jobId))).json();
+      if (!r.ok) {
+        el.innerHTML = '<pre style="color:#dc2626;white-space:pre-wrap;font-size:0.78rem">' + esc(r.error || 'No results') + '</pre>';
+        return;
+      }
+      var rows = (r.rows || []).slice().sort(function(a, b) { return (b.pip || 0) - (a.pip || 0); });
+      var html = '<div style="color:#065f46;margin-bottom:0.5rem">Done &mdash; ' + r.n_credible_sets + ' credible set(s), ' + rows.length + ' SNPs.</div>'
+        + '<div style="max-height:280px;overflow-y:auto;border:1px solid #e5e7eb;border-radius:8px">'
+        + '<table style="width:100%;font-size:0.8rem;border-collapse:collapse">'
+        + '<thead><tr style="text-align:left;background:#f8fafc"><th style="padding:0.3rem 0.5rem">SNP</th><th style="padding:0.3rem 0.5rem">Chr:Pos</th><th style="padding:0.3rem 0.5rem">PIP</th><th style="padding:0.3rem 0.5rem">CS</th></tr></thead><tbody>'
+        + rows.map(function(row) {
+            return '<tr><td style="padding:0.25rem 0.5rem">' + esc(row.snp_id) + '</td>'
+              + '<td style="padding:0.25rem 0.5rem">' + esc(row.chr) + ':' + row.pos + '</td>'
+              + '<td style="padding:0.25rem 0.5rem">' + (row.pip != null ? row.pip.toFixed(4) : '') + '</td>'
+              + '<td style="padding:0.25rem 0.5rem">' + esc(row.cs_id) + '</td></tr>';
+          }).join('')
+        + '</tbody></table></div>';
+      el.innerHTML = html;
+    } catch (e) {
+      clearInterval(susiexPollTimer); susiexPollTimer = null;
+    }
+  }, 2000);
+}
+
+// ── GWAS QC: genomic inflation / confounding triage ─────────────
+async function openGwasQc(projectId) {
+  var overlay = document.getElementById('gwas-qc-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'gwas-qc-overlay';
+    overlay.className = 'wizard-overlay';
+    overlay.innerHTML = '<div class="wizard-box" style="max-width:520px;width:90vw" id="gwas-qc-box"></div>';
+    overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.classList.remove('open'); });
+    document.body.appendChild(overlay);
+  }
+  var box = document.getElementById('gwas-qc-box');
+  box.innerHTML = '<h3>GWAS QC</h3><div style="margin:1rem 0;color:#666;font-size:0.85rem">Computing genomic inflation factor…</div>';
+  overlay.classList.add('open');
+  await renderGwasQc(projectId, null);
+}
+
+async function renderGwasQc(projectId, ldscIntercept) {
+  var box = document.getElementById('gwas-qc-box');
+  try {
+    var resp = ldscIntercept != null
+      ? await fetch(API + '/api/project/' + encodeURIComponent(projectId) + '/qc', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ ldsc_intercept: ldscIntercept })
+        })
+      : await fetch(API + '/api/project/' + encodeURIComponent(projectId) + '/qc');
+    var d = await resp.json();
+    if (!resp.ok || !d.ok) {
+      box.innerHTML = '<h3>GWAS QC</h3><div style="color:#dc2626;margin:1rem 0;font-size:0.85rem">' + esc(d.error || 'Failed to compute') + '</div>'
+        + '<div style="display:flex;justify-content:flex-end"><button class="btn btn-secondary" onclick="document.getElementById(\'gwas-qc-overlay\').classList.remove(\'open\')">Close</button></div>';
+      return;
+    }
+    var lambdaColor = d.lambda_flagged ? '#dc2626' : '#059669';
+    var html = '<h3>GWAS QC</h3>'
+      + '<p style="color:#666;font-size:0.8rem;margin:0.5rem 0 1rem">Computed from all ' + d.n_snps.toLocaleString() + ' SNPs in this project\'s GWAS file (not LD-pruned — a quick triage signal, not a substitute for a real LDSC run).</p>'
+      + '<div style="display:flex;gap:1.5rem;margin-bottom:1rem">'
+      + '<div><div style="font-size:0.75rem;color:#666">Genomic inflation (&lambda;<sub>GC</sub>)</div>'
+      + '<div style="font-size:1.4rem;font-weight:700;color:' + lambdaColor + '">' + d.lambda_gc.toFixed(3) + '</div></div>'
+      + '<div><div style="font-size:0.75rem;color:#666">Mean &chi;&sup2;</div>'
+      + '<div style="font-size:1.4rem;font-weight:700">' + d.mean_chi2.toFixed(3) + '</div></div>'
+      + '</div>'
+      + (d.lambda_flagged ? '<div style="background:#fef2f2;color:#991b1b;padding:0.5rem 0.75rem;border-radius:6px;font-size:0.8rem;margin-bottom:1rem">&lambda;<sub>GC</sub> &gt; 1.1 — possible inflation or confounding. Pair with an LDSC intercept below to check whether it\'s genuine polygenicity.</div>' : '')
+      + '<div style="font-size:0.85rem;font-weight:600;margin-bottom:0.4rem">LDSC intercept (optional, enter your own LDSC run\'s result)</div>'
+      + '<div style="display:flex;gap:0.5rem;margin-bottom:0.75rem">'
+      + '<input id="qc-ldsc-input" type="text" placeholder="e.g. 1.02" value="' + (d.ldsc_intercept != null ? d.ldsc_intercept : '') + '" style="flex:1;padding:0.4rem;border:1px solid #cbd5e1;border-radius:6px">'
+      + '<button class="btn btn-secondary" onclick="submitGwasQcIntercept(\'' + esc(projectId) + '\')">Compute</button></div>';
+    if (d.attenuation_ratio != null) {
+      var ratioColor = d.ldsc_flagged ? '#dc2626' : '#059669';
+      html += '<div style="font-size:0.8rem;margin-bottom:1rem">Attenuation ratio: <b style="color:' + ratioColor + '">' + d.attenuation_ratio.toFixed(3) + '</b>'
+        + ' — ' + (d.attenuation_ratio < 0.2 ? 'near 0, consistent with genuine polygenicity' : 'well above 0, suggests confounding/stratification worth investigating')
+        + '</div>';
+    }
+    html += '<div style="display:flex;justify-content:flex-end"><button class="btn btn-secondary" onclick="document.getElementById(\'gwas-qc-overlay\').classList.remove(\'open\')">Close</button></div>';
+    box.innerHTML = html;
+  } catch (e) {
+    box.innerHTML = '<h3>GWAS QC</h3><div style="color:#dc2626;margin:1rem 0;font-size:0.85rem">' + esc(e.message) + '</div>';
+  }
+}
+
+function submitGwasQcIntercept(projectId) {
+  var val = parseFloat(document.getElementById('qc-ldsc-input').value);
+  if (!isFinite(val)) return;
+  renderGwasQc(projectId, val);
+}
+
 async function loadLocusMatrixJobs() {
   var tbody = document.getElementById('locus-matrix-tbody');
   var empty = document.getElementById('locus-matrix-empty');
@@ -1738,7 +1991,10 @@ async function openProjectAnalysis(projectId) {
       var logBtn = l.has_log
         ? '<a href="#" onclick="showLocusBuildLog(\'' + esc(projectId) + '\',\'' + esc(l.id) + '\',event);return false" style="color:#4f46e5;font-size:0.75rem;text-decoration:none" title="View build log">Log</a>'
         : '<span style="color:#d1d5db;font-size:0.75rem">—</span>';
-      html += '<tr><td style="padding:3px 8px">Locus ' + l.index + '</td>'
+      var mhcBadge = l.mhc_overlap
+        ? ' <span title="Overlaps the MHC/extended-HLA region — fine-mapping/colocalization results here are not statistically trustworthy (unusual LD structure)" style="background:#fef3c7;color:#92400e;font-size:0.68rem;font-weight:600;padding:0.05rem 0.35rem;border-radius:4px">MHC</span>'
+        : '';
+      html += '<tr><td style="padding:3px 8px">Locus ' + l.index + mhcBadge + '</td>'
         + '<td style="text-align:center">' + dot(l.base) + '</td>'
         + '<td style="text-align:center">' + dot(l.matched) + '</td>'
         + '<td style="text-align:center">' + dot(l.harmonized) + '</td>'

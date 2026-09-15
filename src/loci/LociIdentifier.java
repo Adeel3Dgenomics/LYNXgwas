@@ -315,6 +315,8 @@ public class LociIdentifier {
                 "--clump-r2", String.valueOf(params.clumpR2),
                 "--clump-kb", String.valueOf(params.clumpKb),
                 "--chr", chr,
+                "--allow-extra-chr",
+                "--memory", "20000",
                 "--out", outPrefix.toString(),
                 "--silent"
             );

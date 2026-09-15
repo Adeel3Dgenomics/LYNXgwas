@@ -105,7 +105,7 @@ public class LocusGwasExtractor {
 
     private static int extractGwasRows(Config config, Locus locus, File outFile)
             throws IOException {
-        int count = 0;
+        int count = 0, derivedBetaSe = 0, recomputedPval = 0;
         try (BufferedReader br = new BufferedReader(new FileReader(config.gwasFile), 1024 * 1024);
              PrintWriter pw = new PrintWriter(new BufferedWriter(new FileWriter(outFile)))) {
 
@@ -168,10 +168,50 @@ public class LocusGwasExtractor {
                 String maf  = safeGet(f, iMaf, "NA");
                 String info = safeGet(f, iInfo, "NA");
 
+                // Derive missing beta/SE from OR + p-value (common for older/externally-sourced GWAS
+                // files that report only OR) — never overwrites a beta/SE the file already provides.
+                if ((beta.equals("NA") || se.equals("NA")) && !or_.equals("NA")) {
+                    try {
+                        double orVal = Double.parseDouble(or_);
+                        double pVal = Double.parseDouble(pval);
+                        double[] derived = StatsUtil.deriveBetaSeFromOrP(orVal, pVal);
+                        if (derived != null) {
+                            beta = String.valueOf(derived[0]);
+                            se = String.valueOf(derived[1]);
+                            derivedBetaSe++;
+                        }
+                    } catch (NumberFormatException ignored) {}
+                }
+
+                // A literal p=0 (common when a source tool's own p-value underflowed at export time)
+                // makes -log10(p) infinite; recompute it from beta/se via the survival function
+                // directly rather than trusting a floored/zero value, when both are available.
+                if (!beta.equals("NA") && !se.equals("NA")) {
+                    double pAsWritten;
+                    boolean pLooksFloored;
+                    try {
+                        pAsWritten = Double.parseDouble(pval);
+                        pLooksFloored = !(pAsWritten > 0) || !Double.isFinite(pAsWritten);
+                    } catch (NumberFormatException e) { pLooksFloored = true; }
+                    if (pLooksFloored) {
+                        try {
+                            double z = Double.parseDouble(beta) / Double.parseDouble(se);
+                            if (Double.isFinite(z) && z != 0) {
+                                double recomputed = StatsUtil.zToP(z);
+                                if (recomputed > 0) { pval = String.valueOf(recomputed); recomputedPval++; }
+                            }
+                        } catch (NumberFormatException ignored) {}
+                    }
+                }
+
                 pw.printf("%s\t%s\t%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s%n",
                     snpId, chr, pos, ea, nea, pval, beta, se, or_, n, maf, info, rsid, varid);
                 count++;
             }
+        }
+        if (derivedBetaSe > 0 || recomputedPval > 0) {
+            System.out.printf("[BaseStep] Locus %s: derived beta/SE from OR+p for %d SNPs, recomputed %d floored p-values%n",
+                locus.id, derivedBetaSe, recomputedPval);
         }
         return count;
     }

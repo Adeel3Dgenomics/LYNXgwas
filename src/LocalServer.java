@@ -186,6 +186,9 @@ public class LocalServer {
         http.createContext("/api/locus-matrix-result",   this::locusMatrixResult);
         http.createContext("/api/locus-matrix-export",   this::locusMatrixExport);
         http.createContext("/api/locus-matrix-delete",   this::locusMatrixDelete);
+        http.createContext("/api/susiex-run",        this::susiexRun);
+        http.createContext("/api/susiex-progress",   this::susiexProgress);
+        http.createContext("/api/susiex-result",     this::susiexResult);
         http.createContext("/pick-folder-native",    this::pickFolder);
 
         // ── Legacy endpoints (kept for backward compatibility) ───────────
@@ -472,6 +475,8 @@ public class LocalServer {
             projectAnalysisHistory(ex, projectId, projectDir);
         } else if (action.equals("progress")) {
             projectProgressEndpoint(ex, projectId);
+        } else if (action.equals("qc")) {
+            projectQc(ex, projectId, projectDir);
         } else {
             respond(ex, 404, "application/json",
                 ("{\"error\":\"Unknown action: " + escJ(action) + "\"}").getBytes());
@@ -508,6 +513,73 @@ public class LocalServer {
             respond(ex, 500, "application/json",
                 ("{\"error\":\"" + escJ(e.getMessage()) + "\"}").getBytes());
         }
+    }
+
+    // GET /api/project/{id}/qc — genomic inflation (lambda_GC), cached by GWAS-file content hash;
+    // optionally accepts a POST with a user-supplied LDSC intercept to compute the attenuation ratio.
+    private void projectQc(HttpExchange ex, String projectId, String projectDir) throws IOException {
+        Config cfg;
+        try {
+            cfg = Config.loadFromProject(projectDir);
+        } catch (Exception e) {
+            respond(ex, 404, "application/json", ("{\"error\":\"" + escJ(e.getMessage()) + "\"}").getBytes());
+            return;
+        }
+
+        Double ldscIntercept = null;
+        if ("POST".equalsIgnoreCase(ex.getRequestMethod())) {
+            String body = new String(readAll(ex.getRequestBody()), "UTF-8");
+            String v = extractStr(body, "ldsc_intercept");
+            if (v != null && !v.trim().isEmpty()) {
+                try { ldscIntercept = Double.parseDouble(v.trim()); } catch (NumberFormatException ignored) {}
+            }
+        }
+
+        File cacheFile = new File(projectDir, "data/qc.json");
+        String gwasHash;
+        try { gwasHash = ContentHasher.hashFile(new File(cfg.gwasFile)); }
+        catch (IOException e) {
+            respond(ex, 400, "application/json", ("{\"error\":\"GWAS file not found: " + escJ(cfg.gwasFile) + "\"}").getBytes());
+            return;
+        }
+
+        GwasQc.Result r = null;
+        if (cacheFile.exists()) {
+            try {
+                String cached = new String(Files.readAllBytes(cacheFile.toPath()), "UTF-8");
+                if (gwasHash.equals(extractStr(cached, "gwas_hash"))) {
+                    if (ldscIntercept == null) {
+                        respond(ex, 200, "application/json", cached.getBytes("UTF-8"));
+                        return;
+                    }
+                    r = new GwasQc.Result();
+                    r.ok = true;
+                    r.nSnps = (int) parseDoubleOr(extractStr(cached, "n_snps"), 0);
+                    r.medianChi2 = parseDoubleOr(extractStr(cached, "median_chi2"), Double.NaN);
+                    r.meanChi2 = parseDoubleOr(extractStr(cached, "mean_chi2"), Double.NaN);
+                    r.lambdaGC = parseDoubleOr(extractStr(cached, "lambda_gc"), Double.NaN);
+                    r.lambdaFlagged = "true".equals(extractStr(cached, "lambda_flagged"));
+                }
+            } catch (Exception ignored) {}
+        }
+        if (r == null) r = GwasQc.compute(cfg);
+        StringBuilder json = new StringBuilder(r.toJson());
+        json.setLength(json.length() - 1); // drop closing brace, append more fields
+        json.append(",\"gwas_hash\":\"").append(escJ(gwasHash)).append('"');
+        if (ldscIntercept != null && r.ok) {
+            double ratio = GwasQc.attenuationRatio(ldscIntercept, r.meanChi2);
+            json.append(",\"ldsc_intercept\":").append(ldscIntercept);
+            json.append(",\"ldsc_flagged\":").append(ldscIntercept > GwasQc.LDSC_INTERCEPT_FLAG);
+            json.append(",\"attenuation_ratio\":").append(Double.isNaN(ratio) ? "null" : ratio);
+        }
+        json.append('}');
+
+        try {
+            new File(projectDir, "data").mkdirs();
+            Files.write(cacheFile.toPath(), json.toString().getBytes("UTF-8"));
+        } catch (IOException ignored) {}
+
+        respond(ex, r.ok ? 200 : 400, "application/json", json.toString().getBytes("UTF-8"));
     }
 
     // GET /api/peek-file-header?path=...
@@ -934,6 +1006,7 @@ public class LocalServer {
             json.append(",\"ld\":").append(status.get("ld"));
             boolean allDone = status.values().stream().allMatch(v -> v);
             json.append(",\"ready\":").append(allDone);
+            json.append(",\"mhc_overlap\":").append(BaseStepPipeline.overlapsMhc(locus, ps.config.genomeBuild));
             // Read consistency diagnostic summary if available
             File analysisRoot = BaseStepPipeline.analysisDir(ps.config, locus);
             File diagFile = new File(analysisRoot, "ld/consistency_summary.json");
@@ -1164,6 +1237,23 @@ public class LocalServer {
                     int maxCausal = 5;
                     try { maxCausal = Integer.parseInt(params.getOrDefault("max_causal", "5")); } catch (NumberFormatException e) {}
                     FinemapAdapter.prepareRun(harmonizedDir, ldDir, matchedDir, runDir, sampleN, maxCausal);
+                } else if (toolName.equals("coloc")) {
+                    String trait2File = params.get("trait2_file");
+                    String trait2Type = params.getOrDefault("trait2_type", "quant");
+                    int trait2N = 0, trait2NCases = 0;
+                    double p1 = 1e-4, p2 = 1e-4, p12 = 1e-5, pipThreshold = 0.1;
+                    boolean restrictToFinemapped = "true".equalsIgnoreCase(params.getOrDefault("restrict_to_finemapped", "false"));
+                    try { trait2N = Integer.parseInt(params.getOrDefault("trait2_n", "0")); } catch (NumberFormatException e) {}
+                    try { trait2NCases = Integer.parseInt(params.getOrDefault("trait2_n_cases", "0")); } catch (NumberFormatException e) {}
+                    try { p1 = Double.parseDouble(params.getOrDefault("p1", "1e-4")); } catch (NumberFormatException e) {}
+                    try { p2 = Double.parseDouble(params.getOrDefault("p2", "1e-4")); } catch (NumberFormatException e) {}
+                    try { p12 = Double.parseDouble(params.getOrDefault("p12", "1e-5")); } catch (NumberFormatException e) {}
+                    try { pipThreshold = Double.parseDouble(params.getOrDefault("finemap_pip_threshold", "0.1")); } catch (NumberFormatException e) {}
+                    ColocAdapter.prepareRun(harmonizedDir, runDir, targetLocus, cfg,
+                        trait2File, trait2Type, trait2N, trait2NCases, p1, p2, p12,
+                        analysisRoot, restrictToFinemapped, pipThreshold);
+                } else if (toolName.equals("gwama_meta")) {
+                    GwamaAdapter.prepareRun(harmonizedDir, runDir);
                 }
 
                 PluginEngine.RunRequest req = new PluginEngine.RunRequest();
@@ -2078,6 +2168,217 @@ public class LocalServer {
             if (kv.length == 2 && kv[0].equals(key)) return URLDecoder.decode(kv[1], "UTF-8");
         }
         return null;
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    //  SUSIEX (cross-ancestry, cross-project fine-mapping)
+    // ══════════════════════════════════════════════════════════════════════
+
+    private static class SusiexJob {
+        String status = "running"; // running | done | error
+        String error;
+        SusiexAdapter.RunResult result;
+        String runDir;
+    }
+    private final Map<String, SusiexJob> susiexJobs = new ConcurrentHashMap<>();
+
+    // POST /api/susiex-run — {"members":[{"project_id":"x","locus_index":1}, ...], "params":{...}}
+    private void susiexRun(HttpExchange ex) throws IOException {
+        cors(ex); if (preflight(ex)) return;
+        if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) {
+            respond(ex, 405, "application/json", "{\"error\":\"POST required\"}".getBytes()); return;
+        }
+        String body = new String(readAll(ex.getRequestBody()), "UTF-8");
+        List<String> memberObjs = extractObjectArray(body, "members");
+        if (memberObjs.size() < 2) {
+            respond(ex, 400, "application/json",
+                "{\"error\":\"At least two project/locus members are required\"}".getBytes()); return;
+        }
+
+        String paramsObj = extractRawObject(body, "params");
+        double pvalThresh = parseDoubleOr(extractStr(paramsObj, "pval_thresh"), 1e-5);
+        double mafThresh  = parseDoubleOr(extractStr(paramsObj, "maf_thresh"), 0.005);
+        int maxCausal      = (int) parseDoubleOr(extractStr(paramsObj, "max_causal"), 5);
+        String susiexPath = extractStr(paramsObj, "susiex_path");
+        String plinkPath  = extractStr(paramsObj, "plink_path");
+        if (susiexPath == null || susiexPath.trim().isEmpty()) {
+            respond(ex, 400, "application/json",
+                "{\"error\":\"susiex_path (path to SuSiEx.py) is required\"}".getBytes()); return;
+        }
+
+        // Resolve each member: project + locus + its base-pipeline artifacts
+        List<SusiexAdapter.Member> members = new ArrayList<>();
+        List<Config> memberConfigs = new ArrayList<>();
+        List<Locus> memberLoci = new ArrayList<>();
+        String sharedChr = null;
+        long regionStart = Long.MAX_VALUE, regionEnd = Long.MIN_VALUE;
+        for (String mo : memberObjs) {
+            String pid = extractStr(mo, "project_id");
+            String idxStr = extractStr(mo, "locus_index");
+            if (pid == null || idxStr == null) {
+                respond(ex, 400, "application/json",
+                    "{\"error\":\"Each member needs project_id and locus_index\"}".getBytes()); return;
+            }
+            File dir = new File("projects/" + pid);
+            ProjectState ps = ensureProjectState(pid, dir.getAbsolutePath());
+            if (ps == null || ps.config == null || ps.loci == null) {
+                respond(ex, 400, "application/json",
+                    ("{\"error\":\"Project not available: " + escJ(pid) + "\"}").getBytes()); return;
+            }
+            int locusIndex;
+            try { locusIndex = Integer.parseInt(idxStr); } catch (NumberFormatException e) {
+                respond(ex, 400, "application/json", "{\"error\":\"Invalid locus_index\"}".getBytes()); return;
+            }
+            Locus locus = null;
+            for (Locus l : ps.loci) if (l.index == locusIndex) { locus = l; break; }
+            if (locus == null) {
+                respond(ex, 400, "application/json",
+                    ("{\"error\":\"Locus " + locusIndex + " not found in project " + escJ(pid) + "\"}").getBytes()); return;
+            }
+            if (ps.config.sampleN <= 0) {
+                respond(ex, 400, "application/json",
+                    ("{\"error\":\"Project '" + escJ(pid) + "' has no sample size (N) configured\"}").getBytes()); return;
+            }
+            memberConfigs.add(ps.config);
+            memberLoci.add(locus);
+            if (sharedChr == null) sharedChr = locus.chr;
+            regionStart = Math.min(regionStart, locus.start);
+            regionEnd = Math.max(regionEnd, locus.end);
+
+            SusiexAdapter.Member m = new SusiexAdapter.Member();
+            ProjectMetadata pm = ProjectMetadata.load(dir.getAbsolutePath());
+            m.label = (pm != null && !pm.name.isEmpty()) ? pm.name : pid;
+            m.sampleN = ps.config.sampleN;
+            File analysisRoot = BaseStepPipeline.analysisDir(ps.config, locus);
+            m.harmonizedDir = new File(analysisRoot, "harmonized");
+            m.matchedDir = new File(analysisRoot, "matched");
+            members.add(m);
+        }
+
+        String jobId = UUID.randomUUID().toString();
+        SusiexJob job = new SusiexJob();
+        job.runDir = "output/susiex/" + jobId;
+        susiexJobs.put(jobId, job);
+
+        final String finalChr = sharedChr;
+        final long finalStart = regionStart, finalEnd = regionEnd;
+        final double finalPval = pvalThresh, finalMaf = mafThresh;
+        final int finalMaxCausal = maxCausal;
+        final String finalSusiexPath = susiexPath.trim();
+        final String finalPlinkPath = (plinkPath != null && !plinkPath.trim().isEmpty()) ? plinkPath.trim() : "plink";
+
+        new Thread(() -> {
+            try {
+                // Ensure each member's base artifacts (harmonized GWAS + matched ref panel) exist.
+                for (int i = 0; i < memberConfigs.size(); i++) {
+                    BaseStepPipeline.runAll(memberConfigs.get(i), memberLoci.get(i), LdMatrixComputer.DEFAULT_LD_WINDOW);
+                }
+                File runDir = new File(job.runDir);
+                SusiexAdapter.RunResult r = SusiexAdapter.prepareAndRun(members, runDir,
+                    finalChr, finalStart, finalEnd, finalSusiexPath, finalPlinkPath,
+                    finalMaxCausal, finalPval, finalMaf);
+                job.result = r;
+                job.status = r.ok ? "done" : "error";
+                job.error = r.error;
+            } catch (Exception e) {
+                job.status = "error";
+                job.error = e.getMessage();
+                System.err.printf("[SuSiEx] Job '%s' failed: %s%n", jobId, e.getMessage());
+                e.printStackTrace(System.err);
+            }
+        }, "susiex-" + jobId).start();
+
+        respond(ex, 202, "application/json", ("{\"job_id\":\"" + jobId + "\",\"status\":\"started\"}").getBytes());
+    }
+
+    // GET /api/susiex-progress?job=<jobId>
+    private void susiexProgress(HttpExchange ex) throws IOException {
+        cors(ex); if (preflight(ex)) return;
+        String jobId = queryParam(ex, "job");
+        SusiexJob job = jobId != null ? susiexJobs.get(jobId) : null;
+        if (job == null) {
+            respond(ex, 404, "application/json", "{\"error\":\"Job not found\"}".getBytes()); return;
+        }
+        StringBuilder json = new StringBuilder("{");
+        json.append("\"status\":\"").append(escJ(job.status)).append('"');
+        if (job.error != null) json.append(",\"error\":\"").append(escJ(job.error)).append('"');
+        json.append('}');
+        respond(ex, 200, "application/json", json.toString().getBytes("UTF-8"));
+    }
+
+    // GET /api/susiex-result?job=<jobId>
+    private void susiexResult(HttpExchange ex) throws IOException {
+        cors(ex); if (preflight(ex)) return;
+        String jobId = queryParam(ex, "job");
+        SusiexJob job = jobId != null ? susiexJobs.get(jobId) : null;
+        if (job == null || job.result == null) {
+            respond(ex, 404, "application/json", "{\"error\":\"Job not found or not complete\"}".getBytes()); return;
+        }
+        SusiexAdapter.RunResult r = job.result;
+        StringBuilder json = new StringBuilder("{");
+        json.append("\"ok\":").append(r.ok);
+        if (r.error != null) json.append(",\"error\":\"").append(escJ(r.error)).append('"');
+        json.append(",\"n_credible_sets\":").append(r.nCredibleSets);
+        json.append(",\"rows\":[");
+        for (int i = 0; i < r.rows.size(); i++) {
+            if (i > 0) json.append(',');
+            SusiexAdapter.ResultRow row = r.rows.get(i);
+            json.append("{\"snp_id\":\"").append(escJ(row.snpId)).append('"');
+            json.append(",\"chr\":\"").append(escJ(row.chr != null ? row.chr : "")).append('"');
+            json.append(",\"pos\":").append(row.pos);
+            json.append(",\"pip\":").append(Double.isNaN(row.pip) ? "null" : row.pip);
+            json.append(",\"cs_id\":\"").append(escJ(row.csId)).append('"');
+            json.append('}');
+        }
+        json.append("]}");
+        respond(ex, 200, "application/json", json.toString().getBytes("UTF-8"));
+    }
+
+    private static double parseDoubleOr(String s, double def) {
+        if (s == null || s.trim().isEmpty()) return def;
+        try { return Double.parseDouble(s.trim()); } catch (NumberFormatException e) { return def; }
+    }
+
+    /** Returns the raw {...} substring for a top-level object-valued key, or "{}" if absent. */
+    private static String extractRawObject(String json, String key) {
+        String marker = "\"" + key + "\":";
+        int i = json.indexOf(marker);
+        if (i < 0) return "{}";
+        i += marker.length();
+        while (i < json.length() && json.charAt(i) != '{') i++;
+        if (i >= json.length()) return "{}";
+        int depth = 0, start = i;
+        for (int j = i; j < json.length(); j++) {
+            char c = json.charAt(j);
+            if (c == '{') depth++;
+            else if (c == '}') { depth--; if (depth == 0) return json.substring(start, j + 1); }
+        }
+        return "{}";
+    }
+
+    /** Splits a top-level array-of-objects value into raw {...} substrings. */
+    private static List<String> extractObjectArray(String json, String key) {
+        List<String> result = new ArrayList<>();
+        String marker = "\"" + key + "\":";
+        int i = json.indexOf(marker);
+        if (i < 0) return result;
+        i += marker.length();
+        while (i < json.length() && json.charAt(i) != '[') i++;
+        if (i >= json.length()) return result;
+        int arrEnd = i, depth = 0;
+        for (int j = i; j < json.length(); j++) {
+            char c = json.charAt(j);
+            if (c == '[') depth++;
+            else if (c == ']') { depth--; if (depth == 0) { arrEnd = j; break; } }
+        }
+        String inner = json.substring(i + 1, arrEnd);
+        int objDepth = 0, objStart = -1;
+        for (int j = 0; j < inner.length(); j++) {
+            char c = inner.charAt(j);
+            if (c == '{') { if (objDepth == 0) objStart = j; objDepth++; }
+            else if (c == '}') { objDepth--; if (objDepth == 0 && objStart >= 0) result.add(inner.substring(objStart, j + 1)); }
+        }
+        return result;
     }
 
     // ══════════════════════════════════════════════════════════════════════

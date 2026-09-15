@@ -25,6 +25,7 @@ javac -encoding UTF-8 -d bin -cp "bin%LIBCP%" ^
   src\loci\LociIdentifier.java ^
   src\loci\LociProgress.java ^
   src\analysis\ContentHasher.java ^
+  src\analysis\StatsUtil.java ^
   src\analysis\StepManifest.java ^
   src\analysis\LocusGwasExtractor.java ^
   src\analysis\SnpMatcher.java ^
@@ -39,6 +40,9 @@ javac -encoding UTF-8 -d bin -cp "bin%LIBCP%" ^
   src\analysis\CojoAdapter.java ^
   src\analysis\SusieAdapter.java ^
   src\analysis\FinemapAdapter.java ^
+  src\analysis\ColocAdapter.java ^
+  src\analysis\GwamaAdapter.java ^
+  src\analysis\SusiexAdapter.java ^
   src\analysis\AnalysisColumnProvider.java ^
   src\analysis\BaseStepPipeline.java ^
   src\export\ColumnSpec.java ^
@@ -60,6 +64,7 @@ javac -encoding UTF-8 -d bin -cp "bin%LIBCP%" ^
   src\ProgressTracker.java ^
   src\LociParser.java ^
   src\GwasParser.java ^
+  src\GwasQc.java ^
   src\GffParser.java ^
   src\MultiLocusProgress.java ^
   src\MultiLocusMerger.java ^

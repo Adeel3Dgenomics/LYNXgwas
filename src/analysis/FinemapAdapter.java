@@ -35,22 +35,27 @@ public class FinemapAdapter {
             if (parts.length >= 2) posLookup.put(parts[0] + ":" + parts[1], i);
         }
 
-        // Read BIM for ref panel SNP IDs
+        // Read BIM for ref panel SNP IDs and alleles (needed to orient ref-panel frequency below —
+        // a reference panel reports freq for its own A1, which may not be the GWAS effect allele).
         Map<String, String> posToRefId = new LinkedHashMap<>();
+        Map<String, String> refBimA1 = new LinkedHashMap<>();
+        Map<String, String> refBimA2 = new LinkedHashMap<>();
         File bimFile = new File(matchedDir, "matched_ref.bim");
         if (bimFile.exists()) {
             try (BufferedReader br = new BufferedReader(new FileReader(bimFile))) {
                 String line;
                 while ((line = br.readLine()) != null) {
                     String[] f = line.split("\t", -1);
-                    if (f.length < 4) continue;
+                    if (f.length < 6) continue;
                     String chr = f[0].replaceFirst("^chr", "");
                     posToRefId.put(chr + ":" + f[3].trim(), f[1]);
+                    refBimA1.put(f[1], f[4].toUpperCase());
+                    refBimA2.put(f[1], f[5].toUpperCase());
                 }
             }
         }
 
-        // Load ref panel frequencies (pre-computed by base pipeline)
+        // Load ref panel frequencies (pre-computed by base pipeline; freq is for the panel's own A1).
         Map<String, Double> refFreq = new LinkedHashMap<>();
         File refFreqFile = new File(matchedDir, "ref_freq.tsv");
         if (refFreqFile.exists()) {
@@ -65,6 +70,16 @@ public class FinemapAdapter {
                 }
             }
         }
+
+        /** Orients the ref panel's A1 frequency to the GWAS effect allele; null if alleles don't match either way. */
+        java.util.function.BiFunction<String, String, Double> orientedRefFreq = (refId, ea) -> {
+            Double rf = refFreq.get(refId);
+            if (rf == null || rf <= 0 || rf >= 1) return null;
+            String rA1 = refBimA1.get(refId), rA2 = refBimA2.get(refId);
+            if (ea.equals(rA1)) return rf;
+            if (ea.equals(rA2)) return 1.0 - rf;
+            return null; // allele mismatch (indel coding / strand issue) — don't guess
+        };
 
         // Write z-file (FINEMAP format: rsid chromosome position allele1 allele2 maf beta se)
         File zFile = new File(runDir, "finemap.z");
@@ -96,9 +111,9 @@ public class FinemapAdapter {
                 if (!mafStr.equals("NA")) {
                     try { freq = Double.parseDouble(mafStr); } catch (NumberFormatException e) {}
                 }
-                if (mafStr.equals("NA") || freq <= 0 || freq >= 1) {
-                    Double rf = refFreq.get(useId);
-                    if (rf != null && rf > 0 && rf < 1) freq = rf;
+                if ((mafStr.equals("NA") || freq <= 0 || freq >= 1) && refId != null) {
+                    Double rf = orientedRefFreq.apply(refId, ea.toUpperCase());
+                    if (rf != null) freq = rf;
                 }
 
                 pw.printf("%s %s %s %s %s %.4f %s %s%n",

@@ -131,6 +131,7 @@ public class LdCalculator {
                 "--ld-window",    "999999",
                 "--ld-window-kb", String.valueOf(windowKb),
                 "--ld-window-r2", "0.0",
+                "--allow-extra-chr",
                 "--out",          ldIdxPrefix,
                 "--silent"
             ));
@@ -162,6 +163,7 @@ public class LdCalculator {
             "--bfile",   subPrefix,
             "--r2",      "square",
             "--extract", extractFile,
+            "--allow-extra-chr",
             "--out",     ldPairPrefix,
             "--silent"
         ));

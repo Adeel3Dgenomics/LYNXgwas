@@ -1,0 +1,117 @@
+{
+  "nodes": [
+    {
+      "kind": "precaution",
+      "title": "GWAS summary-stat files are often not sorted by position within a chromosome",
+      "summary": "A GWAS parser that assumes sorted-by-position streaming will silently misassign SNPs to the wrong interval/locus when the input isn't actually sorted that way -- which is common for real GWAS files. Use an interval lookup structure instead of a sorted-streaming assumption so SNPs are assigned correctly regardless of file order.",
+      "detail": null,
+      "domain": "gwas/parsing",
+      "tags": [
+        "gwas",
+        "parsing",
+        "file-format"
+      ],
+      "trigger": "writing a new parser that reads a GWAS summary-statistics file and assigns SNPs to loci/regions by position",
+      "origin": null,
+      "attachments": [],
+      "snippet": null,
+      "id": "idea_0001",
+      "state": "seed",
+      "provenance": [
+        {
+          "project": "LYNXgwas",
+          "session": "extract-2026-09-14",
+          "ts": "2026-09-14T20:32:04+00:00"
+        }
+      ],
+      "growth_log": [
+        {
+          "session": "extract-2026-09-14",
+          "ts": "2026-09-14T20:32:04+00:00",
+          "event": "seeded",
+          "note": "first captured"
+        }
+      ],
+      "edges": [],
+      "embedding": [],
+      "novelty": null,
+      "recurrence": 1,
+      "last_touched": "2026-09-14T20:32:04+00:00"
+    },
+    {
+      "kind": "technique",
+      "title": "Fingerprint-based staleness check to skip unnecessary reprocessing",
+      "summary": "Hash the input file(s) + the relevant config + the pipeline/tool version together into one fingerprint per output; only reprocess when the fingerprint changes. Avoids rerunning expensive steps when nothing that could affect the output has actually changed, without needing a full dependency-graph system.",
+      "detail": null,
+      "domain": "pipeline-design",
+      "tags": [
+        "caching",
+        "pipeline-design"
+      ],
+      "trigger": null,
+      "origin": null,
+      "attachments": [],
+      "snippet": "fingerprint = sha256(input_file_bytes + json.dumps(relevant_config, sort_keys=True) + pipeline_version)",
+      "id": "idea_0002",
+      "state": "seed",
+      "provenance": [
+        {
+          "project": "LYNXgwas",
+          "session": "extract-2026-09-14",
+          "ts": "2026-09-14T20:32:04+00:00"
+        }
+      ],
+      "growth_log": [
+        {
+          "session": "extract-2026-09-14",
+          "ts": "2026-09-14T20:32:04+00:00",
+          "event": "seeded",
+          "note": "first captured"
+        }
+      ],
+      "edges": [],
+      "embedding": [],
+      "novelty": null,
+      "recurrence": 1,
+      "last_touched": "2026-09-14T20:32:04+00:00"
+    },
+    {
+      "kind": "technique",
+      "title": "JSONP-wrapped static JSON files for CORS-free local-filesystem serving",
+      "summary": "When a browser-based viewer needs to load many small per-item JSON files directly from the local filesystem (file:// URLs, no server), wrap each JSON payload in a JS function call (e.g. `loadLocus123({...})`) and load it via a <script> tag instead of fetch()/XHR -- script tags aren't subject to the same-origin/CORS restrictions that block local-file fetch() calls.",
+      "detail": null,
+      "domain": "web-frontend",
+      "tags": [
+        "cors",
+        "static-site",
+        "local-file"
+      ],
+      "trigger": "building a browser viewer that needs to load many separate JSON data files without running a server",
+      "origin": null,
+      "attachments": [],
+      "snippet": null,
+      "id": "idea_0003",
+      "state": "seed",
+      "provenance": [
+        {
+          "project": "LYNXgwas",
+          "session": "extract-2026-09-14",
+          "ts": "2026-09-14T20:32:04+00:00"
+        }
+      ],
+      "growth_log": [
+        {
+          "session": "extract-2026-09-14",
+          "ts": "2026-09-14T20:32:04+00:00",
+          "event": "seeded",
+          "note": "first captured"
+        }
+      ],
+      "edges": [],
+      "embedding": [],
+      "novelty": null,
+      "recurrence": 1,
+      "last_touched": "2026-09-14T20:32:04+00:00"
+    }
+  ]
+}

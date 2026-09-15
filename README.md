@@ -107,7 +107,10 @@ LYNXgwas/
 │   │   ├── AnalysisColumnProvider.java
 │   │   ├── SusieAdapter.java
 │   │   ├── FinemapAdapter.java
-│   │   └── CojoAdapter.java
+│   │   ├── CojoAdapter.java
+│   │   ├── ColocAdapter.java
+│   │   ├── GwamaAdapter.java
+│   │   └── SusiexAdapter.java     # cross-project — not a PluginEngine tool
 │   │
 │   └── export/                   # Excel export module
 │       ├── ExcelExporter.java
@@ -175,6 +178,8 @@ LYNXgwas/
 | `PlinkSubsetter.java` | Runs `plink --bfile --chr --from-bp --to-bp --make-bed` to cut a region from the reference panel per locus. Also runs `plink --clump` for loci identification. `findPlink()` searches PATH and common install locations. |
 | `GenomeSkyline.java` | Builds a genome-wide binned Manhattan signal array. Written to `data/skyline.json`. Powers the mini-overview strip in the viewer. |
 | `SnpAnnotator.java` | Queries NCBI dbSNP E-utilities to fetch rsIDs for lead SNPs that lack them. Used when no rsID column is mapped and no top SNP file is provided. |
+| `GwasQc.java` | Genome-wide inflation/confounding triage: streams the full GWAS file once, converts each p-value to a chi-square statistic (via `StatsUtil.qnorm`), and reports the genomic inflation factor λ<sub>GC</sub> (flagged above 1.1). Accepts an optional user-supplied LDSC intercept to derive the attenuation ratio `(intercept-1)/(mean_chi2-1)`, which separates genuine polygenicity from confounding. Not LD-pruned — a quick triage signal, not a substitute for a real LDSC run. Cached to `data/qc.json` by GWAS-file content hash. |
+| `StatsUtil.java` | Small self-contained statistics helpers (no external math dependency): `qnorm()` (inverse normal CDF, Acklam's approximation) and `zToP()`/`erfc()` (accurate two-sided p-value from a z-score, avoiding the 1-CDF cancellation that floors extreme p-values). `deriveBetaSeFromOrP()` back-derives beta/SE from OR+p-value for GWAS files that report only the former. |
 | `JsonExporter.java` | Serializes `LocusOutput` to JSON (hand-built, no library). Writes `locus_N.json`, `locus_N.js` (JSONP wrapper), and `manifest.json`. `exportManifest()` writes the project-level locus index. |
 | `LocusUpdater.java` | Handles live locus operations from the viewer: `update()` (resize boundaries), `create()` (new locus), `split()` (divide into sub-loci), `validateSplit()` (cross-region LD check). Each operation re-streams GWAS, re-runs PLINK, and re-exports JSON for the affected locus. |
 | `LociMutationService.java` | Higher-level service wrapping `LocusUpdater`; handles the merge + re-export + manifest rebuild after mutations. |
@@ -213,16 +218,19 @@ LYNXgwas/
 | `PluginEngine.java` | Discovers tool YAML descriptors from `tools/`, runs them per locus. Manages job lifecycle, cancellation, and result storage. |
 | `ToolDescriptor.java` | Parses a tool YAML into a descriptor: `tool`, `label`, `language`, `command`, `requires`, `params`, `output_mapping`. |
 | `BaseStepPipeline.java` | Abstract pipeline for each tool run: (1) extract GWAS for locus, (2) harmonize alleles, (3) match to ref panel, (4) compute LD matrix, (5) run LD-GWAS diagnostic, (6) write input contract, (7) execute tool subprocess, (8) validate output contract, (9) store results. |
-| `LocusGwasExtractor.java` | Extracts SNPs for a single locus into a `harmonized_gwas.tsv` for tool input. |
-| `AlleleHarmonizer.java` | Aligns GWAS alleles to reference panel alleles (handles strand flips, palindromic SNPs). |
+| `LocusGwasExtractor.java` | Extracts SNPs for a single locus into `base/locus_gwas.tsv`. Also back-derives missing beta/SE from OR+p-value (`StatsUtil.deriveBetaSeFromOrP`) and recomputes a literal/floored p=0 from beta/se via the chi-square survival function, so GWAS files that report only OR, or whose source tool's own p-value underflowed, still produce usable SNPs. |
+| `AlleleHarmonizer.java` | Aligns GWAS alleles to reference panel alleles (handles strand flips). Palindromic SNPs (A/T, C/G) can't be strand-resolved from allele letters alone, so they're resolved by comparing the ref panel's A1 frequency against the GWAS's own effect-allele frequency, and dropped (not guessed) when either MAF is too close to 0.5 to be informative or the frequencies don't clearly support one orientation. |
 | `SnpMatcher.java` | Matches GWAS SNPs to reference panel variants for the analysis input. |
 | `LdMatrixComputer.java` | Computes the full LD r/r² matrix for analysis tools (dense square matrix, written to `ld_r.matrix`). |
 | `LdGwasDiagnostic.java` | DENTIST-style LD–GWAS consistency check. Flags SNPs whose z-score is inconsistent with LD neighbours. Writes `consistency_report.tsv`. |
 | `InputContractWriter.java` | Writes all input files (`harmonized_gwas.tsv`, `matched_ref.txt`, `ld_r.matrix`, `ld_snp_order.txt`) expected by tool scripts. |
 | `OutputContractValidator.java` | Validates tool output files against the `output_mapping` spec. |
-| `SusieAdapter.java` | Adapts SuSiE output columns (`chr`, `pos`, `susie_pip`, `susie_cs`, `susie_cs_coverage`) into the annotation system. Requires sample size N to be set. |
-| `FinemapAdapter.java` | Adapts FINEMAP output columns (`chr`, `pos`, `finemap_pip`, `finemap_log10bf`) into the annotation system. Falls back to ref-panel allele frequency when the GWAS row's own MAF is missing or out of range. Requires sample size N to be set. |
+| `SusieAdapter.java` | Adapts SuSiE output columns (`chr`, `pos`, `susie_pip`, `susie_cs`, `susie_cs_coverage`) into the annotation system. Uses `susieR::susie_rss` on a bigsnpr-computed, Ledoit-Wolf-shrunk LD matrix. Requires sample size N to be set. |
+| `FinemapAdapter.java` | Single-causal-variant Wakefield ABF fine-mapping (chr, pos, `finemap_pip`, `finemap_log10bf`) — a lightweight approximation, not the real multi-causal FINEMAP shotgun-stochastic-search binary. Falls back to ref-panel allele frequency when the GWAS row's own MAF is missing or out of range. Requires sample size N to be set. |
 | `CojoAdapter.java` | Prepares GCTA `--cojo-slct` input with allele/freq orientation verified against the ref panel, runs conditional & joint selection plus a `--cojo-cond` pass for conditional p-values on every SNP, and auto-retries at a looser collinearity threshold when the joint estimates look like artifacts (effect inflation, sign flips). Adapts output columns (`cojo_pJ`, `cojo_bJ`, `cojo_bJ_se`, `cojo_pC`, `cojo_bC`, `cojo_bC_se`, `cojo_selected`, plus `chr`/`pos`) into the annotation system, and writes a reliability verdict + artifact flags to `cojo_diag.json`. |
+| `ColocAdapter.java` | Joins this locus's own harmonized GWAS (trait 1) against an externally supplied second trait's summary stats file (trait 2, auto-detects chr/pos/ea/nea/beta/se/maf column names), harmonizes alleles, and generates an R script calling `coloc::coloc.abf`. Writes a raw `SNP.PP.H4`/`SNP.PP.H3`/`SNP.PP.H0` output that the generic `PluginEngine.mapOutput()` maps per `coloc.yaml`, plus a `coloc_summary.json` with the standard PP.H4 interpretation scale (&ge;0.75 strong / &ge;0.50 moderate / 0.10&ndash;0.50 weak / &lt;0.10 none). Optional `restrict_to_finemapped` param narrows the tested SNP set to a prior SuSiE/FINEMAP/COJO run's high-confidence SNPs at this locus instead of the whole region. |
+| `GwamaAdapter.java` | Writes a single-cohort GWAMA input file (`MARKERNAME`/`EA`/`NEA`/`BETA`/`SE`/`N`/`EAF`/`STRAND`) from `harmonized_gwas.tsv`. Only meta-analyzes one cohort today (a genomic-control pass-through) — real multi-cohort combination needs a cross-project runner like `SusiexAdapter`. |
+| `SusiexAdapter.java` | Cross-ancestry fine-mapping via the external [SuSiEx](https://github.com/getian107/SuSiEx) tool. Unlike the tools above this is **not** a per-locus, single-project `tools/*.yaml` plugin — it takes harmonized GWAS + the matched-ref PLINK subset from *multiple projects* at once (driven by `LocalServer#susiexRun`, not `PluginEngine`) and jointly fine-maps a shared locus across ancestries. Output-schema-tolerant parser (SuSiEx's exact output columns vary by version): looks for a PIP-like and an id-like column by name rather than a fixed position. |
 | `StepManifest.java` | Records which pipeline steps completed, their timestamps and content hashes (for caching/skip logic). |
 | `ContentHasher.java` | SHA-256 hashing of input files to detect changes between runs. |
 | `StableSnpId.java` | Generates stable SNP identifiers (chr:pos:a1:a2 canonical form) for cross-step matching. |
@@ -381,6 +389,18 @@ Per-project analysis (triggered from **Analysis** button).
 
 ---
 
+#### SuSiEx Modal (cross-ancestry fine-mapping)
+
+Triggered by the **SuSiEx** toolbar button (top-level, not per-project — it spans projects).
+- Pick 2+ projects (checkboxes), then a locus dropdown per selected project (populated from that
+  project's manifest) — the locus that corresponds to the shared region being fine-mapped.
+- Params: max causal signals (L), p-value threshold, MAF threshold, PLINK path, and the local path
+  to `SuSiEx.py` (external tool, not bundled).
+- Run polls `/api/susiex-progress` then renders `/api/susiex-result` as a SNP × PIP × credible-set
+  table, sorted by PIP.
+
+---
+
 ### `viewer.html` — Interactive Locus Viewer
 
 Single-file viewer (~4,500 lines). Uses D3.js for all rendering.
@@ -505,7 +525,9 @@ output_mapping:
 | `finemap.yaml` | FINEMAP (ABF) | R | `finemap_pip`, `finemap_log10bf`, `finemap_cs` |
 | `cojo_conditional.yaml` | COJO Conditional & Joint (GCTA `--cojo-slct`) | R | `cojo_pJ`, `cojo_bJ`, `cojo_bJ_se`, `cojo_pC`, `cojo_bC`, `cojo_bC_se`, `cojo_selected` |
 | `coloc.yaml` | Colocalisation (coloc) | R | `coloc_pp_h4`, `coloc_pp_h3`, `coloc_pp_h0` |
-| `gwama_meta.yaml` | GWAMA Meta-Analysis | binary | `gwama_beta`, `gwama_se`, `gwama_p`, `gwama_direction`, `gwama_i2` |
+| `gwama_meta.yaml` | GWAMA Meta-Analysis (single-cohort pass-through today) | binary | `gwama_beta`, `gwama_se`, `gwama_p`, `gwama_direction`, `gwama_i2` |
+
+Not a `tools/*.yaml` plugin — see below: **SuSiEx** (cross-ancestry fine-mapping across multiple projects at once), driven by its own `/api/susiex-*` endpoints and the **SuSiEx** toolbar button in `index.html`, since it needs more than one project's artifacts simultaneously and doesn't fit the one-project-one-locus `PluginEngine` model. Requires an external [SuSiEx](https://github.com/getian107/SuSiEx) install (path supplied in the run form) — LYNXgwas prepares each selected project/locus's summary stats in SuSiEx's expected column layout and points `--ld_file` straight at that project's already-computed `matched_ref` PLINK subset.
 
 ---
 
@@ -524,6 +546,8 @@ All endpoints served by `LocalServer.java` on port 8765.
 | `/api/project/{id}/config` | POST | Write project config (wizard submit) |
 | `/api/project/{id}/manifest` | GET | Locus index (names, coords, top SNPs) |
 | `/api/project/{id}/locus/{n}` | GET | Full locus JSON (SNPs, genes, LD, annotations) |
+| `/api/project/{id}/qc` | GET | Genomic inflation factor (λ<sub>GC</sub>), cached by GWAS-file content hash |
+| `/api/project/{id}/qc` | POST | `{"ldsc_intercept":1.02}` — same as GET plus the attenuation ratio against a user-supplied LDSC intercept |
 | `/api/project-delete` | POST | `{"id":"x"}` — delete project directory |
 
 ### Locus Mutations (from viewer)
@@ -563,6 +587,14 @@ All endpoints served by `LocalServer.java` on port 8765.
 | `/api/project/{id}/analysis/tool-result` | GET | Get tool output columns |
 | `/api/project/{id}/analysis/cancel-tool` | POST | Cancel a running tool job |
 | `/api/project/{id}/analysis/locus-log/{locusId}` | GET | Read a locus's `build.log` from the base pipeline |
+
+### SuSiEx (Cross-Ancestry Fine-Mapping)
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/api/susiex-run` | POST | `{"members":[{"project_id","locus_index"}, ...], "params":{...}}` — at least 2 members. Auto-builds each member's base-pipeline artifacts if missing, then runs the external SuSiEx tool. |
+| `/api/susiex-progress` | GET | `?job=<id>` — `{"status":"running"\|"done"\|"error", "error":...}` |
+| `/api/susiex-result` | GET | `?job=<id>` — `{"ok","n_credible_sets","rows":[{"snp_id","chr","pos","pip","cs_id"}, ...]}` |
 
 ### Annotations and Export
 

@@ -46,6 +46,23 @@ public class BaseStepPipeline {
         }
     }
 
+    // MHC/extended-HLA region (chr6) has extreme, unusual LD structure that breaks the statistical
+    // assumptions behind fine-mapping/colocalization (SuSiE, FINEMAP, COJO, coloc, SuSiEx) — results
+    // there aren't trustworthy without special handling, and its LD density can also OOM naive
+    // LD-matrix computation. We don't block analysis (a user may deliberately want to look here),
+    // just surface a clear warning wherever this locus is analyzed.
+    private static final long MHC_GRCH37_START = 28_477_897L, MHC_GRCH37_END = 33_448_354L;
+    private static final long MHC_GRCH38_START = 28_510_120L, MHC_GRCH38_END = 33_480_577L;
+
+    public static boolean overlapsMhc(Locus locus, String genomeBuild) {
+        String chr = locus.chr.replaceFirst("^chr", "");
+        if (!chr.equals("6")) return false;
+        boolean grch38 = "GRCh38".equalsIgnoreCase(genomeBuild);
+        long mhcStart = grch38 ? MHC_GRCH38_START : MHC_GRCH37_START;
+        long mhcEnd   = grch38 ? MHC_GRCH38_END   : MHC_GRCH37_END;
+        return locus.start <= mhcEnd && locus.end >= mhcStart;
+    }
+
     /**
      * Get the analysis root directory for a locus.
      */
@@ -84,6 +101,11 @@ public class BaseStepPipeline {
         log.add(String.format("Region: chr%s:%d-%d (padded %d-%d)", locus.chr, locus.start, locus.end, locus.paddedStart, locus.paddedEnd));
         log.add(String.format("Ref panel: %s (%s)", config.refPanelPath, config.refPanelPopulation));
         log.add(String.format("LD window: %d SNPs each side", ldWindow));
+        if (overlapsMhc(locus, config.genomeBuild)) {
+            log.add("WARNING: This locus overlaps the MHC/extended-HLA region. Its unusual LD structure");
+            log.add("  breaks the statistical assumptions behind fine-mapping/colocalization (SuSiE, FINEMAP,");
+            log.add("  COJO, coloc, SuSiEx) -- treat PIPs/credible sets/coloc results here with caution.");
+        }
         log.add("");
 
         // Step 1: Extract
@@ -177,8 +199,8 @@ public class BaseStepPipeline {
             return pr;
         }
         pr.harmonizedSnps = harm.kept + harm.flipped + harm.complemented;
-        log.add(String.format("  OK: %d kept, %d flipped, %d complemented",
-            harm.kept, harm.flipped, harm.complemented));
+        log.add(String.format("  OK: %d kept, %d flipped, %d complemented, %d dropped (%d palindromic/unresolvable)",
+            harm.kept, harm.flipped, harm.complemented, harm.dropped, harm.droppedPalindromic));
 
         // Step 4: LD
         log.add("[Step 4] LD matrix computation...");

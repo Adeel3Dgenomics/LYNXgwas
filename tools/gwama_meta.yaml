@@ -1,10 +1,11 @@
 tool: gwama_meta
 version: "1.0"
 label: "GWAMA Meta-Analysis"
-description: "Genome-wide association meta-analysis using fixed or random effects models."
+description: "Genome-wide association meta-analysis using fixed or random effects models. Currently runs on this locus's own single cohort (a pass-through / genomic-control recalibration); true multi-cohort meta-analysis requires combining cohorts across projects."
 language: binary
 command: "{gwama_path} -i {run_dir}/gwama_input.txt -o {run_dir}/gwama_result -qt --genomic_control --indel_alleles"
 requires: [harmonized_gwas]
+output_key: rs_number
 params:
   - {name: gwama_path, type: string, default: "GWAMA", label: "GWAMA binary path"}
   - {name: model, type: select, default: "fixed", label: "Meta-analysis model", options: ["fixed", "random"]}
