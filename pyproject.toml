@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lynxgwas"
-version = "0.1.1"
+version = "0.1.2"
 description = "Locus analYsis and geNomic eXplorer — local GWAS loci, LD, and fine-mapping viewer"
 readme = "README.md"
 license = "MIT"
