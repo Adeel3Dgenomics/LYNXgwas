@@ -36,6 +36,11 @@ projects at once.
 
 ![LYNXgwas locus viewer](https://raw.githubusercontent.com/AlsammanAlsamman/LYNXgwas/main/assets/screenshots/viewer.png)
 
+*Screenshots use real public data: the [PGC3 schizophrenia GWAS](https://doi.org/10.6084/m9.figshare.19426775)
+(Trubetskoy et al. 2022, [Nature](https://doi.org/10.1038/s41586-022-04434-5)) at the well-known
+CACNA1C locus (lead SNP rs2238057, p=8.5×10⁻²²), with LD from the 1000 Genomes Phase 3 EUR panel
+and gene annotation from GENCODE.*
+
 ## Install
 
 ```bash
