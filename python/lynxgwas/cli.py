@@ -57,6 +57,10 @@ def ensure_workspace_assets(workspace: Path) -> None:
     dest_assets = workspace / "assets"
     if not dest_assets.exists():
         shutil.copytree(web / "assets", dest_assets)
+    dest_images = workspace / "docs" / "images"
+    if not dest_images.exists():
+        dest_images.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(web / "docs" / "images", dest_images)
     dest_tools = workspace / "tools"
     if not dest_tools.exists():
         shutil.copytree(bundled_path("tools"), dest_tools)

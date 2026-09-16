@@ -39,7 +39,10 @@ def copy_web() -> None:
     reset(dest)
     shutil.copy2(ROOT / "index.html", dest / "index.html")
     shutil.copy2(ROOT / "viewer.html", dest / "viewer.html")
-    shutil.copytree(ROOT / "assets", dest / "assets")
+    # README-only images (screenshots) don't belong in the runtime app bundle
+    shutil.copytree(ROOT / "assets", dest / "assets", ignore=shutil.ignore_patterns("screenshots"))
+    # index.html/viewer.html reference the logo/favicon at this exact relative path
+    shutil.copytree(ROOT / "docs" / "images", dest / "docs" / "images")
 
 
 def copy_tools() -> None:
