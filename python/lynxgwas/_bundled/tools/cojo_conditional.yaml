@@ -1,0 +1,16 @@
+tool: cojo_conditional
+version: "2.2"
+label: "COJO Conditional & Joint Analysis (GCTA --cojo-slct)"
+description: "Stepwise conditional & joint analysis using GCTA --cojo-slct. Identifies independently associated SNPs via forward-backward model selection."
+language: R
+command: "source('{run_dir}/run_cojo.R')"
+requires: [harmonized_gwas, matched_ref]
+params:
+  - {name: gcta_path,  type: string, default: "bin/gcta64.exe", label: "GCTA binary path", description: "Path to GCTA executable (in bin/)."}
+  - {name: p_cutoff,   type: float,  default: "5e-8", label: "Selection p-value threshold (--cojo-p)"}
+  - {name: collinear,  type: float,  default: "0.9",  label: "Collinearity threshold (--cojo-collinear)"}
+output_mapping:
+  - {raw: cojo_pJ,       as: cojo_pJ,       scope: per_snp, type: double}
+  - {raw: cojo_bJ,       as: cojo_bJ,       scope: per_snp, type: double}
+  - {raw: cojo_bJ_se,    as: cojo_bJ_se,    scope: per_snp, type: double}
+  - {raw: cojo_selected, as: cojo_selected,  scope: per_snp, type: string}

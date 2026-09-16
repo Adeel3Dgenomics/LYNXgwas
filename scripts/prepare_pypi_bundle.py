@@ -1,0 +1,66 @@
+"""Regenerate python/lynxgwas/_bundled/ from the current Java build output.
+
+Run this after `build.bat` and before building the PyPI wheel/sdist. It never
+edits src/, bin/, or lib/ — it only copies from them.
+"""
+import shutil
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+BUNDLED = ROOT / "python" / "lynxgwas" / "_bundled"
+
+
+def reset(path: Path) -> None:
+    if path.exists():
+        shutil.rmtree(path)
+    path.mkdir(parents=True)
+
+
+def copy_classes() -> None:
+    dest = BUNDLED / "classes"
+    reset(dest)
+    src = ROOT / "bin"
+    for item in src.rglob("*.class"):
+        rel = item.relative_to(src)
+        target = dest / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(item, target)
+
+
+def copy_lib() -> None:
+    dest = BUNDLED / "lib"
+    reset(dest)
+    for jar in (ROOT / "lib").glob("*.jar"):
+        shutil.copy2(jar, dest / jar.name)
+
+
+def copy_web() -> None:
+    dest = BUNDLED / "web"
+    reset(dest)
+    shutil.copy2(ROOT / "index.html", dest / "index.html")
+    shutil.copy2(ROOT / "viewer.html", dest / "viewer.html")
+    shutil.copytree(ROOT / "assets", dest / "assets")
+
+
+def copy_tools() -> None:
+    dest = BUNDLED / "tools"
+    reset(dest)
+    for yaml_file in (ROOT / "tools").glob("*.yaml"):
+        shutil.copy2(yaml_file, dest / yaml_file.name)
+
+
+def main() -> None:
+    if not (ROOT / "bin").exists():
+        raise SystemExit("bin/ not found — run build.bat first")
+    copy_classes()
+    copy_lib()
+    copy_web()
+    copy_tools()
+    n_classes = len(list((BUNDLED / "classes").rglob("*.class")))
+    n_jars = len(list((BUNDLED / "lib").glob("*.jar")))
+    print(f"Bundled {n_classes} class files, {n_jars} jar(s), web assets, and tool descriptors "
+          f"into {BUNDLED}")
+
+
+if __name__ == "__main__":
+    main()

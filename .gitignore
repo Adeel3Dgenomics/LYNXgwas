@@ -14,6 +14,11 @@ bin/
 # Third-party libraries
 lib/
 
+# ...except the jar(s) bundled into the PyPI package (small, redistributable)
+!python/lynxgwas/_bundled/
+!python/lynxgwas/_bundled/lib/
+!python/lynxgwas/_bundled/lib/*.jar
+
 # Generated output (data files, PLINK subsets, LD results, tmp)
 output/data/
 output/plink_subsets/
@@ -43,3 +48,11 @@ AI_prompt*
 precodes/
 *.exe
 *.pdf
+
+# Python packaging build artifacts
+dist/
+build/
+*.egg-info/
+__pycache__/
+*.pyc
+.venv-build/

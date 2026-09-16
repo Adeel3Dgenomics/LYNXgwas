@@ -1,0 +1,2282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LYNXgwas</title>
+<link rel="icon" type="image/png" href="docs/images/icon.png">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: #f5f6f8; color: #1a1a2e; line-height: 1.5;
+}
+
+/* ── Header ──────────────────────────────────────── */
+header {
+  background: linear-gradient(135deg, #0F6E56 0%, #1a3a4a 100%);
+  color: #fff; padding: 2rem 2rem;
+  display: flex; align-items: center; gap: 1.5rem; flex-wrap: wrap;
+}
+header .logo {
+  width: 90px; height: 90px; border-radius: 50%;
+  border: 3px solid rgba(255,255,255,0.25);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+  object-fit: cover; flex-shrink: 0;
+}
+header .title-block { flex: 1; min-width: 200px; }
+header h1 { font-size: 1.8rem; font-weight: 800; letter-spacing: 0.5px; }
+header .subtitle { font-size: 0.95rem; opacity: 0.85; margin-top: 0.15rem; }
+header .meta { font-size: 0.78rem; opacity: 0.7; display: flex; gap: 1.2rem; flex-wrap: wrap; margin-top: 0.4rem; }
+header .meta a { color: #FAC775; text-decoration: none; }
+header .meta a:hover { text-decoration: underline; }
+
+/* ── Main ────────────────────────────────────────── */
+main { max-width: 1600px; margin: 0 auto; padding: 1.5rem 2rem; }
+
+/* ── Toolbar ─────────────────────────────────────── */
+.toolbar {
+  display: flex; gap: 0.75rem; align-items: center;
+  margin-bottom: 1rem; flex-wrap: wrap;
+}
+.toolbar h2 { flex: 1; font-size: 1.1rem; font-weight: 600; }
+.btn {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  padding: 0.5rem 1rem; border: none; border-radius: 6px;
+  font-size: 0.85rem; font-weight: 500; cursor: pointer;
+  transition: background 0.15s;
+}
+.btn-primary { background: #0F6E56; color: #fff; }
+.btn-primary:hover { background: #0b5a46; }
+.btn-secondary { background: #e2e6ea; color: #333; }
+.btn-secondary:hover { background: #d0d4d8; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── Table ───────────────────────────────────────── */
+.table-wrap { background: #fff; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); overflow: hidden; min-height: 300px; }
+.btn-danger { background: #dc2626; color: #fff; }
+.btn-danger:hover { background: #b91c1c; }
+table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+thead th {
+  text-align: left; padding: 0.4rem 0.45rem; font-weight: 600;
+  background: #f9fafb; border-bottom: 2px solid #e5e7eb;
+  white-space: nowrap; font-size: 0.7rem; color: #555;
+  text-transform: uppercase; letter-spacing: 0.3px;
+}
+tbody tr { border-bottom: 1px solid #f0f0f0; cursor: pointer; transition: background 0.1s; }
+tbody tr:hover { background: #f0faf6; }
+td { padding: 0.35rem 0.45rem; white-space: nowrap; max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
+td.desc { white-space: normal; color: #666; }
+td.actions { overflow: visible; max-width: none; white-space: nowrap; }
+td.actions button { margin-right: 0.3rem; }
+
+/* ── Badges ──────────────────────────────────────── */
+.badge {
+  display: inline-block; padding: 0.15rem 0.55rem; border-radius: 10px;
+  font-size: 0.75rem; font-weight: 600; letter-spacing: 0.2px;
+}
+.badge-ok        { background: #d1fae5; color: #065f46; }
+.badge-stale     { background: #fef3c7; color: #92400e; }
+.badge-proc      { background: #dbeafe; color: #1e40af; }
+.badge-error     { background: #fee2e2; color: #991b1b; }
+
+/* ── Empty state ─────────────────────────────────── */
+.empty {
+  text-align: center; padding: 3rem; color: #888;
+}
+.empty p { margin-bottom: 0.5rem; }
+
+/* ── Manual panel ────────────────────────────────── */
+.manual-panel {
+  margin-top: 1.5rem; padding: 1rem 1.25rem;
+  background: #fff; border-radius: 10px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  font-size: 0.85rem; color: #555;
+}
+.manual-panel summary {
+  cursor: pointer; font-weight: 600; color: #333;
+  padding: 0.25rem 0;
+}
+.manual-panel code {
+  background: #f3f4f6; padding: 0.15rem 0.4rem; border-radius: 4px;
+  font-size: 0.82rem;
+}
+.manual-panel ol { margin: 0.5rem 0 0 1.5rem; }
+.manual-panel li { margin-bottom: 0.3rem; }
+
+/* ── Progress text ────────────────────────────────── */
+.progress-text { font-size: 0.75rem; color: #1e40af; margin-left: 0.3rem; }
+
+/* ── Wizard overlay ──────────────────────────────── */
+.wizard-overlay {
+  display: none; position: fixed; inset: 0; z-index: 1000;
+  background: rgba(0,0,0,0.45); justify-content: center; align-items: flex-start;
+  padding: 3rem 1rem; overflow-y: auto;
+}
+.wizard-overlay.open { display: flex; }
+.wizard-box {
+  background: #fff; border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,0.18);
+  width: 100%; max-width: 640px; padding: 1.5rem 2rem 1.25rem;
+}
+.wizard-box h3 { font-size: 1.15rem; margin-bottom: 0.25rem; }
+.wizard-steps {
+  display: flex; gap: 0.25rem; margin-bottom: 1.25rem;
+}
+.wizard-steps .step {
+  flex: 1; height: 4px; border-radius: 2px; background: #e5e7eb;
+}
+.wizard-steps .step.done { background: #0F6E56; }
+.wizard-steps .step.active { background: #3b82f6; }
+
+.wiz-field { margin-bottom: 1rem; }
+.wiz-field label { display: block; font-size: 0.82rem; font-weight: 600; color: #444; margin-bottom: 0.25rem; }
+.wiz-field input, .wiz-field select, .wiz-field textarea {
+  width: 100%; padding: 0.45rem 0.6rem; border: 1px solid #d1d5db; border-radius: 6px;
+  font-size: 0.88rem; font-family: inherit;
+}
+.wiz-field input:focus, .wiz-field select:focus { outline: none; border-color: #0F6E56; box-shadow: 0 0 0 2px rgba(15,110,86,0.15); }
+.wiz-field .hint { font-size: 0.75rem; color: #888; margin-top: 0.15rem; }
+.wiz-field .error-msg { font-size: 0.78rem; color: #dc2626; margin-top: 0.15rem; }
+.wiz-field .file-row { display: flex; gap: 0.5rem; }
+.wiz-field .file-row input { flex: 1; }
+.wiz-field .file-row button { white-space: nowrap; }
+
+.wiz-section-title { font-size: 0.85rem; font-weight: 600; color: #555; margin: 1rem 0 0.5rem; border-bottom: 1px solid #eee; padding-bottom: 0.25rem; }
+
+.wiz-footer {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid #eee;
+}
+.wiz-footer .step-label { font-size: 0.8rem; color: #888; }
+
+.wiz-summary-table { width: 100%; font-size: 0.85rem; border-collapse: collapse; }
+.wiz-summary-table td { padding: 0.3rem 0.5rem; border-bottom: 1px solid #f0f0f0; }
+.wiz-summary-table td:first-child { font-weight: 600; color: #555; width: 40%; }
+
+.wiz-col-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem 1rem; }
+.wiz-col-grid .wiz-field { margin-bottom: 0.5rem; }
+.wiz-col-required { border-left: 3px solid #0F6E56; padding-left: 0.75rem; }
+.wiz-col-optional { border-left: 3px solid #d1d5db; padding-left: 0.75rem; }
+</style>
+</head>
+<body>
+
+<header>
+  <img class="logo" src="docs/images/icon.png" alt="LYNXgwas">
+  <div class="title-block">
+    <h1>LYNXgwas</h1>
+    <div class="subtitle">Locus anal<b>Y</b>sis and ge<b>N</b>omic e<b>X</b>plorer</div>
+  </div>
+  <div class="meta">
+    <span id="version-label"></span>
+  </div>
+</header>
+
+<main>
+  <div class="toolbar">
+    <h2>Projects</h2>
+    <button class="btn btn-secondary" id="btn-process-all" onclick="processAllStale()" disabled>
+      Process all updated
+    </button>
+    <button class="btn btn-secondary" onclick="openToolsManager()">
+      Tools
+    </button>
+    <button class="btn btn-secondary" onclick="openMissingRsids()">
+      Missing rsIDs
+    </button>
+    <button class="btn btn-secondary" onclick="openLocusMatrix()">
+      Locus Matrix
+    </button>
+    <button class="btn btn-secondary" onclick="openSusiex()">
+      SuSiEx
+    </button>
+    <button class="btn btn-secondary" onclick="exportProjectsInfo()">
+      Info
+    </button>
+    <button class="btn btn-primary" id="btn-new" onclick="newProject()">
+      + New project
+    </button>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Description</th>
+          <th>Loci</th>
+          <th>SNPs</th>
+          <th>SNP sources</th>
+          <th>Locus sources</th>
+          <th>Last processed</th>
+          <th>Status</th>
+          <th>rsIDs</th>
+          <th>Loci source</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="project-tbody"></tbody>
+    </table>
+    <div class="empty" id="empty-state" style="display:none">
+      <p>No projects yet.</p>
+      <p>Click <b>+ New project</b> to create one, or add a project manually below.</p>
+    </div>
+  </div>
+
+  <div class="table-wrap" style="margin-top:1.5rem">
+    <h3 style="font-size:0.95rem;margin:0 0 0.5rem">Locus Matrix runs</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Datasets</th>
+          <th>Ref Panel</th>
+          <th>Loci</th>
+          <th>Status</th>
+          <th>Created</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="locus-matrix-tbody"></tbody>
+    </table>
+    <div class="empty" id="locus-matrix-empty" style="display:none">
+      <p>No Locus Matrix runs yet. Click <b>Locus Matrix</b> above to compare datasets.</p>
+    </div>
+  </div>
+
+  <details class="manual-panel">
+    <summary>Add a project manually</summary>
+    <ol>
+      <li>Copy <code>projects/config.properties.template</code> to <code>projects/your_project_id/config.properties</code></li>
+      <li>Edit the config file &mdash; set paths to your GWAS file, loci file, GFF3, and reference panel</li>
+      <li>Map your GWAS column names (<code>col.chr</code>, <code>col.pos</code>, <code>col.pvalue</code>, <code>col.ea</code>, <code>col.nea</code>)</li>
+      <li>Run <code>run.bat</code> &mdash; it will detect the new project and process it automatically</li>
+    </ol>
+  </details>
+</main>
+
+  <!-- ── Resources & Settings panel ─────────────────────────── -->
+  <details class="manual-panel" style="margin-top:0.75rem">
+    <summary>Resources &amp; Settings</summary>
+    <div style="margin-top:0.75rem">
+      <h4 style="font-size:0.9rem;margin-bottom:0.5rem">SNP Databases</h4>
+      <div id="snpdb-list"></div>
+      <button class="btn btn-secondary" onclick="addSnpDatabase()" style="margin-top:0.4rem">+ Add SNP database</button>
+
+      <h4 style="font-size:0.9rem;margin:1rem 0 0.5rem">Reference Panels</h4>
+      <div id="refpanel-list"></div>
+      <button class="btn btn-secondary" onclick="addRefPanel()" style="margin-top:0.4rem">+ Add reference panel</button>
+
+      <h4 style="font-size:0.9rem;margin:1rem 0 0.5rem">API Providers</h4>
+      <p style="color:#666;font-size:0.82rem">NCBI dbSNP and gnomAD are available as fallback providers for rsID recovery. Enable them per-project in the "Add rsIDs" dialog. Rate limits: NCBI 3 req/s (higher with API key), gnomAD 5 req/s.</p>
+    </div>
+  </details>
+
+<!-- ── Get Loci modal ──────────────────────────────────────── -->
+<div class="wizard-overlay" id="loci-overlay">
+<div class="wizard-box" style="max-width:580px">
+  <div style="display:flex;justify-content:space-between;align-items:center">
+    <h3>Identify Loci</h3>
+    <button class="btn btn-secondary" onclick="lociClose()" style="padding:0.3rem 0.7rem">&times;</button>
+  </div>
+  <div id="loci-content"></div>
+</div>
+</div>
+
+<!-- ── rsID Recovery modal ────────────────────────────────── -->
+<div class="wizard-overlay" id="rsid-overlay">
+<div class="wizard-box" style="max-width:580px">
+  <div style="display:flex;justify-content:space-between;align-items:center">
+    <h3 id="rsid-title">Add rsIDs</h3>
+    <button class="btn btn-secondary" onclick="rsidClose()" style="padding:0.3rem 0.7rem">&times;</button>
+  </div>
+  <div id="rsid-content"></div>
+</div>
+</div>
+
+<!-- ── Project wizard overlay ──────────────────────────────── -->
+<div class="wizard-overlay" id="wizard-overlay">
+<div class="wizard-box">
+  <div style="display:flex;justify-content:space-between;align-items:center">
+    <h3 id="wiz-title">New project</h3>
+    <button class="btn btn-secondary" onclick="wizClose()" style="padding:0.3rem 0.7rem">&times;</button>
+  </div>
+  <div class="wizard-steps" id="wiz-steps-bar"></div>
+  <div id="wiz-content"></div>
+  <div class="wiz-footer">
+    <span class="step-label" id="wiz-step-label"></span>
+    <div style="display:flex;gap:0.5rem">
+      <button class="btn btn-secondary" id="wiz-prev" onclick="wizPrev()">Back</button>
+      <button class="btn btn-primary" id="wiz-next" onclick="wizNext()">Next</button>
+    </div>
+  </div>
+</div>
+</div>
+
+<script>
+const API = '';
+let projects = [];
+let pollTimers = {};
+
+async function loadProjects() {
+  try {
+    const resp = await fetch(API + '/api/projects');
+    projects = await resp.json();
+  } catch (e) {
+    projects = [];
+  }
+  render();
+}
+
+function render() {
+  const tbody = document.getElementById('project-tbody');
+  const empty = document.getElementById('empty-state');
+  const btnAll = document.getElementById('btn-process-all');
+
+  if (projects.length === 0) {
+    tbody.innerHTML = '';
+    empty.style.display = '';
+    btnAll.disabled = true;
+    return;
+  }
+  empty.style.display = 'none';
+
+  const hasStale = projects.some(p => p.status === 'needs_reprocessing');
+  btnAll.disabled = !hasStale;
+
+  tbody.innerHTML = projects.map(p => {
+    const name = p.name || p.id;
+    const desc = p.description || '';
+    const loci = p.loci_count != null ? p.loci_count : '—';
+    const snps = p.total_snps != null ? p.total_snps.toLocaleString() : '—';
+    const snpSrc = p.snp_annotation_sources != null ? p.snp_annotation_sources : '—';
+    const locSrc = p.locus_annotation_sources != null ? p.locus_annotation_sources : '—';
+    const last = p.last_processed ? formatDate(p.last_processed) : '—';
+    const badge = statusBadge(p);
+
+    return '<tr onclick="openProject(\'' + esc(p.id) + '\')" data-id="' + esc(p.id) + '">'
+      + '<td title="' + escAttr(name) + '"><b>' + esc(name) + '</b></td>'
+      + '<td class="desc" title="' + escAttr(desc) + '">' + esc(desc) + '</td>'
+      + '<td title="' + escAttr(String(loci)) + '">' + loci + '</td>'
+      + '<td title="' + escAttr(String(snps)) + '">' + snps + '</td>'
+      + '<td title="' + escAttr(String(snpSrc)) + '">' + snpSrc + '</td>'
+      + '<td title="' + escAttr(String(locSrc)) + '">' + locSrc + '</td>'
+      + '<td title="' + escAttr(last) + '">' + last + '</td>'
+      + '<td>' + badge + '</td>'
+      + '<td>' + rsidBadge(p) + '</td>'
+      + '<td>' + lociBadge(p) + '</td>'
+      + '<td class="actions" onclick="event.stopPropagation()">'
+      + '<button class="btn btn-secondary" onclick="editConfig(\'' + esc(p.id) + '\')" title="Edit configuration">Edit</button>'
+      + '<button class="btn btn-secondary" onclick="reprocess(\'' + esc(p.id) + '\')" title="Reprocess">Reprocess</button>'
+      + '<button class="btn btn-secondary" onclick="exportExcel(\'' + esc(p.id) + '\')" title="Export Excel">Excel</button>'
+      + '<button class="btn btn-secondary" style="background:#d1fae5;color:#065f46" onclick="openProjectAnalysis(\'' + esc(p.id) + '\')" title="Build analysis base artifacts">Analyze</button>'
+      + '<button class="btn btn-secondary" onclick="openGwasQc(\'' + esc(p.id) + '\')" title="Genomic inflation / confounding triage">QC</button>'
+      + '<button class="btn btn-danger" style="padding:0.2rem 0.6rem;font-size:0.75rem" onclick="deleteProject(\'' + esc(p.id) + '\')" title="Delete project">Delete</button>'
+      + '</td></tr>';
+  }).join('');
+
+  projects.filter(p => p.status === 'processing').forEach(p => startPolling(p.id));
+}
+
+function statusBadge(p) {
+  switch (p.status) {
+    case 'up_to_date':
+      return '<span class="badge badge-ok">Up to date</span>';
+    case 'needs_reprocessing':
+      return '<span class="badge badge-stale">Needs reprocessing</span>';
+    case 'processing':
+      return '<span class="badge badge-proc">Processing…</span>'
+        + '<span class="progress-text" id="ppct-' + esc(p.id) + '"></span>';
+    case 'error':
+      return '<span class="badge badge-error">Error</span>';
+    default:
+      return '<span class="badge">' + esc(p.status || 'unknown') + '</span>';
+  }
+}
+
+function startPolling(id) {
+  if (pollTimers[id]) return;
+  pollTimers[id] = setInterval(async function() {
+    try {
+      var resp = await fetch(API + '/api/project/' + encodeURIComponent(id) + '/progress');
+      var prog = await resp.json();
+      var el = document.getElementById('ppct-' + id);
+      if (el) el.textContent = prog.phase + ' (' + prog.pct + '%)';
+      if (prog.done) {
+        clearInterval(pollTimers[id]);
+        delete pollTimers[id];
+        loadProjects();
+      }
+    } catch (e) {
+      clearInterval(pollTimers[id]);
+      delete pollTimers[id];
+    }
+  }, 2000);
+}
+
+function openProject(id) {
+  window.location.href = 'viewer.html?project=' + encodeURIComponent(id);
+}
+
+// ══════════════════════════════════════════════════════════
+//  PROJECT WIZARD (Step 8)
+// ══════════════════════════════════════════════════════════
+
+var wiz = { step: 0, mode: 'create', editId: null, cfg: {}, gwasColumns: [] };
+var WIZ_STEPS = ['Basics', 'Files', 'Column mapping', 'Parameters', 'Preview'];
+var COL_ALIASES = {
+  chr: ['chr','chrom','chromosome','#chrom','#chr'],
+  pos: ['bp','pos','position','base_pair_location'],
+  pvalue: ['p','pval','pvalue','p_value','p-value','log10p'],
+  ea: ['a1','ea','effect_allele','allele1','alt'],
+  nea: ['a2','nea','other_allele','allele2','ref','non_effect_allele']
+};
+var OPT_ALIASES = {
+  rsid: ['snp','rsid','rs','markername','variant_id'],
+  beta: ['beta','effect','b'],
+  or: ['or','odds_ratio'],
+  se: ['se','stderr','standard_error'],
+  n: ['n','n_total','samplesize','sample_size'],
+  maf: ['maf','eaf','freq','a1freq'],
+  info: ['info','info_score','imputation_quality','r2']
+};
+
+function newProject() { wizOpen('create', null); }
+function editConfig(id) { wizOpen('edit', id); }
+
+function wizOpen(mode, editId) {
+  wiz = { step: 0, mode: mode, editId: editId, cfg: {}, gwasColumns: [] };
+  document.getElementById('wiz-title').textContent = mode === 'edit' ? 'Edit project' : 'New project';
+  if (mode === 'edit') {
+    fetch(API + '/api/project/' + encodeURIComponent(editId) + '/config')
+      .then(function(r) { return r.json(); })
+      .then(function(c) { wiz.cfg = c; wiz.cfg._id = editId; wizRender(); })
+      .catch(function() { wiz.cfg = { _id: editId }; wizRender(); });
+    var p = projects.find(function(x) { return x.id === editId; });
+    if (p) { wiz.cfg._name = p.name; wiz.cfg._desc = p.description; }
+  }
+  document.getElementById('wizard-overlay').classList.add('open');
+  wizRender();
+}
+
+function wizClose() {
+  document.getElementById('wizard-overlay').classList.remove('open');
+}
+
+function wizRender() {
+  var bar = document.getElementById('wiz-steps-bar');
+  bar.innerHTML = WIZ_STEPS.map(function(_, i) {
+    var cls = i < wiz.step ? 'step done' : (i === wiz.step ? 'step active' : 'step');
+    return '<div class="' + cls + '"></div>';
+  }).join('');
+  document.getElementById('wiz-step-label').textContent = 'Step ' + (wiz.step + 1) + ' of ' + WIZ_STEPS.length + ' — ' + WIZ_STEPS[wiz.step];
+  document.getElementById('wiz-prev').style.display = wiz.step === 0 ? 'none' : '';
+  var nextBtn = document.getElementById('wiz-next');
+  nextBtn.textContent = wiz.step === WIZ_STEPS.length - 1 ? (wiz.mode === 'edit' ? 'Save & reprocess' : 'Process') : 'Next';
+
+  var c = document.getElementById('wiz-content');
+  switch (wiz.step) {
+    case 0: wizRenderBasics(c); break;
+    case 1: wizRenderFiles(c); break;
+    case 2: wizRenderColumns(c); break;
+    case 3: wizRenderParams(c); break;
+    case 4: wizRenderPreview(c); break;
+  }
+}
+
+function wizPrev() { if (wiz.step > 0) { wizSaveFields(); wiz.step--; wizRender(); } }
+function wizNext() {
+  wizSaveFields();
+  var err = wizValidateStep();
+  if (err) { alert(err); return; }
+  if (wiz.step === 2 && wiz.gwasColumns.length === 0) {
+    var gf = wiz.cfg['gwas.file'] || '';
+    if (gf) { wizLoadColumns(gf, function() { wiz.step++; wizRender(); }); return; }
+  }
+  if (wiz.step < WIZ_STEPS.length - 1) { wiz.step++; wizRender(); }
+  else { wizSubmit(); }
+}
+
+function wizSaveFields() {
+  document.querySelectorAll('[data-wiz-key]').forEach(function(el) {
+    var key = el.getAttribute('data-wiz-key');
+    if (el.type === 'checkbox') wiz.cfg[key] = el.checked;
+    else wiz.cfg[key] = el.value;
+  });
+}
+
+function wizValidateStep() {
+  if (wiz.step === 0) {
+    if (!wiz.cfg._name || !wiz.cfg._name.trim()) return 'Project name is required.';
+    if (!wiz.cfg._id || !wiz.cfg._id.trim()) return 'Project ID is required.';
+    if (!/^[a-z0-9_-]+$/.test(wiz.cfg._id)) return 'Project ID must be lowercase letters, numbers, hyphens, or underscores.';
+  }
+  if (wiz.step === 1) {
+    if (!wiz.cfg['gwas.file']) return 'GWAS summary statistics file is required.';
+    // loci.file is optional — can be generated via "Get Loci" after project creation
+    if (!wiz.cfg['gff3.file']) return 'GFF3 annotation file is required.';
+  }
+  if (wiz.step === 2) {
+    if (!wiz.cfg['col.chr']) return 'Chromosome column mapping is required.';
+    if (!wiz.cfg['col.pos']) return 'Position column mapping is required.';
+    if (!wiz.cfg['col.pvalue']) return 'P-value column mapping is required.';
+    if (!wiz.cfg['col.ea']) return 'Effect allele (A1) column mapping is required.';
+    if (!wiz.cfg['col.nea']) return 'Other allele (A2) column mapping is required.';
+  }
+  if (wiz.step === 3) {
+    var sn = parseInt(wiz.cfg['sample.n'], 10);
+    if (!sn || sn <= 0) return 'Sample size (N) is required for analysis tools (COJO, SuSiE, FINEMAP).';
+    var nc = parseInt(wiz.cfg['n.cases'], 10);
+    var nctrl = parseInt(wiz.cfg['n.controls'], 10);
+    if ((!nc || nc <= 0) && (!nctrl || nctrl <= 0)) return 'N cases and N controls are required.';
+  }
+  return null;
+}
+
+// ── Step renderers ───────────────────────────────
+
+function wizRenderBasics(c) {
+  var isEdit = wiz.mode === 'edit';
+  var name = wiz.cfg._name || '';
+  var desc = wiz.cfg._desc || '';
+  var id = wiz.cfg._id || '';
+  c.innerHTML =
+    '<div class="wiz-field"><label>Project name</label>'
+    + '<input data-wiz-key="_name" value="' + escAttr(name) + '" placeholder="My GWAS Study" oninput="wizAutoSlug(this)">'
+    + '</div>'
+    + '<div class="wiz-field"><label>Description (optional)</label>'
+    + '<input data-wiz-key="_desc" value="' + escAttr(desc) + '" placeholder="Brief description">'
+    + '</div>'
+    + '<div class="wiz-field"><label>Project ID</label>'
+    + '<input data-wiz-key="_id" value="' + escAttr(id) + '" placeholder="my-gwas-study" ' + (isEdit ? 'disabled' : '') + '>'
+    + '<div class="hint">Folder name under projects/. Lowercase, no spaces.</div>'
+    + '</div>';
+}
+
+function wizAutoSlug(el) {
+  if (wiz.mode === 'edit') return;
+  var slug = el.value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  var idField = document.querySelector('[data-wiz-key="_id"]');
+  if (idField && !idField.disabled) idField.value = slug;
+  wiz.cfg._name = el.value;
+  wiz.cfg._id = slug;
+}
+
+function wizRenderFiles(c) {
+  var cfg = wiz.cfg;
+  c.innerHTML =
+    wizFileField('GWAS summary statistics', 'gwas.file', cfg['gwas.file'] || '')
+    + wizFileField('Loci definition file', 'loci.file', cfg['loci.file'] || '')
+    + wizFileField('GFF3 gene annotation', 'gff3.file', cfg['gff3.file'] || '')
+    + wizFileField('Reference panel (PLINK prefix)', 'ref.panel.path', cfg['ref.panel.path'] || '')
+    + '<div class="hint" style="margin-top:-0.5rem">Select any of .bed/.bim/.fam — the prefix is inferred.</div>';
+}
+
+function wizFileField(label, key, val) {
+  return '<div class="wiz-field"><label>' + label + '</label>'
+    + '<div class="file-row">'
+    + '<input data-wiz-key="' + key + '" value="' + escAttr(val) + '" placeholder="path/to/file">'
+    + '<button class="btn btn-secondary" onclick="wizPickFile(\'' + key + '\')">Browse</button>'
+    + '</div></div>';
+}
+
+function wizPickFile(key) {
+  fetch(API + '/pick-file')
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (!d.path) return;
+      var val = d.path;
+      if (key === 'ref.panel.path') {
+        val = val.replace(/\.(bed|bim|fam)$/i, '');
+      }
+      var el = document.querySelector('[data-wiz-key="' + key + '"]');
+      if (el) el.value = val;
+      wiz.cfg[key] = val;
+      if (key === 'gwas.file') wizLoadColumns(val);
+    })
+    .catch(function(e) {
+      alert('File picker unavailable. Please type the path manually in the input field.');
+    });
+}
+
+function wizLoadColumns(path, cb) {
+  fetch(API + '/api/peek-file-header?path=' + encodeURIComponent(path))
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      wiz.gwasColumns = d.columns || [];
+      if (wiz.gwasColumns.length > 0) wizAutoMap();
+      if (cb) cb();
+    })
+    .catch(function() { wiz.gwasColumns = []; if (cb) cb(); });
+}
+
+function wizAutoMap() {
+  var cols = wiz.gwasColumns.map(function(c) { return c.toLowerCase(); });
+  function findMatch(aliases) {
+    for (var i = 0; i < aliases.length; i++) {
+      var idx = cols.indexOf(aliases[i]);
+      if (idx >= 0) return wiz.gwasColumns[idx];
+    }
+    return '';
+  }
+  if (!wiz.cfg['col.chr'])    wiz.cfg['col.chr']    = findMatch(COL_ALIASES.chr);
+  if (!wiz.cfg['col.pos'])    wiz.cfg['col.pos']    = findMatch(COL_ALIASES.pos);
+  if (!wiz.cfg['col.pvalue']) wiz.cfg['col.pvalue'] = findMatch(COL_ALIASES.pvalue);
+  if (!wiz.cfg['col.ea'])     wiz.cfg['col.ea']     = findMatch(COL_ALIASES.ea);
+  if (!wiz.cfg['col.nea'])    wiz.cfg['col.nea']    = findMatch(COL_ALIASES.nea);
+  if (!wiz.cfg['col.rsid'])   wiz.cfg['col.rsid']   = findMatch(OPT_ALIASES.rsid);
+  if (!wiz.cfg['col.beta'])   wiz.cfg['col.beta']   = findMatch(OPT_ALIASES.beta);
+  if (!wiz.cfg['col.or'])     wiz.cfg['col.or']     = findMatch(OPT_ALIASES.or);
+  if (!wiz.cfg['col.se'])     wiz.cfg['col.se']     = findMatch(OPT_ALIASES.se);
+  if (!wiz.cfg['col.n'])      wiz.cfg['col.n']      = findMatch(OPT_ALIASES.n);
+  if (!wiz.cfg['col.maf'])    wiz.cfg['col.maf']    = findMatch(OPT_ALIASES.maf);
+  if (!wiz.cfg['col.info'])   wiz.cfg['col.info']   = findMatch(OPT_ALIASES.info);
+}
+
+function wizRenderColumns(c) {
+  if (wiz.gwasColumns.length === 0 && wiz.cfg['gwas.file']) {
+    c.innerHTML = '<p>Loading columns from GWAS file…</p>';
+    wizLoadColumns(wiz.cfg['gwas.file'], function() { wizRenderColumns(c); });
+    return;
+  }
+
+  var opts = '<option value="">— not mapped —</option>' + wiz.gwasColumns.map(function(col) {
+    return '<option value="' + escAttr(col) + '">' + esc(col) + '</option>';
+  }).join('');
+
+  function colSelect(label, key, required) {
+    var val = wiz.cfg[key] || '';
+    var selected = opts.replace('value="' + escAttr(val) + '"', 'value="' + escAttr(val) + '" selected');
+    var cls = required ? 'wiz-field wiz-col-required' : 'wiz-field wiz-col-optional';
+    return '<div class="' + cls + '"><label>' + label + (required ? ' *' : '') + '</label>'
+      + '<select data-wiz-key="' + key + '">' + selected + '</select></div>';
+  }
+
+  c.innerHTML =
+    '<div class="wiz-section-title">Required columns</div>'
+    + '<div class="wiz-col-grid">'
+    + colSelect('Chromosome', 'col.chr', true)
+    + colSelect('Position', 'col.pos', true)
+    + colSelect('P-value', 'col.pvalue', true)
+    + colSelect('Effect allele (A1)', 'col.ea', true)
+    + colSelect('Other allele (A2)', 'col.nea', true)
+    + '</div>'
+    + '<div class="wiz-section-title">Optional columns</div>'
+    + '<div class="wiz-col-grid">'
+    + colSelect('rsID', 'col.rsid', false)
+    + colSelect('Variant ID', 'col.varid', false)
+    + colSelect('Beta', 'col.beta', false)
+    + colSelect('Odds Ratio', 'col.or', false)
+    + colSelect('Standard Error', 'col.se', false)
+    + colSelect('Sample size (N)', 'col.n', false)
+    + colSelect('MAF', 'col.maf', false)
+    + colSelect('Info score', 'col.info', false)
+    + '</div>';
+}
+
+function wizRenderParams(c) {
+  var cfg = wiz.cfg;
+  c.innerHTML =
+    '<div class="wiz-section-title">Locus parameters</div>'
+    + '<div class="wiz-field"><label>Locus padding (bp)</label>'
+    + '<input type="number" data-wiz-key="locus.padding" value="' + (cfg['locus.padding'] || 200000) + '">'
+    + '<div class="hint">Display window padding added each side of each locus. Default: 200,000 bp.</div></div>'
+    + '<div class="wiz-field"><label>Max SNPs per locus</label>'
+    + '<input type="number" data-wiz-key="max.snps.per.locus" value="' + (cfg['max.snps.per.locus'] || 5000) + '">'
+    + '<div class="hint">Loci with more SNPs are downsampled. Default: 5,000.</div></div>'
+    + '<div class="wiz-section-title">LD computation</div>'
+    + '<div class="wiz-field"><label><input type="checkbox" data-wiz-key="ld.enabled" '
+    + (cfg['ld.enabled'] === true || cfg['ld.enabled'] === 'true' ? 'checked' : '')
+    + '> Enable LD computation</label>'
+    + '<div class="hint">Requires a reference panel (PLINK .bed/.bim/.fam).</div></div>'
+    + '<div class="wiz-field"><label>LD triangle boundary (SNPs each side)</label>'
+    + '<input type="number" data-wiz-key="ld.triangle.boundary" value="' + (cfg['ld.triangle.boundary'] || 100) + '">'
+    + '</div>'
+    + '<div class="wiz-field"><label>Parallel LD jobs</label>'
+    + '<input type="number" data-wiz-key="ld.parallel.jobs" value="' + (cfg['ld.parallel.jobs'] || 4) + '">'
+    + '</div>'
+    + '<div class="wiz-section-title">Reference panel</div>'
+    + '<div class="wiz-field"><label>Population label</label>'
+    + '<input data-wiz-key="ref.panel.population" value="' + escAttr(cfg['ref.panel.population'] || 'EUR') + '">'
+    + '<div class="hint">Shown in UI headers (e.g. EUR, EAS, AFR).</div></div>'
+    + '<div class="wiz-section-title">Dataset metadata (required for analysis tools)</div>'
+    + '<div class="wiz-field wiz-col-required"><label>Sample size (N)</label>'
+    + '<input type="number" data-wiz-key="sample.n" value="' + (cfg['sample.n'] || '') + '" required>'
+    + '<div class="hint">Total sample size. Mandatory — used by COJO, SuSiE, FINEMAP.</div></div>'
+    + '<div class="wiz-field"><label>Trait type</label>'
+    + '<select data-wiz-key="trait.type">'
+    + '<option value=""' + (!cfg['trait.type'] ? ' selected' : '') + '>Not specified</option>'
+    + '<option value="quantitative"' + (cfg['trait.type'] === 'quantitative' ? ' selected' : '') + '>Quantitative</option>'
+    + '<option value="binary"' + (cfg['trait.type'] === 'binary' ? ' selected' : '') + '>Binary (case/control)</option>'
+    + '</select></div>'
+    + '<div class="wiz-field wiz-col-required"><label>N cases</label>'
+    + '<input type="number" data-wiz-key="n.cases" value="' + (cfg['n.cases'] || '') + '" required>'
+    + '</div>'
+    + '<div class="wiz-field wiz-col-required"><label>N controls</label>'
+    + '<input type="number" data-wiz-key="n.controls" value="' + (cfg['n.controls'] || '') + '" required>'
+    + '</div>'
+    + '<div class="wiz-field"><label>Effect type</label>'
+    + '<select data-wiz-key="effect.type">'
+    + '<option value=""' + (!cfg['effect.type'] ? ' selected' : '') + '>Auto-detect</option>'
+    + '<option value="beta"' + (cfg['effect.type'] === 'beta' ? ' selected' : '') + '>Beta</option>'
+    + '<option value="OR"' + (cfg['effect.type'] === 'OR' ? ' selected' : '') + '>Odds Ratio</option>'
+    + '<option value="logOR"' + (cfg['effect.type'] === 'logOR' ? ' selected' : '') + '>Log Odds Ratio</option>'
+    + '</select></div>'
+    + '<div class="wiz-field"><label>Genome build</label>'
+    + '<select data-wiz-key="genome.build">'
+    + '<option value="GRCh37"' + ((cfg['genome.build'] || 'GRCh37') === 'GRCh37' ? ' selected' : '') + '>GRCh37 / hg19</option>'
+    + '<option value="GRCh38"' + (cfg['genome.build'] === 'GRCh38' ? ' selected' : '') + '>GRCh38 / hg38</option>'
+    + '</select></div>'
+    + '<div class="wiz-field"><label>Ancestry / Population</label>'
+    + '<input data-wiz-key="ancestry" value="' + escAttr(cfg['ancestry'] || cfg['ref.panel.population'] || '') + '">'
+    + '<div class="hint">E.g. EUR, EAS, AFR, AMR, SAS, Hispanic, etc.</div></div>';
+}
+
+function wizRenderPreview(c) {
+  var cfg = wiz.cfg;
+  var rows = [
+    ['Project ID', cfg._id],
+    ['Name', cfg._name],
+    ['Description', cfg._desc || '(none)'],
+    ['GWAS file', cfg['gwas.file']],
+    ['Loci file', cfg['loci.file']],
+    ['GFF3 file', cfg['gff3.file']],
+    ['Reference panel', cfg['ref.panel.path'] || '(none)'],
+    ['Population', cfg['ref.panel.population'] || 'EUR'],
+    ['Columns (required)', [cfg['col.chr'], cfg['col.pos'], cfg['col.pvalue'], cfg['col.ea'], cfg['col.nea']].join(', ')],
+    ['Columns (optional)', [cfg['col.rsid'], cfg['col.beta'], cfg['col.or'], cfg['col.se'], cfg['col.n'], cfg['col.maf'], cfg['col.info']].filter(Boolean).join(', ') || '(none)'],
+    ['Locus padding', (cfg['locus.padding'] || 200000) + ' bp'],
+    ['LD enabled', cfg['ld.enabled'] === true || cfg['ld.enabled'] === 'true' ? 'Yes' : 'No'],
+    ['Sample N', cfg['sample.n'] || '(not set)'],
+    ['N cases', cfg['n.cases'] || '(not set)'],
+    ['N controls', cfg['n.controls'] || '(not set)'],
+    ['Trait type', cfg['trait.type'] || '(not set)'],
+    ['Genome build', cfg['genome.build'] || 'GRCh37'],
+    ['Ancestry', cfg['ancestry'] || cfg['ref.panel.population'] || '(not set)']
+  ];
+  c.innerHTML = '<table class="wiz-summary-table">'
+    + rows.map(function(r) { return '<tr><td>' + esc(r[0]) + '</td><td>' + esc(String(r[1] || '')) + '</td></tr>'; }).join('')
+    + '</table>';
+}
+
+async function wizSubmit() {
+  var cfg = wiz.cfg;
+  var id = cfg._id;
+  var configBody = {};
+  var keys = ['gwas.file','loci.file','gff3.file','ref.panel.path','ref.panel.population',
+    'col.chr','col.pos','col.pvalue','col.rsid','col.varid','col.ea','col.nea',
+    'col.beta','col.or','col.se','col.n','col.maf','col.info','top.snp.file',
+    'locus.padding','ld.enabled','ld.triangle.boundary','ld.r2.threshold',
+    'ld.parallel.jobs','threads','max.snps.per.locus','split.ld.threshold','split.min.distance.bp',
+    'sample.n','n.cases','n.controls','trait.type','effect.type','genome.build','ancestry'];
+  keys.forEach(function(k) { if (cfg[k] !== undefined) configBody[k] = cfg[k]; });
+
+  try {
+    var resp = await fetch(API + '/api/project/' + encodeURIComponent(id) + '/config', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(configBody)
+    });
+    if (!resp.ok) throw new Error('Config save failed');
+
+    await fetch(API + '/api/projects/process', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({id: id})
+    });
+
+    wizClose();
+    loadProjects();
+  } catch (e) {
+    alert('Error: ' + e.message);
+  }
+}
+
+function escAttr(s) { return (s || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+
+async function exportExcel(id) {
+  // Open folder picker to choose save location
+  var folder = '';
+  try {
+    var fr = await fetch(API + '/pick-folder-native');
+    var fd = await fr.json();
+    if (fd.path) folder = fd.path;
+    else return; // user cancelled
+  } catch(e) {
+    // Folder picker unavailable — use default
+    folder = '';
+  }
+
+  try {
+    var resp = await fetch(API + '/api/export-excel', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ project_id: id, scope: 'dataset', output_folder: folder })
+    });
+    var d = await resp.json();
+    if (d.error) { alert('Export failed: ' + d.error); return; }
+    // Poll progress
+    var pollId = setInterval(async function() {
+      try {
+        var r = await fetch(API + '/api/export-progress?project=' + encodeURIComponent(id));
+        var p = await r.json();
+        if (p.done) {
+          clearInterval(pollId);
+          if (p.error) { alert('Export failed: ' + p.error); }
+          else { alert('Excel export complete!\n\nSaved to: ' + (d.output || 'exports/ folder')); }
+        }
+      } catch(e) { clearInterval(pollId); }
+    }, 1000);
+  } catch (e) { alert('Export failed: ' + e.message); }
+}
+
+async function deleteProject(id) {
+  if (!confirm('Are you sure you want to delete project "' + id + '"?\n\nThis will permanently remove the project folder and all its processed data. This cannot be undone.')) return;
+  try {
+    var resp = await fetch(API + '/api/delete-project', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({id: id})
+    });
+    var d = await resp.json();
+    if (d.error) { alert('Delete failed: ' + d.error); return; }
+    loadProjects();
+  } catch (e) {
+    alert('Delete failed: ' + e.message);
+  }
+}
+
+async function reprocess(id) {
+  try {
+    await fetch(API + '/api/projects/process', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({id: id})
+    });
+    loadProjects();
+  } catch (e) {
+    alert('Failed to start processing: ' + e.message);
+  }
+}
+
+async function processAllStale() {
+  try {
+    await fetch(API + '/api/projects/process', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({all_stale: true})
+    });
+    loadProjects();
+  } catch (e) {
+    alert('Failed to start processing: ' + e.message);
+  }
+}
+
+function formatDate(iso) {
+  try {
+    var d = new Date(iso);
+    return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+  } catch (e) { return iso; }
+}
+
+function esc(s) {
+  if (!s) return '';
+  var d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+document.getElementById('version-label').textContent = 'v1.0.0';
+
+// ══════════════════════════════════════════════════════════
+//  rsID BADGE & RECOVERY UI
+// ══════════════════════════════════════════════════════════
+
+function rsidBadge(p) {
+  if (p.rsid_column_present) {
+    var rate = p.rsid_recovery_rate || '';
+    var info = rate ? ' <span style="font-size:0.72rem;color:#666">' + esc(rate) + '</span>' : '';
+    return '<span class="badge badge-ok">rsIDs present</span>' + info;
+  }
+  return '<span class="badge badge-stale">rsIDs missing</span> '
+    + '<button class="btn btn-primary" style="padding:0.2rem 0.6rem;font-size:0.75rem" '
+    + 'onclick="event.stopPropagation();rsidOpen(\'' + esc(p.id) + '\')">Add rsIDs</button>';
+}
+
+var rsidState = { projectId: null, pollTimer: null };
+
+function rsidOpen(projectId) {
+  rsidState.projectId = projectId;
+  document.getElementById('rsid-overlay').classList.add('open');
+  rsidRenderSource();
+}
+
+function rsidClose() {
+  document.getElementById('rsid-overlay').classList.remove('open');
+  if (rsidState.pollTimer) { clearInterval(rsidState.pollTimer); rsidState.pollTimer = null; }
+  loadProjects();
+}
+
+async function rsidRenderSource() {
+  var c = document.getElementById('rsid-content');
+  var gc;
+  try { gc = await (await fetch(API + '/api/global-config')).json(); } catch(e) { gc = {snp_databases:[]}; }
+
+  var p = projects.find(function(x) { return x.id === rsidState.projectId; });
+  var pName = p ? (p.name || p.id) : rsidState.projectId;
+
+  var dbOpts = gc.snp_databases.map(function(db) {
+    return '<option value="' + escAttr(db.id) + '">' + esc(db.label) + ' (' + esc(db.build) + ')</option>';
+  }).join('');
+  if (!dbOpts) dbOpts = '<option value="">No SNP databases configured</option>';
+
+  c.innerHTML =
+    '<p style="margin:0.75rem 0 0.5rem"><b>' + esc(pName) + '</b></p>'
+    + '<div class="wiz-field"><label>Source 1 — Local SNP database</label>'
+    + '<select id="rsid-snpdb">' + dbOpts + '</select></div>'
+    + '<div class="wiz-section-title" style="margin-top:1rem">Source 2 — API completion (for remaining unmatched)</div>'
+    + '<div class="wiz-field"><label><input type="checkbox" id="rsid-api-enabled" checked> Enable API completion (NCBI + gnomAD)</label>'
+    + '<div class="hint">Runs only if unmatched SNPs are below the cap. Batched, rate-limited. On by default — uncheck to skip (faster, no external network calls).</div></div>'
+    + '<div id="rsid-api-opts" style="margin-left:1.5rem">'
+    + '<div class="wiz-field"><label>Max unmatched for API</label>'
+    + '<input type="number" id="rsid-api-max" value="2000" style="width:100px">'
+    + '<div class="hint">Skip API if more unmatched than this (likely a data issue).</div></div>'
+    + '<div class="wiz-field"><label>Batch size</label>'
+    + '<input type="number" id="rsid-api-batch" value="100" max="200" style="width:80px">'
+    + '<div class="hint">Max 200 per batch.</div></div>'
+    + '<div class="wiz-field"><label>NCBI API key (optional, for higher rate limit)</label>'
+    + '<input type="text" id="rsid-ncbi-key" placeholder="Leave blank for default rate" style="width:250px"></div></div>'
+    + '<div style="display:flex;justify-content:flex-end;gap:0.5rem;margin-top:1rem">'
+    + '<button class="btn btn-secondary" onclick="rsidClose()">Cancel</button>'
+    + '<button class="btn btn-primary" onclick="rsidStart()" ' + (gc.snp_databases.length === 0 ? 'disabled' : '') + '>Process</button>'
+    + '</div>';
+
+  // Wire checkbox toggle for API options
+  setTimeout(function() {
+    var cb = document.getElementById('rsid-api-enabled');
+    var opts = document.getElementById('rsid-api-opts');
+    if (cb && opts) cb.addEventListener('change', function() { opts.style.display = cb.checked ? '' : 'none'; });
+  }, 0);
+}
+
+async function rsidStart() {
+  var snpDbId = document.getElementById('rsid-snpdb').value;
+  if (!snpDbId) { alert('Select a SNP database first.'); return; }
+
+  var payload = { project_id: rsidState.projectId, snp_database_id: snpDbId };
+  var apiCb = document.getElementById('rsid-api-enabled');
+  if (apiCb && apiCb.checked) {
+    payload.api_enabled = 'true';
+    var maxEl = document.getElementById('rsid-api-max');
+    var batchEl = document.getElementById('rsid-api-batch');
+    var keyEl = document.getElementById('rsid-ncbi-key');
+    if (maxEl) payload.api_max_unmatched = maxEl.value;
+    if (batchEl) payload.api_batch_size = Math.min(200, parseInt(batchEl.value) || 100).toString();
+    if (keyEl && keyEl.value) payload.ncbi_api_key = keyEl.value;
+  }
+
+  try {
+    await fetch(API + '/api/rsid-recover', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload)
+    });
+  } catch(e) { alert('Failed: ' + e.message); return; }
+
+  rsidRenderProgress();
+}
+
+function rsidRenderProgress() {
+  var c = document.getElementById('rsid-content');
+  c.innerHTML = '<p style="margin:0.75rem 0"><b>Recovering rsIDs...</b></p>'
+    + '<div id="rsid-steps" style="font-size:0.85rem;line-height:1.8"></div>'
+    + '<div id="rsid-counters" style="font-size:0.82rem;color:#555;margin-top:0.75rem"></div>';
+
+  rsidState.pollTimer = setInterval(async function() {
+    try {
+      var r = await fetch(API + '/api/rsid-progress?project=' + encodeURIComponent(rsidState.projectId));
+      var d = await r.json();
+      var steps = ['Validate project & build', 'Load dbSNP regions', 'Match SNPs', 'API completion', 'Patch locus data'];
+      var html = '';
+      for (var i = 0; i < steps.length; i++) {
+        var si = i + 1;
+        if (si < d.step_index) html += '<div style="color:#065f46">&#10003; Step ' + si + ': ' + steps[i] + '</div>';
+        else if (si === d.step_index) html += '<div style="color:#1e40af;font-weight:600">&#9656; Step ' + si + ': ' + esc(d.current_step)
+          + (d.total_loci > 0 ? ' (Locus ' + d.current_locus + '/' + d.total_loci + ')' : '') + '</div>';
+        else html += '<div style="color:#aaa">&#183; Step ' + si + ': ' + steps[i] + '</div>';
+      }
+      document.getElementById('rsid-steps').innerHTML = html;
+
+      var pctText = d.pct + '%';
+      document.getElementById('rsid-counters').innerHTML =
+        'Progress: <b>' + pctText + '</b> &nbsp; matched: ' + d.matched.toLocaleString()
+        + ' &middot; forward: ' + d.forward.toLocaleString()
+        + ' &middot; reverse: ' + d.reverse.toLocaleString()
+        + ' &middot; unmatched: ' + d.unmatched.toLocaleString();
+
+      if (d.done) {
+        clearInterval(rsidState.pollTimer);
+        rsidState.pollTimer = null;
+        if (d.error) rsidRenderError(d.error);
+        else rsidRenderResult(d);
+      }
+    } catch(e) {}
+  }, 500);
+}
+
+function rsidRenderResult(d) {
+  var c = document.getElementById('rsid-content');
+  c.innerHTML =
+    '<p style="margin:0.75rem 0;color:#065f46;font-weight:600;font-size:1.05rem">&#10003; rsID recovery complete</p>'
+    + '<table class="wiz-summary-table">'
+    + '<tr><td>Recovery rate</td><td><b>' + d.recovery_rate.toFixed(1) + '%</b> (' + d.matched.toLocaleString() + ' / ' + d.total_snps.toLocaleString() + ' SNPs)</td></tr>'
+    + '<tr><td>Forward orientation</td><td>' + d.forward.toLocaleString() + '</td></tr>'
+    + '<tr><td>Reverse orientation</td><td>' + d.reverse.toLocaleString() + '</td></tr>'
+    + '<tr><td>Unmatched</td><td>' + d.unmatched.toLocaleString() + '</td></tr>'
+    + '<tr><td>Output file</td><td style="word-break:break-all">' + esc(d.output_file) + '</td></tr>'
+    + '</table>'
+    + '<p style="margin-top:0.75rem;font-size:0.85rem;color:#065f46">rsIDs have been applied to the locus data. Refresh the viewer to see them.</p>'
+    + '<div style="display:flex;justify-content:flex-end;margin-top:1rem">'
+    + '<button class="btn btn-primary" onclick="rsidClose()">Done</button></div>';
+}
+
+async function rsidReprocessAndClose() {
+  var id = rsidState.projectId;
+  try {
+    await fetch(API + '/api/projects/process', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({id: id})
+    });
+  } catch(e) {}
+  rsidClose();
+}
+
+function rsidRenderError(err) {
+  var c = document.getElementById('rsid-content');
+  c.innerHTML = '<p style="color:#dc2626;font-weight:600;margin:0.75rem 0">Error: ' + esc(err) + '</p>'
+    + '<div style="display:flex;justify-content:flex-end;margin-top:1rem">'
+    + '<button class="btn btn-secondary" onclick="rsidClose()">Close</button></div>';
+}
+
+// ══════════════════════════════════════════════════════════
+//  RESOURCES & SETTINGS
+// ══════════════════════════════════════════════════════════
+
+async function loadResources() {
+  try {
+    var gc = await (await fetch(API + '/api/global-config')).json();
+    renderSnpDatabases(gc.snp_databases || []);
+    renderRefPanels(gc.reference_panels || []);
+  } catch(e) {}
+}
+
+function renderSnpDatabases(dbs) {
+  var el = document.getElementById('snpdb-list');
+  if (!dbs.length) { el.innerHTML = '<p style="color:#888;font-size:0.82rem">No SNP databases configured.</p>'; return; }
+  el.innerHTML = '<table style="width:100%;font-size:0.82rem;border-collapse:collapse">'
+    + '<tr style="border-bottom:1px solid #eee"><th style="text-align:left;padding:0.3rem">Label</th><th>Build</th><th>Chromosomes</th><th>Status</th><th></th></tr>'
+    + dbs.map(function(db) {
+      var status = db.valid ? '<span style="color:#065f46">&#10003;</span>' : '<span style="color:#dc2626">&#10007;</span>';
+      var chrCount = db.present_chromosomes || 0;
+      return '<tr style="border-bottom:1px solid #f5f5f5"><td style="padding:0.3rem">' + esc(db.label) + '</td><td>' + esc(db.build)
+        + '</td><td>' + chrCount + '/25</td><td>' + status + '</td>'
+        + '<td><button class="btn btn-secondary" style="padding:0.15rem 0.5rem;font-size:0.75rem" onclick="removeSnpDb(\'' + esc(db.id) + '\')">Remove</button></td></tr>';
+    }).join('') + '</table>';
+}
+
+function renderRefPanels(panels) {
+  var el = document.getElementById('refpanel-list');
+  if (!panels.length) { el.innerHTML = '<p style="color:#888;font-size:0.82rem">No reference panels configured.</p>'; return; }
+  el.innerHTML = '<table style="width:100%;font-size:0.82rem;border-collapse:collapse">'
+    + '<tr style="border-bottom:1px solid #eee"><th style="text-align:left;padding:0.3rem">Label</th><th>Population</th><th>Build</th><th>Status</th><th></th></tr>'
+    + panels.map(function(rp) {
+      var status = rp.valid ? '<span style="color:#065f46">&#10003;</span>' : '<span style="color:#dc2626">&#10007;</span>';
+      return '<tr style="border-bottom:1px solid #f5f5f5"><td style="padding:0.3rem">' + esc(rp.label) + '</td><td>' + esc(rp.population)
+        + '</td><td>' + esc(rp.build) + '</td><td>' + status + '</td>'
+        + '<td><button class="btn btn-secondary" style="padding:0.15rem 0.5rem;font-size:0.75rem" onclick="removeRefPanel(\'' + esc(rp.id) + '\')">Remove</button></td></tr>';
+    }).join('') + '</table>';
+}
+
+async function addSnpDatabase() {
+  var label = prompt('SNP database label (e.g. "dbSNP hg19"):');
+  if (!label) return;
+  var build = prompt('Genome build (hg19 or hg38):', 'hg19');
+  if (!build) return;
+  try {
+    var r = await fetch(API + '/pick-file');
+    var d = await r.json();
+    if (!d.path) return;
+    var folder = d.path.replace(/[/\\][^/\\]*$/, ''); // get parent folder
+    var id = label.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+    var gc = await (await fetch(API + '/api/global-config')).json();
+    if (!gc.snp_databases) gc.snp_databases = [];
+    gc.snp_databases.push({ id: id, label: label, build: build, folder: folder, file_pattern: '{chr}.vcf.gz' });
+    await fetch(API + '/api/global-config', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(gc) });
+    loadResources();
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+async function addRefPanel() {
+  var label = prompt('Reference panel label (e.g. "1000G EAS hg19"):');
+  if (!label) return;
+  var pop = prompt('Population (EAS, EUR, AFR, etc.):', 'EAS');
+  var build = prompt('Genome build:', 'hg19');
+  try {
+    var r = await fetch(API + '/pick-file');
+    var d = await r.json();
+    if (!d.path) return;
+    var plinkPath = d.path.replace(/\.(bed|bim|fam)$/i, '');
+    var id = label.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+    var gc = await (await fetch(API + '/api/global-config')).json();
+    if (!gc.reference_panels) gc.reference_panels = [];
+    gc.reference_panels.push({ id: id, label: label, population: pop, build: build, plink_path: plinkPath });
+    await fetch(API + '/api/global-config', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(gc) });
+    loadResources();
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+async function removeSnpDb(id) {
+  if (!confirm('Remove this SNP database?')) return;
+  var gc = await (await fetch(API + '/api/global-config')).json();
+  gc.snp_databases = (gc.snp_databases || []).filter(function(d) { return d.id !== id; });
+  await fetch(API + '/api/global-config', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(gc) });
+  loadResources();
+}
+
+async function removeRefPanel(id) {
+  if (!confirm('Remove this reference panel?')) return;
+  var gc = await (await fetch(API + '/api/global-config')).json();
+  gc.reference_panels = (gc.reference_panels || []).filter(function(p) { return p.id !== id; });
+  await fetch(API + '/api/global-config', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(gc) });
+  loadResources();
+}
+
+// ══════════════════════════════════════════════════════════
+//  LOCI IDENTIFICATION UI
+// ══════════════════════════════════════════════════════════
+
+function lociBadge(p) {
+  if (p.has_loci) {
+    var count = p.loci_count || 0;
+    return '<span class="badge badge-ok">' + count + ' loci</span>';
+  }
+  return '<span class="badge badge-stale">No loci</span> '
+    + '<button class="btn btn-primary" style="padding:0.2rem 0.6rem;font-size:0.75rem" '
+    + 'onclick="event.stopPropagation();lociOpen(\'' + esc(p.id) + '\')">Get Loci</button>';
+}
+
+var lociState = { projectId: null, pollTimer: null };
+
+function lociOpen(projectId) {
+  lociState.projectId = projectId;
+  document.getElementById('loci-overlay').classList.add('open');
+  lociRenderParams();
+}
+
+function lociClose() {
+  document.getElementById('loci-overlay').classList.remove('open');
+  if (lociState.pollTimer) { clearInterval(lociState.pollTimer); lociState.pollTimer = null; }
+  loadProjects();
+}
+
+function lociRenderParams() {
+  var c = document.getElementById('loci-content');
+  var p = projects.find(function(x) { return x.id === lociState.projectId; });
+  var pName = p ? (p.name || p.id) : lociState.projectId;
+
+  c.innerHTML =
+    '<p style="margin:0.75rem 0"><b>' + esc(pName) + '</b></p>'
+    + '<div class="wiz-field"><label>Seed significance threshold</label>'
+    + '<div class="radio-group" style="display:flex;gap:1rem">'
+    + '<label><input type="radio" name="loci-seed" value="5e-8" checked> 5e-8 (genome-wide significance)</label>'
+    + '<label><input type="radio" name="loci-seed" value="5e-5"> 5e-5 (suggestive — more loci, more noise)</label>'
+    + '</div></div>'
+    + '<div class="wiz-field"><label>Pre-filter p-value</label>'
+    + '<input type="text" id="loci-prefilter" value="5e-3" style="width:120px">'
+    + '<div class="hint">Keeps only SNPs with p below this for speed. Default from preCodes: 5e-3</div></div>'
+    + '<div class="wiz-field"><label>Merge distance (kb)</label>'
+    + '<input type="number" id="loci-mergedist" value="250" style="width:120px">'
+    + '<div class="hint">Adjacent SNPs within this distance are merged into one locus.</div></div>'
+    + '<div class="wiz-field"><label>Min SNPs per locus</label>'
+    + '<input type="number" id="loci-minsnps" value="2" style="width:120px">'
+    + '<div class="hint">Loci with fewer SNPs than this are discarded (filters noise).</div></div>'
+    + '<p style="margin:1rem 0 0.25rem"><b>PLINK clumping parameters</b></p>'
+    + '<div class="wiz-field"><label>Clump secondary p-value (clump-p2)</label>'
+    + '<input type="text" id="loci-clump-p2" value="5e-3" style="width:120px">'
+    + '<div class="hint">Nearby SNPs with p below this AND in LD with the lead SNP are absorbed as clump members.</div></div>'
+    + '<div class="wiz-field"><label>Clump LD threshold (clump-r2)</label>'
+    + '<input type="number" id="loci-clump-r2" value="0.6" step="0.05" min="0" max="1" style="width:120px">'
+    + '<div class="hint">Minimum r&sup2; with the lead SNP for a nearby SNP to be absorbed into the clump.</div></div>'
+    + '<div class="wiz-field"><label>Clump window (clump-kb)</label>'
+    + '<input type="number" id="loci-clump-kb" value="250" style="width:120px">'
+    + '<div class="hint">Max distance (kb) from the lead SNP to search for LD-linked members.</div></div>'
+    + '<div style="display:flex;justify-content:flex-end;gap:0.5rem;margin-top:1rem">'
+    + '<button class="btn btn-secondary" onclick="lociClose()">Cancel</button>'
+    + '<button class="btn btn-primary" onclick="lociStart()">Process</button></div>';
+}
+
+async function lociStart() {
+  var seed = document.querySelector('input[name="loci-seed"]:checked').value;
+  var prefilter = document.getElementById('loci-prefilter').value || '5e-3';
+  var mergeDist = document.getElementById('loci-mergedist').value || '250';
+  var minSnps   = document.getElementById('loci-minsnps').value || '1';
+  var clumpP2   = document.getElementById('loci-clump-p2').value || '5e-3';
+  var clumpR2   = document.getElementById('loci-clump-r2').value || '0.6';
+  var clumpKb   = document.getElementById('loci-clump-kb').value || '250';
+
+  try {
+    await fetch(API + '/api/loci-identify', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        project_id: lociState.projectId,
+        lead_p_threshold: seed,
+        pre_filter_p: prefilter,
+        merge_distance_kb: mergeDist,
+        min_snps_per_locus: minSnps,
+        clump_p2: clumpP2,
+        clump_r2: clumpR2,
+        clump_kb: clumpKb
+      })
+    });
+  } catch(e) { alert('Failed: ' + e.message); return; }
+
+  lociRenderProgress();
+}
+
+function lociRenderProgress() {
+  var c = document.getElementById('loci-content');
+  c.innerHTML = '<p style="margin:0.75rem 0"><b>Identifying loci...</b></p>'
+    + '<div id="loci-steps" style="font-size:0.85rem;line-height:1.8"></div>'
+    + '<div id="loci-counters" style="font-size:0.82rem;color:#555;margin-top:0.75rem"></div>';
+
+  lociState.pollTimer = setInterval(async function() {
+    try {
+      var r = await fetch(API + '/api/loci-progress?project=' + encodeURIComponent(lociState.projectId));
+      var d = await r.json();
+      var steps = ['Pre-filtering GWAS', 'Ref-panel match (chr:pos)', 'Seed filter', 'PLINK clumping', 'Merging clump intervals', 'Finalizing'];
+      var html = '';
+      for (var i = 0; i < steps.length; i++) {
+        var si = i + 1;
+        if (si < d.step_index) html += '<div style="color:#065f46">&#10003; Step ' + si + ': ' + steps[i] + '</div>';
+        else if (si === d.step_index) html += '<div style="color:#1e40af;font-weight:600">&#9656; Step ' + si + ': ' + esc(d.current_step) + '</div>';
+        else html += '<div style="color:#aaa">&#183; Step ' + si + ': ' + steps[i] + '</div>';
+      }
+      document.getElementById('loci-steps').innerHTML = html;
+      document.getElementById('loci-counters').innerHTML =
+        'Progress: <b>' + d.pct + '%</b> &nbsp; candidates: ' + (d.candidate_snps || 0).toLocaleString()
+        + ' &middot; seeds: ' + (d.seed_snps || 0).toLocaleString()
+        + ' &middot; loci found: ' + (d.loci_found || 0);
+
+      if (d.done) {
+        clearInterval(lociState.pollTimer); lociState.pollTimer = null;
+        if (d.error) lociRenderError(d.error);
+        else lociRenderResult(d);
+      }
+    } catch(e) {}
+  }, 500);
+}
+
+function lociRenderResult(d) {
+  var c = document.getElementById('loci-content');
+  c.innerHTML =
+    '<p style="margin:0.75rem 0;color:#065f46;font-weight:600;font-size:1.05rem">&#10003; Loci identification complete</p>'
+    + '<table class="wiz-summary-table">'
+    + '<tr><td>Loci identified</td><td><b>' + d.loci_found + '</b></td></tr>'
+    + '<tr><td>Seed SNPs</td><td>' + (d.seed_snps || 0).toLocaleString() + '</td></tr>'
+    + '<tr><td>Candidate SNPs (pre-filter)</td><td>' + (d.candidate_snps || 0).toLocaleString() + '</td></tr>'
+    + '<tr><td>Written to</td><td>input/loci.txt</td></tr>'
+    + '</table>'
+    + '<p style="margin-top:0.75rem;font-size:0.85rem;color:#555">Project config updated. Reprocess to load loci into viewer.</p>'
+    + '<div style="display:flex;justify-content:flex-end;gap:0.5rem;margin-top:1rem">'
+    + '<button class="btn btn-secondary" onclick="lociClose()">Later</button>'
+    + '<button class="btn btn-primary" onclick="lociReprocessAndClose()">Reprocess now</button></div>';
+}
+
+function lociRenderError(err) {
+  var c = document.getElementById('loci-content');
+  c.innerHTML = '<p style="color:#dc2626;font-weight:600;margin:0.75rem 0">Error: ' + esc(err) + '</p>'
+    + '<div style="display:flex;justify-content:flex-end;margin-top:1rem">'
+    + '<button class="btn btn-secondary" onclick="lociClose()">Close</button></div>';
+}
+
+async function lociReprocessAndClose() {
+  try {
+    await fetch(API + '/api/projects/process', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({id: lociState.projectId})
+    });
+  } catch(e) {}
+  lociClose();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Tools Manager — configure analysis tool binary paths
+// ═══════════════════════════════════════════════════════════════
+async function openToolsManager() {
+  var overlay = document.getElementById('tools-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'tools-overlay';
+    overlay.className = 'wizard-overlay';
+    overlay.innerHTML = '<div class="wizard-box" style="max-width:640px" id="tools-box"></div>';
+    overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.classList.remove('open'); });
+    document.body.appendChild(overlay);
+  }
+
+  var box = document.getElementById('tools-box');
+  box.innerHTML = '<h3>Analysis Tools</h3><p style="color:#666;font-size:0.85rem;margin:0.5rem 0 1rem">Configure tool binary paths and view available analysis descriptors.</p>'
+    + '<div id="tools-content" style="color:#888">Loading...</div>';
+  overlay.classList.add('open');
+
+  // Fetch discovered tools
+  var toolsHtml = '';
+  try {
+    var resp = await fetch(API + '/api/project/_/analysis/tools');
+    if (resp.ok) {
+      var data = await resp.json();
+      var tools = data.tools || [];
+      if (tools.length === 0) {
+        toolsHtml = '<div style="padding:1rem;background:#fef3c7;border-radius:8px;font-size:0.85rem;color:#92400e;margin-bottom:1rem">'
+          + 'No tool descriptors found. Place YAML files in the <code>tools/</code> directory.'
+          + '</div>';
+      } else {
+        toolsHtml = '<div style="font-size:0.85rem;margin-bottom:0.75rem"><b>' + tools.length + '</b> tool(s) discovered:</div>';
+        tools.forEach(function(t) {
+          toolsHtml += '<div style="border:1px solid #e5e7eb;border-radius:8px;padding:0.75rem;margin-bottom:0.5rem">'
+            + '<div style="display:flex;align-items:center;gap:0.5rem">'
+            + '<span style="font-weight:700;color:#1e293b">' + esc(t.label || t.tool) + '</span>'
+            + '<span style="font-size:0.75rem;color:#94a3b8">v' + esc(t.version || '') + '</span>'
+            + '<span style="font-size:0.7rem;padding:2px 6px;border-radius:10px;background:#e0e7ff;color:#3730a3">' + esc(t.language || 'binary') + '</span>'
+            + '</div>';
+          if (t.description) toolsHtml += '<div style="font-size:0.8rem;color:#64748b;margin-top:4px">' + esc(t.description) + '</div>';
+          if (t.params && t.params.length > 0) {
+            toolsHtml += '<div style="font-size:0.75rem;color:#94a3b8;margin-top:4px">'
+              + t.params.length + ' parameter(s): '
+              + t.params.map(function(p) { return p.label || p.name; }).join(', ')
+              + '</div>';
+          }
+          toolsHtml += '</div>';
+        });
+      }
+    }
+  } catch(e) {
+    toolsHtml = '<div style="color:#dc2626">Failed to load tools: ' + esc(e.message) + '</div>';
+  }
+
+  toolsHtml += '<div style="margin-top:1rem;padding:1rem;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0">'
+    + '<div style="font-weight:600;font-size:0.85rem;margin-bottom:0.5rem">Adding a new tool</div>'
+    + '<ol style="font-size:0.82rem;color:#475569;padding-left:1.2rem;margin:0">'
+    + '<li>Create a YAML descriptor in the <code>tools/</code> directory</li>'
+    + '<li>Define: tool name, command template, parameters, and output mapping</li>'
+    + '<li>Restart the server — the tool appears automatically in the Analyze dialog</li>'
+    + '</ol></div>';
+
+  toolsHtml += '<div style="display:flex;justify-content:flex-end;margin-top:1rem">'
+    + '<button class="btn btn-secondary" onclick="document.getElementById(\'tools-overlay\').classList.remove(\'open\')">Close</button></div>';
+
+  document.getElementById('tools-content').innerHTML = toolsHtml;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Info — export a cross-project summary table (loci, SNPs, cases/
+// controls/total, ancestry, ref panel, rsID status, etc.) as .xlsx
+// ═══════════════════════════════════════════════════════════════
+function exportProjectsInfo() {
+  window.location.href = API + '/api/export-projects-info';
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Missing rsIDs — cross-project manual enrichment
+// ═══════════════════════════════════════════════════════════════
+var missingRsidsCache = [];
+
+async function openMissingRsids() {
+  var overlay = document.getElementById('missing-rsids-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'missing-rsids-overlay';
+    overlay.className = 'wizard-overlay';
+    overlay.innerHTML = '<div class="wizard-box" style="max-width:900px;width:90vw" id="missing-rsids-box"></div>';
+    overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.classList.remove('open'); });
+    document.body.appendChild(overlay);
+  }
+
+  var box = document.getElementById('missing-rsids-box');
+  box.innerHTML = '<h3>Missing rsIDs</h3>'
+    + '<p style="color:#666;font-size:0.85rem;margin:0.5rem 0 1rem">'
+    + 'SNPs that could not be automatically matched to dbSNP, across all projects. '
+    + 'Supply the correct rsID below (using chr/pos/effect allele/other allele to look it up) '
+    + 'and it will be patched directly into that project\'s locus data — no reprocess needed.</p>'
+    + '<div id="missing-rsids-content" style="color:#888">Loading…</div>';
+  overlay.classList.add('open');
+
+  try {
+    var resp = await fetch(API + '/api/missing-rsids');
+    var data = await resp.json();
+    missingRsidsCache = data.missing || [];
+    renderMissingRsidsTable();
+  } catch (e) {
+    document.getElementById('missing-rsids-content').innerHTML =
+      '<div style="color:#dc2626">Failed to load: ' + esc(e.message) + '</div>';
+  }
+}
+
+function renderMissingRsidsTable() {
+  var el = document.getElementById('missing-rsids-content');
+  if (!el) return;
+
+  if (missingRsidsCache.length === 0) {
+    el.innerHTML = '<div style="padding:1rem;background:#ecfdf5;border-radius:8px;font-size:0.85rem;color:#065f46">'
+      + 'No missing rsIDs — every SNP across every project has been matched.</div>'
+      + '<div style="display:flex;justify-content:flex-end;margin-top:1rem">'
+      + '<button class="btn btn-secondary" onclick="document.getElementById(\'missing-rsids-overlay\').classList.remove(\'open\')">Close</button></div>';
+    return;
+  }
+
+  var rows = missingRsidsCache.map(function(m, i) {
+    var rowId = 'mrsid-row-' + i;
+    var suggestion = m.pos_only_rsid || '';
+    var inputStyle = suggestion
+      ? 'width:110px;padding:3px 6px;border:1px solid #f59e0b;background:#fffbeb;border-radius:6px;font-size:0.78rem'
+      : 'width:110px;padding:3px 6px;border:1px solid #cbd5e1;border-radius:6px;font-size:0.78rem';
+    var suggestionNote = suggestion
+      ? '<div style="font-size:0.68rem;color:#b45309;margin-top:2px" title="Same position matched in dbSNP, but the reported alleles didn\'t line up (e.g. indel vs SNP representation) — verify before saving">suggested, unverified</div>'
+      : '';
+    return '<tr id="' + rowId + '">'
+      + '<td style="font-size:0.78rem;color:#475569">' + esc(m.project_name) + '</td>'
+      + '<td style="font-family:monospace;font-size:0.78rem">' + esc(m.chr) + '</td>'
+      + '<td style="font-family:monospace;font-size:0.78rem">' + esc(String(m.pos)) + '</td>'
+      + '<td style="font-family:monospace;font-size:0.78rem">' + esc(m.ea) + '</td>'
+      + '<td style="font-family:monospace;font-size:0.78rem">' + esc(m.nea) + '</td>'
+      + '<td><input type="text" placeholder="rs…" value="' + escAttr(suggestion) + '" data-idx="' + i + '" class="mrsid-input" '
+      + 'style="' + inputStyle + '" '
+      + 'onkeydown="if(event.key===\'Enter\') saveMissingRsid(' + i + ')">' + suggestionNote + '</td>'
+      + '<td><button class="btn btn-secondary" style="padding:3px 10px;font-size:0.75rem" '
+      + 'onclick="saveMissingRsid(' + i + ')">Save</button></td>'
+      + '</tr>';
+  }).join('');
+
+  var suggestedCount = missingRsidsCache.filter(function(m) { return m.pos_only_rsid; }).length;
+  el.innerHTML = '<div style="font-size:0.85rem;margin-bottom:0.6rem"><b>' + missingRsidsCache.length + '</b> missing SNP(s) across all projects'
+    + (suggestedCount > 0 ? ' — <span style="color:#b45309">' + suggestedCount + ' have a suggested (unverified) rsID pre-filled</span>' : '')
+    + '.</div>'
+    + '<div style="max-height:55vh;overflow-y:auto;border:1px solid #e5e7eb;border-radius:8px">'
+    + '<table style="width:100%;border-collapse:collapse">'
+    + '<thead style="position:sticky;top:0;background:#f8fafc"><tr>'
+    + '<th style="text-align:left;padding:6px 8px;font-size:0.75rem;color:#64748b">Project</th>'
+    + '<th style="text-align:left;padding:6px 8px;font-size:0.75rem;color:#64748b">Chr</th>'
+    + '<th style="text-align:left;padding:6px 8px;font-size:0.75rem;color:#64748b">Pos</th>'
+    + '<th style="text-align:left;padding:6px 8px;font-size:0.75rem;color:#64748b">EA</th>'
+    + '<th style="text-align:left;padding:6px 8px;font-size:0.75rem;color:#64748b">NEA</th>'
+    + '<th style="text-align:left;padding:6px 8px;font-size:0.75rem;color:#64748b">rsID</th>'
+    + '<th></th>'
+    + '</tr></thead><tbody>' + rows + '</tbody></table></div>'
+    + '<div style="display:flex;justify-content:flex-end;margin-top:1rem">'
+    + '<button class="btn btn-secondary" onclick="document.getElementById(\'missing-rsids-overlay\').classList.remove(\'open\')">Close</button></div>';
+}
+
+async function saveMissingRsid(idx) {
+  var m = missingRsidsCache[idx];
+  if (!m) return;
+  var row = document.getElementById('mrsid-row-' + idx);
+  var input = row ? row.querySelector('.mrsid-input') : null;
+  var rsid = input ? input.value.trim() : '';
+  if (!rsid) { alert('Enter an rsID first'); return; }
+
+  var btn = row.querySelector('button');
+  var prevLabel = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Saving…';
+
+  try {
+    var resp = await fetch(API + '/api/submit-rsid', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ project_id: m.project_id, chr: m.chr, pos: m.pos, rsid: rsid })
+    });
+    var d = await resp.json();
+    if (!resp.ok || d.error) {
+      alert('Failed to save: ' + (d.error || 'Unknown error'));
+      btn.disabled = false; btn.textContent = prevLabel;
+      return;
+    }
+    // Remove this row from the cache/table — it's resolved now
+    missingRsidsCache.splice(idx, 1);
+    renderMissingRsidsTable();
+  } catch (e) {
+    alert('Failed to save: ' + e.message);
+    btn.disabled = false; btn.textContent = prevLabel;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Locus Matrix — cross-dataset locus significance grid
+// ═══════════════════════════════════════════════════════════════
+
+var locusMatrixSelected = {};
+var locusMatrixPollTimer = null;
+
+async function openLocusMatrix() {
+  var overlay = document.getElementById('locus-matrix-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'locus-matrix-overlay';
+    overlay.className = 'wizard-overlay';
+    overlay.innerHTML = '<div class="wizard-box" style="max-width:640px;width:90vw" id="locus-matrix-box"></div>';
+    overlay.addEventListener('click', function(e) { if (e.target === overlay) closeLocusMatrix(); });
+    document.body.appendChild(overlay);
+  }
+  locusMatrixSelected = {};
+  if (locusMatrixPollTimer) { clearInterval(locusMatrixPollTimer); locusMatrixPollTimer = null; }
+  renderLocusMatrixForm();
+  overlay.classList.add('open');
+}
+
+function closeLocusMatrix() {
+  var overlay = document.getElementById('locus-matrix-overlay');
+  if (overlay) overlay.classList.remove('open');
+  if (locusMatrixPollTimer) { clearInterval(locusMatrixPollTimer); locusMatrixPollTimer = null; }
+}
+
+async function renderLocusMatrixForm() {
+  var box = document.getElementById('locus-matrix-box');
+  box.innerHTML = '<h3>Locus Matrix</h3>'
+    + '<p style="color:#666;font-size:0.85rem;margin:0.5rem 0 1rem">'
+    + 'Pick two or more datasets to compare. Each SNP\'s best p-value across the selected '
+    + 'datasets is merged (filtered to p&le;5e-3), loci are identified against the reference '
+    + 'panel you choose, and the result is a dataset &times; locus significance grid.</p>'
+    + '<div style="font-size:0.85rem;font-weight:600;margin-bottom:0.4rem">Name (optional)</div>'
+    + '<input id="lm-name" type="text" placeholder="e.g. Hisp vs Wang" style="width:100%;padding:0.4rem;border:1px solid #cbd5e1;border-radius:6px;margin-bottom:1rem;box-sizing:border-box">'
+    + '<div style="font-size:0.85rem;font-weight:600;margin-bottom:0.4rem">Datasets</div>'
+    + '<div id="lm-dataset-list" style="max-height:220px;overflow-y:auto;border:1px solid #e5e7eb;border-radius:8px;padding:0.5rem;margin-bottom:1rem">Loading…</div>'
+    + '<div style="font-size:0.85rem;font-weight:600;margin-bottom:0.4rem">Reference panel</div>'
+    + '<select id="lm-refpanel" style="width:100%;padding:0.4rem;border:1px solid #cbd5e1;border-radius:6px;margin-bottom:1rem"><option>Loading…</option></select>'
+    + '<div id="lm-error" style="color:#dc2626;font-size:0.82rem;margin-bottom:0.5rem"></div>'
+    + '<div style="display:flex;justify-content:flex-end;gap:0.5rem">'
+    + '<button class="btn btn-secondary" onclick="closeLocusMatrix()">Cancel</button>'
+    + '<button class="btn btn-primary" onclick="runLocusMatrix()">Run</button></div>';
+
+  var listEl = document.getElementById('lm-dataset-list');
+  if (!projects.length) {
+    listEl.innerHTML = '<span style="color:#888;font-size:0.82rem">No projects yet.</span>';
+  } else {
+    listEl.innerHTML = projects.map(function(p) {
+      var name = p.name || p.id;
+      return '<label style="display:flex;align-items:center;gap:0.5rem;padding:0.25rem 0;font-size:0.85rem">'
+        + '<input type="checkbox" value="' + esc(p.id) + '" onchange="locusMatrixSelected[\'' + esc(p.id) + '\'] = this.checked">'
+        + '<span>' + esc(name) + '</span></label>';
+    }).join('');
+  }
+
+  var sel = document.getElementById('lm-refpanel');
+  try {
+    var gc = await (await fetch(API + '/api/global-config')).json();
+    var panels = (gc.reference_panels || []).filter(function(rp) { return rp.valid; });
+    if (!panels.length) {
+      sel.innerHTML = '<option value="">No valid reference panels configured</option>';
+    } else {
+      sel.innerHTML = panels.map(function(rp) {
+        return '<option value="' + esc(rp.id) + '">' + esc(rp.label) + ' (' + esc(rp.population) + ')</option>';
+      }).join('');
+    }
+  } catch (e) {
+    sel.innerHTML = '<option value="">Failed to load reference panels</option>';
+  }
+}
+
+async function runLocusMatrix() {
+  var ids = Object.keys(locusMatrixSelected).filter(function(k) { return locusMatrixSelected[k]; });
+  var errEl = document.getElementById('lm-error');
+  errEl.textContent = '';
+  if (ids.length < 1) { errEl.textContent = 'Select at least one dataset.'; return; }
+  var refPanelId = document.getElementById('lm-refpanel').value;
+  if (!refPanelId) { errEl.textContent = 'Choose a reference panel.'; return; }
+  var name = document.getElementById('lm-name').value.trim();
+
+  var box = document.getElementById('locus-matrix-box');
+  box.innerHTML = '<h3>Locus Matrix</h3>'
+    + '<div id="lm-progress" style="margin:1rem 0;font-size:0.85rem;color:#475569">Starting…</div>'
+    + '<div style="display:flex;justify-content:flex-end">'
+    + '<button class="btn btn-secondary" onclick="closeLocusMatrix()">Close</button></div>';
+
+  try {
+    var resp = await fetch(API + '/api/locus-matrix-run', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ project_ids: ids, ref_panel_id: refPanelId, name: name })
+    });
+    var d = await resp.json();
+    if (!resp.ok || d.error) {
+      document.getElementById('lm-progress').innerHTML = '<span style="color:#dc2626">' + esc(d.error || 'Failed to start') + '</span>';
+      return;
+    }
+    pollLocusMatrixProgress(d.job_id);
+    loadLocusMatrixJobs();
+  } catch (e) {
+    document.getElementById('lm-progress').innerHTML = '<span style="color:#dc2626">' + esc(e.message) + '</span>';
+  }
+}
+
+function pollLocusMatrixProgress(jobId) {
+  var el = document.getElementById('lm-progress');
+  var phaseLabels = { merge: 'Merging datasets', identify: 'Identifying loci', scan: 'Scanning datasets for locus stats', done: 'Done', error: 'Error' };
+  locusMatrixPollTimer = setInterval(async function() {
+    try {
+      var resp = await fetch(API + '/api/locus-matrix-progress?job=' + encodeURIComponent(jobId));
+      var p = await resp.json();
+      if (!el) return;
+      var label = phaseLabels[p.phase] || p.phase;
+      var detail = p.current_dataset ? (' &mdash; ' + esc(p.current_dataset) + (p.dataset_total ? ' (' + p.dataset_index + '/' + p.dataset_total + ')' : '')) : '';
+      el.innerHTML = label + detail + ' &mdash; ' + p.pct + '%'
+        + (p.loci_found ? '<br>' + p.loci_found + ' loci found so far' : '');
+      if (p.done) {
+        clearInterval(locusMatrixPollTimer); locusMatrixPollTimer = null;
+        if (p.error) {
+          el.innerHTML = '<span style="color:#dc2626">' + esc(p.error) + '</span>';
+        } else {
+          el.innerHTML = '<div style="color:#065f46;margin-bottom:0.75rem">Done &mdash; ' + p.loci_found + ' loci found.</div>'
+            + '<div style="display:flex;gap:0.5rem">'
+            + '<a class="btn btn-primary" href="locus_matrix.html?job=' + encodeURIComponent(jobId) + '" target="_blank">View Matrix &rarr;</a>'
+            + '<a class="btn btn-secondary" href="' + API + '/api/locus-matrix-export?job=' + encodeURIComponent(jobId) + '">Export Excel</a>'
+            + '</div>';
+        }
+        loadLocusMatrixJobs();
+      }
+    } catch (e) {
+      clearInterval(locusMatrixPollTimer); locusMatrixPollTimer = null;
+    }
+  }, 500);
+}
+
+// ── SuSiEx: cross-ancestry, cross-project fine-mapping ─────────────
+var susiexSelected = {};      // project_id -> true/false
+var susiexLocusChoice = {};   // project_id -> locus_index (string)
+var susiexPollTimer = null;
+
+async function openSusiex() {
+  var overlay = document.getElementById('susiex-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'susiex-overlay';
+    overlay.className = 'wizard-overlay';
+    overlay.innerHTML = '<div class="wizard-box" style="max-width:680px;width:90vw" id="susiex-box"></div>';
+    overlay.addEventListener('click', function(e) { if (e.target === overlay) closeSusiex(); });
+    document.body.appendChild(overlay);
+  }
+  susiexSelected = {};
+  susiexLocusChoice = {};
+  if (susiexPollTimer) { clearInterval(susiexPollTimer); susiexPollTimer = null; }
+  renderSusiexForm();
+  overlay.classList.add('open');
+}
+
+function closeSusiex() {
+  var overlay = document.getElementById('susiex-overlay');
+  if (overlay) overlay.classList.remove('open');
+  if (susiexPollTimer) { clearInterval(susiexPollTimer); susiexPollTimer = null; }
+}
+
+function renderSusiexForm() {
+  var box = document.getElementById('susiex-box');
+  box.innerHTML = '<h3>SuSiEx &mdash; Cross-Ancestry Fine-Mapping</h3>'
+    + '<p style="color:#666;font-size:0.85rem;margin:0.5rem 0 1rem">'
+    + 'Pick two or more projects (different ancestries/cohorts) and, for each, the locus that '
+    + 'corresponds to the shared region. Each project must already have loci identified, a sample '
+    + 'size (N) configured, and a reference panel. Requires a local <a href="https://github.com/getian107/SuSiEx" '
+    + 'target="_blank" rel="noopener">SuSiEx</a> installation.</p>'
+    + '<div style="font-size:0.85rem;font-weight:600;margin-bottom:0.4rem">Projects</div>'
+    + '<div id="sx-project-list" style="max-height:180px;overflow-y:auto;border:1px solid #e5e7eb;border-radius:8px;padding:0.5rem;margin-bottom:0.75rem">Loading…</div>'
+    + '<div id="sx-locus-pickers" style="margin-bottom:1rem"></div>'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin-bottom:1rem">'
+    + '<label style="font-size:0.82rem">Max causal signals (L)<input id="sx-max-causal" type="number" value="5" min="1" max="10" style="width:100%;padding:0.35rem;border:1px solid #cbd5e1;border-radius:6px;margin-top:0.25rem"></label>'
+    + '<label style="font-size:0.82rem">P-value threshold<input id="sx-pval" type="text" value="1e-5" style="width:100%;padding:0.35rem;border:1px solid #cbd5e1;border-radius:6px;margin-top:0.25rem"></label>'
+    + '<label style="font-size:0.82rem">MAF threshold<input id="sx-maf" type="text" value="0.005" style="width:100%;padding:0.35rem;border:1px solid #cbd5e1;border-radius:6px;margin-top:0.25rem"></label>'
+    + '<label style="font-size:0.82rem">PLINK path<input id="sx-plink" type="text" value="plink" style="width:100%;padding:0.35rem;border:1px solid #cbd5e1;border-radius:6px;margin-top:0.25rem"></label>'
+    + '</div>'
+    + '<label style="font-size:0.82rem;display:block;margin-bottom:1rem">SuSiEx.py path'
+    + '<input id="sx-susiex-path" type="text" placeholder="/path/to/SuSiEx/SuSiEx.py" style="width:100%;padding:0.35rem;border:1px solid #cbd5e1;border-radius:6px;margin-top:0.25rem;box-sizing:border-box"></label>'
+    + '<div id="sx-error" style="color:#dc2626;font-size:0.82rem;margin-bottom:0.5rem"></div>'
+    + '<div style="display:flex;justify-content:flex-end;gap:0.5rem">'
+    + '<button class="btn btn-secondary" onclick="closeSusiex()">Cancel</button>'
+    + '<button class="btn btn-primary" onclick="runSusiex()">Run</button></div>';
+
+  var listEl = document.getElementById('sx-project-list');
+  if (!projects.length) {
+    listEl.innerHTML = '<span style="color:#888;font-size:0.82rem">No projects yet.</span>';
+  } else {
+    listEl.innerHTML = projects.map(function(p) {
+      var name = p.name || p.id;
+      return '<label style="display:flex;align-items:center;gap:0.5rem;padding:0.25rem 0;font-size:0.85rem">'
+        + '<input type="checkbox" value="' + esc(p.id) + '" onchange="onSusiexProjectToggle(\'' + esc(p.id) + '\', this.checked)">'
+        + '<span>' + esc(name) + '</span></label>';
+    }).join('');
+  }
+}
+
+async function onSusiexProjectToggle(pid, checked) {
+  susiexSelected[pid] = checked;
+  var container = document.getElementById('sx-locus-pickers');
+  if (!checked) {
+    var el = document.getElementById('sx-locus-row-' + pid);
+    if (el) el.remove();
+    delete susiexLocusChoice[pid];
+    return;
+  }
+  var row = document.createElement('div');
+  row.id = 'sx-locus-row-' + pid;
+  row.style.cssText = 'margin-bottom:0.5rem';
+  var proj = projects.find(function(p) { return p.id === pid; });
+  row.innerHTML = '<div style="font-size:0.82rem;font-weight:600;margin-bottom:0.25rem">' + esc((proj && proj.name) || pid) + ' — locus</div>'
+    + '<select id="sx-locus-select-' + esc(pid) + '" style="width:100%;padding:0.35rem;border:1px solid #cbd5e1;border-radius:6px" onchange="susiexLocusChoice[\'' + esc(pid) + '\'] = this.value">Loading…</select>';
+  container.appendChild(row);
+
+  var sel = document.getElementById('sx-locus-select-' + pid);
+  try {
+    var m = await (await fetch(API + '/api/project/' + encodeURIComponent(pid) + '/manifest')).json();
+    var loci = m.loci || [];
+    if (!loci.length) {
+      sel.innerHTML = '<option value="">No loci identified for this project</option>';
+    } else {
+      sel.innerHTML = loci.map(function(lo) {
+        return '<option value="' + lo.index + '">Locus ' + lo.index + ': chr' + esc(lo.chr) + ':' + lo.start + '-' + lo.end
+          + (lo.top_snp ? ' (top ' + esc(lo.top_snp) + ')' : '') + '</option>';
+      }).join('');
+      susiexLocusChoice[pid] = String(loci[0].index);
+    }
+  } catch (e) {
+    sel.innerHTML = '<option value="">Failed to load loci</option>';
+  }
+}
+
+async function runSusiex() {
+  var errEl = document.getElementById('sx-error');
+  errEl.textContent = '';
+  var pids = Object.keys(susiexSelected).filter(function(k) { return susiexSelected[k]; });
+  if (pids.length < 2) { errEl.textContent = 'Select at least two projects.'; return; }
+  var members = [];
+  for (var i = 0; i < pids.length; i++) {
+    var idx = susiexLocusChoice[pids[i]];
+    if (idx === undefined || idx === '') { errEl.textContent = 'Choose a locus for every selected project.'; return; }
+    members.push({ project_id: pids[i], locus_index: parseInt(idx, 10) });
+  }
+  var susiexPath = document.getElementById('sx-susiex-path').value.trim();
+  if (!susiexPath) { errEl.textContent = 'Path to SuSiEx.py is required.'; return; }
+
+  var params = {
+    max_causal: document.getElementById('sx-max-causal').value,
+    pval_thresh: document.getElementById('sx-pval').value,
+    maf_thresh: document.getElementById('sx-maf').value,
+    susiex_path: susiexPath,
+    plink_path: document.getElementById('sx-plink').value.trim() || 'plink'
+  };
+
+  var box = document.getElementById('susiex-box');
+  box.innerHTML = '<h3>SuSiEx</h3>'
+    + '<div id="sx-progress" style="margin:1rem 0;font-size:0.85rem;color:#475569">Starting…</div>'
+    + '<div style="display:flex;justify-content:flex-end">'
+    + '<button class="btn btn-secondary" onclick="closeSusiex()">Close</button></div>';
+
+  try {
+    var resp = await fetch(API + '/api/susiex-run', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ members: members, params: params })
+    });
+    var d = await resp.json();
+    if (!resp.ok || d.error) {
+      document.getElementById('sx-progress').innerHTML = '<span style="color:#dc2626">' + esc(d.error || 'Failed to start') + '</span>';
+      return;
+    }
+    pollSusiexProgress(d.job_id);
+  } catch (e) {
+    document.getElementById('sx-progress').innerHTML = '<span style="color:#dc2626">' + esc(e.message) + '</span>';
+  }
+}
+
+function pollSusiexProgress(jobId) {
+  var el = document.getElementById('sx-progress');
+  susiexPollTimer = setInterval(async function() {
+    try {
+      var resp = await fetch(API + '/api/susiex-progress?job=' + encodeURIComponent(jobId));
+      var p = await resp.json();
+      if (!el) return;
+      if (p.status === 'running') {
+        el.textContent = 'Running SuSiEx… this can take a few minutes.';
+        return;
+      }
+      clearInterval(susiexPollTimer); susiexPollTimer = null;
+      if (p.status === 'error') {
+        el.innerHTML = '<pre style="color:#dc2626;white-space:pre-wrap;font-size:0.78rem">' + esc(p.error || 'Failed') + '</pre>';
+        return;
+      }
+      var r = await (await fetch(API + '/api/susiex-result?job=' + encodeURIComponent(jobId))).json();
+      if (!r.ok) {
+        el.innerHTML = '<pre style="color:#dc2626;white-space:pre-wrap;font-size:0.78rem">' + esc(r.error || 'No results') + '</pre>';
+        return;
+      }
+      var rows = (r.rows || []).slice().sort(function(a, b) { return (b.pip || 0) - (a.pip || 0); });
+      var html = '<div style="color:#065f46;margin-bottom:0.5rem">Done &mdash; ' + r.n_credible_sets + ' credible set(s), ' + rows.length + ' SNPs.</div>'
+        + '<div style="max-height:280px;overflow-y:auto;border:1px solid #e5e7eb;border-radius:8px">'
+        + '<table style="width:100%;font-size:0.8rem;border-collapse:collapse">'
+        + '<thead><tr style="text-align:left;background:#f8fafc"><th style="padding:0.3rem 0.5rem">SNP</th><th style="padding:0.3rem 0.5rem">Chr:Pos</th><th style="padding:0.3rem 0.5rem">PIP</th><th style="padding:0.3rem 0.5rem">CS</th></tr></thead><tbody>'
+        + rows.map(function(row) {
+            return '<tr><td style="padding:0.25rem 0.5rem">' + esc(row.snp_id) + '</td>'
+              + '<td style="padding:0.25rem 0.5rem">' + esc(row.chr) + ':' + row.pos + '</td>'
+              + '<td style="padding:0.25rem 0.5rem">' + (row.pip != null ? row.pip.toFixed(4) : '') + '</td>'
+              + '<td style="padding:0.25rem 0.5rem">' + esc(row.cs_id) + '</td></tr>';
+          }).join('')
+        + '</tbody></table></div>';
+      el.innerHTML = html;
+    } catch (e) {
+      clearInterval(susiexPollTimer); susiexPollTimer = null;
+    }
+  }, 2000);
+}
+
+// ── GWAS QC: genomic inflation / confounding triage ─────────────
+async function openGwasQc(projectId) {
+  var overlay = document.getElementById('gwas-qc-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'gwas-qc-overlay';
+    overlay.className = 'wizard-overlay';
+    overlay.innerHTML = '<div class="wizard-box" style="max-width:520px;width:90vw" id="gwas-qc-box"></div>';
+    overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.classList.remove('open'); });
+    document.body.appendChild(overlay);
+  }
+  var box = document.getElementById('gwas-qc-box');
+  box.innerHTML = '<h3>GWAS QC</h3><div style="margin:1rem 0;color:#666;font-size:0.85rem">Computing genomic inflation factor…</div>';
+  overlay.classList.add('open');
+  await renderGwasQc(projectId, null);
+}
+
+async function renderGwasQc(projectId, ldscIntercept) {
+  var box = document.getElementById('gwas-qc-box');
+  try {
+    var resp = ldscIntercept != null
+      ? await fetch(API + '/api/project/' + encodeURIComponent(projectId) + '/qc', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ ldsc_intercept: ldscIntercept })
+        })
+      : await fetch(API + '/api/project/' + encodeURIComponent(projectId) + '/qc');
+    var d = await resp.json();
+    if (!resp.ok || !d.ok) {
+      box.innerHTML = '<h3>GWAS QC</h3><div style="color:#dc2626;margin:1rem 0;font-size:0.85rem">' + esc(d.error || 'Failed to compute') + '</div>'
+        + '<div style="display:flex;justify-content:flex-end"><button class="btn btn-secondary" onclick="document.getElementById(\'gwas-qc-overlay\').classList.remove(\'open\')">Close</button></div>';
+      return;
+    }
+    var lambdaColor = d.lambda_flagged ? '#dc2626' : '#059669';
+    var html = '<h3>GWAS QC</h3>'
+      + '<p style="color:#666;font-size:0.8rem;margin:0.5rem 0 1rem">Computed from all ' + d.n_snps.toLocaleString() + ' SNPs in this project\'s GWAS file (not LD-pruned — a quick triage signal, not a substitute for a real LDSC run).</p>'
+      + '<div style="display:flex;gap:1.5rem;margin-bottom:1rem">'
+      + '<div><div style="font-size:0.75rem;color:#666">Genomic inflation (&lambda;<sub>GC</sub>)</div>'
+      + '<div style="font-size:1.4rem;font-weight:700;color:' + lambdaColor + '">' + d.lambda_gc.toFixed(3) + '</div></div>'
+      + '<div><div style="font-size:0.75rem;color:#666">Mean &chi;&sup2;</div>'
+      + '<div style="font-size:1.4rem;font-weight:700">' + d.mean_chi2.toFixed(3) + '</div></div>'
+      + '</div>'
+      + (d.lambda_flagged ? '<div style="background:#fef2f2;color:#991b1b;padding:0.5rem 0.75rem;border-radius:6px;font-size:0.8rem;margin-bottom:1rem">&lambda;<sub>GC</sub> &gt; 1.1 — possible inflation or confounding. Pair with an LDSC intercept below to check whether it\'s genuine polygenicity.</div>' : '')
+      + '<div style="font-size:0.85rem;font-weight:600;margin-bottom:0.4rem">LDSC intercept (optional, enter your own LDSC run\'s result)</div>'
+      + '<div style="display:flex;gap:0.5rem;margin-bottom:0.75rem">'
+      + '<input id="qc-ldsc-input" type="text" placeholder="e.g. 1.02" value="' + (d.ldsc_intercept != null ? d.ldsc_intercept : '') + '" style="flex:1;padding:0.4rem;border:1px solid #cbd5e1;border-radius:6px">'
+      + '<button class="btn btn-secondary" onclick="submitGwasQcIntercept(\'' + esc(projectId) + '\')">Compute</button></div>';
+    if (d.attenuation_ratio != null) {
+      var ratioColor = d.ldsc_flagged ? '#dc2626' : '#059669';
+      html += '<div style="font-size:0.8rem;margin-bottom:1rem">Attenuation ratio: <b style="color:' + ratioColor + '">' + d.attenuation_ratio.toFixed(3) + '</b>'
+        + ' — ' + (d.attenuation_ratio < 0.2 ? 'near 0, consistent with genuine polygenicity' : 'well above 0, suggests confounding/stratification worth investigating')
+        + '</div>';
+    }
+    html += '<div style="display:flex;justify-content:flex-end"><button class="btn btn-secondary" onclick="document.getElementById(\'gwas-qc-overlay\').classList.remove(\'open\')">Close</button></div>';
+    box.innerHTML = html;
+  } catch (e) {
+    box.innerHTML = '<h3>GWAS QC</h3><div style="color:#dc2626;margin:1rem 0;font-size:0.85rem">' + esc(e.message) + '</div>';
+  }
+}
+
+function submitGwasQcIntercept(projectId) {
+  var val = parseFloat(document.getElementById('qc-ldsc-input').value);
+  if (!isFinite(val)) return;
+  renderGwasQc(projectId, val);
+}
+
+async function loadLocusMatrixJobs() {
+  var tbody = document.getElementById('locus-matrix-tbody');
+  var empty = document.getElementById('locus-matrix-empty');
+  if (!tbody) return;
+  try {
+    var jobs = await (await fetch(API + '/api/locus-matrix-jobs')).json();
+    if (!jobs.length) {
+      tbody.innerHTML = '';
+      empty.style.display = '';
+      return;
+    }
+    empty.style.display = 'none';
+    tbody.innerHTML = jobs.map(function(j) {
+      var statusBadge = j.status === 'done'
+        ? '<span class="badge badge-ok">Done</span>'
+        : j.status === 'error'
+        ? '<span class="badge badge-error" title="' + escAttr(j.error || '') + '">Error</span>'
+        : '<span class="badge badge-proc">Running…</span>';
+      var actions = (j.status === 'done'
+        ? '<a class="btn btn-secondary" href="locus_matrix.html?job=' + encodeURIComponent(j.job_id) + '" target="_blank">View</a> '
+          + '<a class="btn btn-secondary" href="' + API + '/api/locus-matrix-export?job=' + encodeURIComponent(j.job_id) + '">Export</a> '
+        : '')
+        + '<button class="btn btn-danger" style="padding:0.2rem 0.6rem;font-size:0.75rem" onclick="deleteLocusMatrixJob(\'' + esc(j.job_id) + '\')">Delete</button>';
+      return '<tr>'
+        + '<td><b>' + esc(j.name) + '</b></td>'
+        + '<td class="desc">' + esc(j.datasets) + '</td>'
+        + '<td>' + esc(j.ref_panel_label) + '</td>'
+        + '<td>' + (j.status === 'done' ? j.loci_found : '—') + '</td>'
+        + '<td>' + statusBadge + '</td>'
+        + '<td>' + formatDate(j.created_at) + '</td>'
+        + '<td class="actions">' + actions + '</td>'
+        + '</tr>';
+    }).join('');
+  } catch (e) {
+    tbody.innerHTML = '';
+  }
+}
+
+async function deleteLocusMatrixJob(jobId) {
+  if (!confirm('Delete this Locus Matrix run? This cannot be undone.')) return;
+  try {
+    await fetch(API + '/api/locus-matrix-delete', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ job_id: jobId })
+    });
+    loadLocusMatrixJobs();
+  } catch (e) {
+    alert('Failed to delete: ' + e.message);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Project analysis — build base artifacts from the home page
+// ═══════════════════════════════════════════════════════════════
+async function openProjectAnalysis(projectId) {
+  var overlay = document.getElementById('analysis-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'analysis-overlay';
+    overlay.className = 'wizard-overlay';
+    overlay.innerHTML = '<div class="wizard-box" style="max-width:640px" id="analysis-box"></div>';
+    overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.classList.remove('open'); });
+    document.body.appendChild(overlay);
+  }
+
+  var box = document.getElementById('analysis-box');
+  box.innerHTML = '<h3>Analysis — ' + esc(projectId) + '</h3>'
+    + '<p style="color:#666;font-size:0.85rem;margin:0.5rem 0 1rem">Build base artifacts (GWAS extraction, SNP matching, allele harmonization, LD matrices) for all loci.</p>'
+    + '<div id="analysis-content">Loading status...</div>';
+  overlay.classList.add('open');
+
+  // Fetch base status
+  try {
+    var resp = await fetch(API + '/api/project/' + encodeURIComponent(projectId) + '/analysis/base-status');
+    if (!resp.ok) throw new Error('Status check failed: ' + resp.status);
+    var data = await resp.json();
+    var loci = data.loci || [];
+
+    var readyCount = loci.filter(function(l) { return l.ready; }).length;
+    var warnCount = loci.filter(function(l) { return l.diagnostic === 'warn' || l.diagnostic === 'high_warn'; }).length;
+
+    var html = '<div style="font-size:0.85rem;margin-bottom:0.75rem">'
+      + '<b>' + readyCount + '</b> / ' + loci.length + ' loci have base artifacts built';
+    if (warnCount > 0) html += ' &nbsp; <span style="color:#dc2626">(' + warnCount + ' LD diagnostic warnings)</span>';
+    html += '</div>';
+
+    // Status table
+    html += '<div style="max-height:300px;overflow-y:auto;border:1px solid #e5e7eb;border-radius:8px">'
+      + '<table style="width:100%;font-size:0.8rem"><thead><tr>'
+      + '<th style="padding:4px 8px;text-align:left">Locus</th>'
+      + '<th>Base</th><th>Match</th><th>Harmonize</th><th>LD</th><th>Diag</th><th>Log</th>'
+      + '</tr></thead><tbody>';
+    loci.forEach(function(l) {
+      var dot = function(v) { return v ? '<span style="color:#059669">&#9679;</span>' : '<span style="color:#d1d5db">&#9675;</span>'; };
+      var diag = l.diagnostic === 'pass' ? '<span style="color:#059669">pass</span>'
+        : l.diagnostic === 'warn' ? '<span style="color:#d97706">warn</span>'
+        : l.diagnostic === 'high_warn' ? '<span style="color:#dc2626;font-weight:600" title="' + (l.diagnostic_flagged || 0) + ' SNPs flagged — LD reference panel mismatch likely">high warn</span>'
+        : '<span style="color:#d1d5db">—</span>';
+      var logBtn = l.has_log
+        ? '<a href="#" onclick="showLocusBuildLog(\'' + esc(projectId) + '\',\'' + esc(l.id) + '\',event);return false" style="color:#4f46e5;font-size:0.75rem;text-decoration:none" title="View build log">Log</a>'
+        : '<span style="color:#d1d5db;font-size:0.75rem">—</span>';
+      var mhcBadge = l.mhc_overlap
+        ? ' <span title="Overlaps the MHC/extended-HLA region — fine-mapping/colocalization results here are not statistically trustworthy (unusual LD structure)" style="background:#fef3c7;color:#92400e;font-size:0.68rem;font-weight:600;padding:0.05rem 0.35rem;border-radius:4px">MHC</span>'
+        : '';
+      html += '<tr><td style="padding:3px 8px">Locus ' + l.index + mhcBadge + '</td>'
+        + '<td style="text-align:center">' + dot(l.base) + '</td>'
+        + '<td style="text-align:center">' + dot(l.matched) + '</td>'
+        + '<td style="text-align:center">' + dot(l.harmonized) + '</td>'
+        + '<td style="text-align:center">' + dot(l.ld) + '</td>'
+        + '<td style="text-align:center">' + diag + '</td>'
+        + '<td style="text-align:center">' + logBtn + '</td></tr>';
+    });
+    html += '</tbody></table></div>';
+
+    // Build button + progress
+    html += '<div id="analysis-progress-area" style="margin-top:0.75rem;min-height:30px"></div>';
+
+    // Build config row
+    html += '<div style="display:flex;gap:12px;align-items:center;margin-top:0.75rem;flex-wrap:wrap;font-size:0.8rem;color:#475569">'
+      + '<label>Threads: <input type="number" id="analysis-threads" value="2" min="1" max="16" style="width:50px;padding:3px 6px;border:1px solid #d1d5db;border-radius:4px;font-size:0.8rem"></label>'
+      + '<label>LD window (SNPs each side): <input type="number" id="analysis-ld-window" value="200" min="10" max="5000" style="width:65px;padding:3px 6px;border:1px solid #d1d5db;border-radius:4px;font-size:0.8rem"></label>'
+      + '</div>';
+
+    // Run tool section (only if some loci have artifacts ready)
+    if (readyCount > 0) {
+      html += '<div style="border-top:1px solid #e5e7eb;margin-top:1rem;padding-top:1rem">'
+        + '<div style="font-weight:600;font-size:0.9rem;margin-bottom:0.5rem">Run Analysis Tool</div>'
+        + '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'
+        + '<select id="analysis-locus-select" style="padding:5px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:0.82rem;min-width:180px">';
+      loci.filter(function(l) { return l.ready; }).forEach(function(l) {
+        html += '<option value="' + esc(l.id) + '">Locus ' + l.index + '</option>';
+      });
+      html += '</select>'
+        + '<button class="btn btn-primary" style="background:#059669" onclick="openLocusAnalysis(\'' + esc(projectId) + '\')">Select Tool &amp; Run</button>'
+        + '<span style="font-size:0.78rem;color:#94a3b8">or open the locus in the <a href="viewer.html?project=' + encodeURIComponent(projectId) + '" style="color:#4f46e5">Viewer</a> and click Analyze there</span>'
+        + '</div></div>';
+    } else {
+      html += '<div style="border-top:1px solid #e5e7eb;margin-top:1rem;padding-top:0.75rem;font-size:0.82rem;color:#94a3b8">'
+        + 'Build base artifacts first, then you can run analysis tools (COJO, SuSiE, FINEMAP, etc.) on individual loci.'
+        + '</div>';
+    }
+
+    // Action buttons
+    html += '<div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-top:1rem">'
+      + '<button class="btn btn-secondary" onclick="document.getElementById(\'analysis-overlay\').classList.remove(\'open\')">Close</button>'
+      + '<button class="btn btn-primary" id="build-base-btn" onclick="buildBaseArtifacts(\'' + esc(projectId) + '\')">'
+      + (readyCount === loci.length ? 'Rebuild All' : 'Build All Base Artifacts') + '</button>'
+      + '</div>';
+
+    document.getElementById('analysis-content').innerHTML = html;
+  } catch(e) {
+    document.getElementById('analysis-content').innerHTML = '<div style="color:#dc2626">' + esc(e.message) + '</div>'
+      + '<div style="display:flex;justify-content:flex-end;margin-top:1rem">'
+      + '<button class="btn btn-secondary" onclick="document.getElementById(\'analysis-overlay\').classList.remove(\'open\')">Close</button></div>';
+  }
+}
+
+async function openLocusAnalysis(projectId) {
+  var locusId = document.getElementById('analysis-locus-select').value;
+  if (!locusId) { alert('Select a locus first'); return; }
+
+  var contentEl = document.getElementById('analysis-content');
+
+  // Fetch available tools
+  var tools = [];
+  try {
+    var resp = await fetch(API + '/api/project/_/analysis/tools');
+    if (resp.ok) { var d = await resp.json(); tools = d.tools || []; }
+  } catch(e) {}
+
+  if (tools.length === 0) {
+    contentEl.innerHTML = '<div style="padding:1rem;background:#fef3c7;border-radius:8px;font-size:0.85rem;color:#92400e">'
+      + 'No analysis tools found. Place YAML descriptors in the <code>tools/</code> directory.</div>'
+      + '<div style="display:flex;justify-content:flex-end;margin-top:1rem">'
+      + '<button class="btn btn-secondary" onclick="openProjectAnalysis(\'' + esc(projectId) + '\')">Back</button></div>';
+    return;
+  }
+
+  var html = '<div style="font-weight:600;font-size:0.95rem;margin-bottom:0.75rem">Run Tool on Locus</div>';
+
+  // Tool selector
+  html += '<div style="margin-bottom:10px"><label style="font-size:0.82rem;font-weight:600;color:#374151">Tool</label>'
+    + '<select id="run-tool-select" style="display:block;width:100%;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.82rem;margin-top:4px">';
+  tools.forEach(function(t, i) {
+    html += '<option value="' + i + '">' + esc(t.label || t.tool) + ' v' + esc(t.version || '') + '</option>';
+  });
+  html += '</select></div>';
+
+  // Params container
+  html += '<div id="run-tool-params"></div>';
+
+  // Status area
+  html += '<div id="run-tool-status" style="margin:10px 0;font-size:0.82rem;color:#475569;min-height:20px"></div>';
+  html += '<div id="run-tool-progress" style="display:none;margin:8px 0">'
+    + '<div style="background:#e2e8f0;border-radius:99px;height:8px;overflow:hidden">'
+    + '<div id="run-tool-fill" style="height:100%;background:linear-gradient(90deg,#059669,#047857);width:0%;transition:width .3s ease"></div></div></div>';
+
+  // Buttons
+  html += '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:1rem">'
+    + '<button class="btn btn-secondary" onclick="openProjectAnalysis(\'' + esc(projectId) + '\')">Back</button>'
+    + '<button class="btn btn-primary" style="background:#059669" id="run-tool-btn">Run</button></div>';
+
+  contentEl.innerHTML = html;
+
+  // Render params for selected tool
+  var paramsDiv = document.getElementById('run-tool-params');
+  var toolSelect = document.getElementById('run-tool-select');
+
+  function renderParams(idx) {
+    var t = tools[idx];
+    if (!t.params || t.params.length === 0) {
+      paramsDiv.innerHTML = '<p style="font-size:0.82rem;color:#94a3b8">No configurable parameters.</p>';
+      return;
+    }
+    var ph = '<div style="border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;font-size:0.82rem">';
+    t.params.forEach(function(p) {
+      ph += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'
+        + '<label style="min-width:130px;color:#374151">' + esc(p.label || p.name) + '</label>';
+      if (p.type === 'boolean') {
+        ph += '<input type="checkbox" data-param="' + esc(p.name) + '" ' + (p.default === 'true' ? 'checked' : '') + '>';
+      } else if (p.type === 'select' && p.options) {
+        ph += '<select data-param="' + esc(p.name) + '" style="flex:1;padding:4px 8px;border:1px solid #d1d5db;border-radius:4px;font-size:0.82rem">';
+        p.options.forEach(function(o) { ph += '<option' + (o === p.default ? ' selected' : '') + '>' + esc(o) + '</option>'; });
+        ph += '</select>';
+      } else {
+        ph += '<input type="text" data-param="' + esc(p.name) + '" value="' + escAttr(p.default || '') + '" '
+          + 'style="flex:1;padding:4px 8px;border:1px solid #d1d5db;border-radius:4px;font-size:0.82rem">';
+      }
+      if (p.description) ph += '<span style="font-size:0.72rem;color:#94a3b8">' + esc(p.description) + '</span>';
+      ph += '</div>';
+    });
+    ph += '</div>';
+    paramsDiv.innerHTML = ph;
+  }
+  renderParams(0);
+  toolSelect.addEventListener('change', function() { renderParams(+toolSelect.value); });
+
+  // Run button
+  document.getElementById('run-tool-btn').addEventListener('click', async function() {
+    var t = tools[+toolSelect.value];
+    var btn = document.getElementById('run-tool-btn');
+    btn.textContent = 'Starting...'; btn.disabled = true;
+
+    var params = {};
+    paramsDiv.querySelectorAll('[data-param]').forEach(function(el) {
+      params[el.dataset.param] = el.type === 'checkbox' ? String(el.checked) : el.value;
+    });
+
+    var statusEl = document.getElementById('run-tool-status');
+    var progressEl = document.getElementById('run-tool-progress');
+    var fillEl = document.getElementById('run-tool-fill');
+
+    try {
+      var body = { tool: t.tool, locus_id: locusId };
+      Object.keys(params).forEach(function(k) { body[k] = params[k]; });
+
+      var res = await fetch(API + '/api/project/' + encodeURIComponent(projectId) + '/analysis/run', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(body)
+      });
+      if (!res.ok) {
+        var err = await res.json().catch(function() { return {error:'Server error'}; });
+        statusEl.textContent = 'Error: ' + (err.error || 'Failed to start');
+        btn.textContent = 'Run'; btn.disabled = false;
+        return;
+      }
+      var jobData = await res.json();
+      var jobId = jobData.job_id;
+      progressEl.style.display = '';
+      statusEl.textContent = 'Running ' + esc(t.label) + '...';
+
+      var pollId = setInterval(async function() {
+        try {
+          var pr = await fetch(API + '/api/project/' + encodeURIComponent(projectId) + '/analysis/job/' + jobId + '/progress');
+          if (!pr.ok) return;
+          var p = await pr.json();
+          statusEl.textContent = p.phase || 'Running...';
+          fillEl.style.width = p.pct + '%';
+          if (p.done) {
+            clearInterval(pollId);
+            fillEl.style.width = '100%';
+            if (p.ok) {
+              statusEl.innerHTML = '<span style="color:#059669;font-weight:600">Analysis complete — '
+                + (p.result_rows || 0) + ' result rows.</span> '
+                + 'Open in <a href="viewer.html?project=' + encodeURIComponent(projectId)
+                + '" style="color:#4f46e5">Viewer</a> to see results overlaid on the locus plot.';
+              btn.textContent = 'Close'; btn.disabled = false;
+              btn.onclick = function() { document.getElementById('analysis-overlay').classList.remove('open'); };
+            } else {
+              statusEl.innerHTML = '<span style="color:#dc2626">' + esc(p.error || 'Failed') + '</span>';
+              btn.textContent = 'Run'; btn.disabled = false;
+            }
+          }
+        } catch(e) {}
+      }, 1500);
+    } catch(e) {
+      statusEl.textContent = 'Error: ' + e.message;
+      btn.textContent = 'Run'; btn.disabled = false;
+    }
+  });
+}
+
+async function showLocusBuildLog(projectId, locusId, ev) {
+  if (ev) ev.preventDefault();
+  try {
+    var resp = await fetch(API + '/api/project/' + encodeURIComponent(projectId) + '/analysis/locus-log/' + encodeURIComponent(locusId));
+    var text = await resp.text();
+    var dlg = document.createElement('div');
+    dlg.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:1100';
+    dlg.innerHTML = '<div style="background:#fff;border-radius:12px;padding:1.5rem;max-width:700px;width:90%;max-height:80vh;display:flex;flex-direction:column">'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem">'
+      + '<h4 style="margin:0;font-size:0.95rem">Build Log</h4>'
+      + '<button onclick="this.closest(\'div[style*=fixed]\').remove()" style="border:none;background:none;font-size:1.2rem;cursor:pointer">&times;</button></div>'
+      + '<pre style="flex:1;overflow:auto;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;font-size:0.78rem;line-height:1.6;white-space:pre-wrap;margin:0">'
+      + esc(text) + '</pre></div>';
+    document.body.appendChild(dlg);
+    dlg.addEventListener('click', function(e) { if (e.target === dlg) dlg.remove(); });
+  } catch(e) {
+    alert('Failed to load log: ' + e.message);
+  }
+}
+
+async function buildBaseArtifacts(projectId) {
+  var btn = document.getElementById('build-base-btn');
+  if (btn) { btn.textContent = 'Building...'; btn.disabled = true; }
+
+  var area = document.getElementById('analysis-progress-area');
+  area.innerHTML = '<div style="font-size:0.85rem;color:#1e40af">Starting base pipeline...</div>'
+    + '<div style="background:#e2e8f0;border-radius:99px;height:8px;overflow:hidden;margin-top:6px">'
+    + '<div id="analysis-build-fill" style="height:100%;background:linear-gradient(90deg,#059669,#047857);width:0%;transition:width .3s ease"></div></div>'
+    + '<div id="analysis-build-status" style="font-size:0.8rem;color:#64748b;margin-top:4px"></div>';
+
+  try {
+    var threads = parseInt(document.getElementById('analysis-threads').value) || 2;
+    var ldWindow = parseInt(document.getElementById('analysis-ld-window').value) || 200;
+    await fetch(API + '/api/project/' + encodeURIComponent(projectId) + '/analysis/build-base', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ threads: threads, ld_window: ldWindow })
+    });
+
+    var pollId = setInterval(async function() {
+      try {
+        var r = await fetch(API + '/api/project/' + encodeURIComponent(projectId) + '/analysis/build-base-progress');
+        if (!r.ok) return;
+        var p = await r.json();
+        var fill = document.getElementById('analysis-build-fill');
+        var status = document.getElementById('analysis-build-status');
+        if (fill) fill.style.width = p.pct + '%';
+        var completedSet = new Set(p.completed_loci || []);
+        var doneCount = completedSet.size;
+        if (status) status.textContent = p.phase + ' — ' + doneCount + '/' + (p.total || '?') + ' loci (' + p.pct + '%)';
+        // Update table rows in real time
+        var rows = document.querySelectorAll('#analysis-content tbody tr');
+        rows.forEach(function(row) {
+          var cell = row.querySelector('td');
+          if (!cell) return;
+          var m = cell.textContent.match(/Locus (\d+)/);
+          if (m && completedSet.has(parseInt(m[1]))) {
+            var dots = row.querySelectorAll('td:not(:first-child):not(:last-child)');
+            dots.forEach(function(d) {
+              if (d.innerHTML.indexOf('9675') >= 0) d.innerHTML = '<span style="color:#059669">&#9679;</span>';
+            });
+          }
+        });
+        // Update summary count
+        var summaryEl = document.querySelector('#analysis-content > div:first-child b');
+        if (summaryEl) summaryEl.textContent = String(doneCount);
+        if (p.done) {
+          clearInterval(pollId);
+          if (fill) fill.style.width = '100%';
+          if (status) status.innerHTML = '<span style="color:#059669;font-weight:600">Build complete — ' + doneCount + '/' + p.total + ' loci</span>';
+          if (btn) { btn.textContent = 'Done'; }
+          // Full refresh to get diagnostic results
+          setTimeout(function() { openProjectAnalysis(projectId); }, 1000);
+        }
+      } catch(e) {}
+    }, 2000);
+  } catch(e) {
+    area.innerHTML = '<div style="color:#dc2626">' + esc(e.message) + '</div>';
+    if (btn) { btn.textContent = 'Build All Base Artifacts'; btn.disabled = false; }
+  }
+}
+
+loadProjects();
+loadResources();
+loadLocusMatrixJobs();
+setInterval(loadProjects, 10000);
+</script>
+</body>
+</html>
