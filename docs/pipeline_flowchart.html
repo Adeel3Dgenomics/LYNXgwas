@@ -1,0 +1,261 @@
+<title>LYNXgwas — Program &amp; Statistics Flowchart</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,wght@0,500;0,600;0,700;1,500;1,700&family=Work+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap">
+<style>
+  :root{
+    --bg:#FFFFFF; --surface:#FFFFFF; --surface-2:#FBFBFC;
+    --ink:#1B2430; --ink-soft:#5B6472; --ink-faint:#8B93A1; --border:#DBDFE6;
+
+    --ingest:#2E5C8A;   --ingest-bg:#E7EEF6;   --ingest-border:#A8C2DC;
+    --locus:#2F7A52;    --locus-bg:#E5F2EA;    --locus-border:#A6D3B8;
+    --gene:#9C6B18;     --gene-bg:#FBF1DD;     --gene-border:#E5C57E;
+    --cross:#6B4E9E;    --cross-bg:#F1ECF9;    --cross-border:#C7B4E3;
+    --danger:#A8402F;   --danger-bg:#FBEAE6;   --danger-border:#E7B4A8;
+
+    --shadow: 0 1px 2px rgba(27,36,48,.06), 0 4px 14px rgba(27,36,48,.05);
+    --font-display:'Newsreader', Georgia, 'Times New Roman', serif;
+    --font-body:'Work Sans', -apple-system, Segoe UI, sans-serif;
+    --font-mono:'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#12151B; --surface:#1B1F27; --surface-2:#1F2430;
+      --ink:#ECEEF2; --ink-soft:#A3ACB9; --ink-faint:#727C8B; --border:#323A47;
+      --ingest:#75A6DA; --ingest-bg:rgba(117,166,218,.13); --ingest-border:rgba(117,166,218,.36);
+      --locus:#5FC08B;  --locus-bg:rgba(95,192,139,.13);   --locus-border:rgba(95,192,139,.36);
+      --gene:#E0B15C;   --gene-bg:rgba(224,177,92,.14);    --gene-border:rgba(224,177,92,.4);
+      --cross:#B79CE6;  --cross-bg:rgba(183,156,230,.15);  --cross-border:rgba(183,156,230,.4);
+      --danger:#E28E7C; --danger-bg:rgba(226,142,124,.14); --danger-border:rgba(226,142,124,.38);
+      --shadow: 0 1px 2px rgba(0,0,0,.35), 0 6px 18px rgba(0,0,0,.28);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#12151B; --surface:#1B1F27; --surface-2:#1F2430;
+    --ink:#ECEEF2; --ink-soft:#A3ACB9; --ink-faint:#727C8B; --border:#323A47;
+    --ingest:#75A6DA; --ingest-bg:rgba(117,166,218,.13); --ingest-border:rgba(117,166,218,.36);
+    --locus:#5FC08B;  --locus-bg:rgba(95,192,139,.13);   --locus-border:rgba(95,192,139,.36);
+    --gene:#E0B15C;   --gene-bg:rgba(224,177,92,.14);    --gene-border:rgba(224,177,92,.4);
+    --cross:#B79CE6;  --cross-bg:rgba(183,156,230,.15);  --cross-border:rgba(183,156,230,.4);
+    --danger:#E28E7C; --danger-bg:rgba(226,142,124,.14); --danger-border:rgba(226,142,124,.38);
+    --shadow: 0 1px 2px rgba(0,0,0,.35), 0 6px 18px rgba(0,0,0,.28);
+  }
+
+  *{box-sizing:border-box;}
+  body{ background:var(--bg); color:var(--ink); font-family:var(--font-body); margin:0; padding:0 0 56px; }
+  body, body *{ font-weight:600; }
+
+  .page-header{ max-width:900px; margin:0 auto; padding:44px 28px 8px; }
+  .kicker{ font-family:var(--font-mono); font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--cross); margin:0 0 10px; }
+  h1{ font-family:var(--font-display); font-weight:600; font-size:clamp(26px,4vw,36px); line-height:1.1; margin:0 0 10px; color:var(--ink); }
+  .page-header p{ font-size:14.5px; line-height:1.55; color:var(--ink-soft); margin:0; max-width:74ch; }
+
+  .scroll-wrap{ overflow-x:auto; padding:32px 20px 8px; }
+  .row{ display:grid; grid-template-columns: 300px 300px 300px; column-gap:20px; width:max-content; min-width:100%; margin:0 auto 20px; }
+  .row-wide{ display:grid; grid-template-columns: 1fr; width:min(1240px, 100%); margin:0 auto; }
+
+  .panel{ display:flex; flex-direction:column; gap:14px; border:1px solid var(--ink); border-radius:14px; padding:14px; background:var(--surface); }
+  .panel-head{ display:flex; align-items:center; gap:12px; }
+  .badge{ display:flex; align-items:center; justify-content:center; width:30px; height:30px; border-radius:50%;
+    font-family:var(--font-display); font-weight:700; font-size:15px; color:#fff; flex:none; }
+  .b-ingest{ background:var(--ingest); } .b-locus{ background:var(--locus); }
+  .b-gene{ background:var(--gene); } .b-cross{ background:var(--cross); }
+  .panel-head h2{ font-family:var(--font-display); font-weight:600; font-size:14.5px; margin:0; color:var(--ink); }
+
+  .step{ border-radius:9px; padding:8px 10px; font-size:12.3px; line-height:1.4; border:1px solid var(--ink); }
+  .step .k{ display:block; font-weight:700; font-size:12.8px; margin-bottom:2px; }
+  .step .v{ color:var(--ink-soft); font-weight:500; }
+  .step .cls{ display:block; font-family:var(--font-mono); font-size:10.6px; color:var(--ink-faint); margin-top:3px; font-weight:500; }
+  .s-ingest{ background:var(--ingest-bg); } .s-ingest .k{ color:var(--ingest); }
+  .s-locus{ background:var(--locus-bg); } .s-locus .k{ color:var(--locus); }
+  .s-gene{ background:var(--gene-bg); } .s-gene .k{ color:var(--gene); }
+  .s-cross{ background:var(--cross-bg); } .s-cross .k{ color:var(--cross); }
+  .s-danger{ background:var(--danger-bg); } .s-danger .k{ color:var(--danger); }
+
+  .arrow-down{ text-align:center; font-size:16px; line-height:1; color:var(--ink-faint); }
+
+  .method-grid{ display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .method{ border-radius:8px; padding:7px 9px; font-size:11.6px; line-height:1.35; border:1px solid var(--ink); background:var(--surface-2); }
+  .method .k{ display:block; font-weight:700; font-size:12px; }
+  .method .v{ color:var(--ink-soft); font-weight:500; }
+  .method .status{ display:inline-block; margin-top:4px; font-family:var(--font-mono); font-size:9.6px; padding:1px 5px; border-radius:4px; letter-spacing:.03em; }
+  .stat-ok{ background:var(--locus-bg); color:var(--locus); }
+  .stat-new{ background:var(--gene-bg); color:var(--gene); }
+  .stat-part{ background:var(--danger-bg); color:var(--danger); }
+
+  .wide-flow{ display:flex; flex-wrap:wrap; gap:14px; align-items:stretch; }
+  .wf-arrow{ display:flex; align-items:center; justify-content:center; font-size:20px; color:var(--ink-faint); flex:0 0 20px; }
+  .wf-box{ border:1px solid var(--ink); border-radius:12px; padding:12px; background:var(--surface-2); display:flex; flex-direction:column; gap:6px; flex:1 1 200px; min-width:200px; }
+  .wf-box h3{ margin:0; font-family:var(--font-display); font-size:13.5px; color:var(--cross); }
+  .wf-box p{ margin:0; font-size:11.6px; color:var(--ink-soft); line-height:1.4; }
+  .wf-box .cls{ font-family:var(--font-mono); font-size:10px; color:var(--ink-faint); }
+  .wf-mini{ display:flex; flex-direction:column; gap:5px; }
+  .wf-mini li{ list-style:none; font-size:11px; padding:4px 6px; border-radius:6px; background:var(--surface); border:1px solid var(--border); }
+
+  .legend{ max-width:1240px; margin:18px auto 0; padding:0 20px; display:flex; gap:18px; flex-wrap:wrap; font-size:11.6px; color:var(--ink-soft); }
+  .legend span.sw{ display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:5px; vertical-align:middle; }
+</style>
+
+<div class="page-header">
+  <p class="kicker">LYNXgwas — architecture &amp; statistical pipeline</p>
+  <h1>From raw GWAS summary statistics to cross-disease gene evidence</h1>
+  <p>Every stage below corresponds to a real class in the codebase (shown in monospace) — this is
+  not an idealized diagram, it traces the actual data flow through <code>src/</code>. Stages
+  colored gold are new in this phase; a status tag on each statistical method notes whether it has
+  been run end-to-end in this environment or only unit-tested (see <code>DECISIONS_PHASE2.md</code>
+  for the exact, honest scope of each).</p>
+</div>
+
+<div class="scroll-wrap">
+  <div class="row">
+
+    <!-- PANEL A: Ingestion & QC -->
+    <section class="panel">
+      <div class="panel-head"><div class="badge b-ingest">A</div><h2>Ingestion &amp; QC</h2></div>
+      <div class="step s-ingest">
+        <span class="k">Load GWAS summary stats</span>
+        <span class="v">Column-mapped, build-agnostic parser with interval lookup for unsorted files</span>
+        <span class="cls">GwasParser</span>
+      </div>
+      <div class="arrow-down">↓</div>
+      <div class="step s-ingest">
+        <span class="k">Harmonize alleles</span>
+        <span class="v">Orients effect allele to the reference panel's own A1; drops palindromic/ambiguous SNPs</span>
+        <span class="cls">AlleleHarmonizer · SnpMatcher</span>
+      </div>
+      <div class="arrow-down">↓</div>
+      <div class="step s-ingest">
+        <span class="k">Genomic-inflation QC</span>
+        <span class="v">Distance-based pruning (≤1 SNP / 250kb / chr) before λ<sub>GC</sub>, so dense LD blocks don't dominate</span>
+        <span class="cls">GwasQc</span>
+      </div>
+      <div class="arrow-down">↓</div>
+      <div class="step s-ingest">
+        <span class="k">Reference panel subsetting</span>
+        <span class="v">PLINK 1.9 extracts &amp; matches the locus window from the user-supplied panel</span>
+        <span class="cls">PlinkSubsetter</span>
+      </div>
+    </section>
+
+    <!-- PANEL B: Per-locus fine-mapping suite -->
+    <section class="panel">
+      <div class="panel-head"><div class="badge b-locus">B</div><h2>Per-locus analysis suite</h2></div>
+      <div class="step s-locus">
+        <span class="k">Loci identification</span>
+        <span class="v">Genome-wide sweep → clump → merge within padding; interval-lookup scan across all selected loci</span>
+        <span class="cls">LociIdentifier · MultiLocusScanner</span>
+      </div>
+      <div class="arrow-down">↓</div>
+      <div class="step s-locus">
+        <span class="k">LD computation</span>
+        <span class="v">PLINK r² triangle; window capped at 2,000kb to bound native-memory use at dense loci (e.g. MHC)</span>
+        <span class="cls">LdCalculator · LdMatrixComputer</span>
+      </div>
+      <div class="arrow-down">↓</div>
+      <div class="method-grid">
+        <div class="method"><span class="k">SuSiE</span><span class="v">Bayesian sum-of-single-effects</span><span class="status stat-part">needs R</span></div>
+        <div class="method"><span class="k">FINEMAP</span><span class="v">Shotgun stochastic search</span><span class="status stat-part">no win. build</span></div>
+        <div class="method"><span class="k">SuSiEx</span><span class="v">Cross-ancestry fine-mapping</span><span class="status stat-ok">used</span></div>
+        <div class="method"><span class="k">GCTA-COJO</span><span class="v">Conditional independent signals</span><span class="status stat-ok">used</span></div>
+        <div class="method"><span class="k">coloc</span><span class="v">Colocalization (excl. MHC)</span><span class="status stat-ok">used</span></div>
+        <div class="method"><span class="k">GWAMA</span><span class="v">Single-cohort GC pass-through</span><span class="status stat-ok">used</span></div>
+      </div>
+    </section>
+
+    <!-- PANEL C: Gene / population-scale statistics -->
+    <section class="panel">
+      <div class="panel-head"><div class="badge b-gene">C</div><h2>Gene &amp; heritability statistics</h2></div>
+      <div class="step s-gene">
+        <span class="k">MAGMA — gene-based test</span>
+        <span class="v">SNP→gene annotation window, then a gene-level joint test and optional gene-set enrichment</span>
+        <span class="cls">MagmaAdapter — new this phase</span>
+      </div>
+      <div class="arrow-down">↓</div>
+      <div class="step s-gene">
+        <span class="k">GCTA-GREML — heritability</span>
+        <span class="v">GRM from the reference/genotype panel, then variance-component REML (h² ± SE)</span>
+        <span class="cls">GctaGremlAdapter — new this phase</span>
+      </div>
+      <div class="arrow-down">↓</div>
+      <div class="step s-danger">
+        <span class="k">Honest scope note</span>
+        <span class="v">Full individual-level GREML needs genotype+phenotype data; summary-stats-only projects report this plainly rather than fabricating h²</span>
+      </div>
+    </section>
+  </div>
+
+  <div class="row-wide">
+    <section class="panel">
+      <div class="panel-head"><div class="badge b-cross">D</div><h2>Cross-dataset synthesis — replaces "Locus Matrix"</h2></div>
+      <div class="wide-flow">
+        <div class="wf-box">
+          <h3>Merge datasets</h3>
+          <p>Selected projects' best-SNP-per-position pooled, filtered p≤5e-3</p>
+          <span class="cls">MultiLocusMerger</span>
+        </div>
+        <div class="wf-arrow">→</div>
+        <div class="wf-box">
+          <h3>Dataset × locus grid</h3>
+          <p>Loci re-identified against one reference panel; each dataset scanned for its best SNP per locus</p>
+          <span class="cls">MultiLocusResult</span>
+        </div>
+        <div class="wf-arrow">→</div>
+        <div class="wf-box">
+          <h3>Gene Constellation</h3>
+          <ul class="wf-mini">
+            <li>Radius ∝ number of datasets replicating the gene</li>
+            <li>Node size ∝ aggregated significance</li>
+            <li>Color ∝ direction of effect</li>
+          </ul>
+          <span class="cls">GeneConstellationBuilder</span>
+        </div>
+        <div class="wf-arrow">→</div>
+        <div class="wf-box">
+          <h3>ANOVA</h3>
+          <p>One-way F-test on gene significance: within-disease (across a disease's datasets) and between-disease (across all 6)</p>
+          <span class="cls">AnovaUtil</span>
+        </div>
+        <div class="wf-arrow">→</div>
+        <div class="wf-box">
+          <h3>Export</h3>
+          <p>Interactive circular plot + a hand-rolled .xlsx with the full gene/ANOVA/enrichment tables</p>
+          <span class="cls">XlsxWriter · ExportRegistry</span>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div class="row-wide" style="margin-top:20px">
+    <section class="panel">
+      <div class="panel-head"><div class="badge b-cross">E</div><h2>Evidence enrichment (per-project, user-supplied)</h2></div>
+      <div class="wide-flow">
+        <div class="wf-box">
+          <h3>Upload evidence</h3>
+          <p>Flexible-schema CSV/TSV keyed by gene symbol — PPI score, expression, or any numeric/categorical column</p>
+        </div>
+        <div class="wf-arrow">→</div>
+        <div class="wf-box">
+          <h3>Display track</h3>
+          <p>Rendered as an additional track beneath the Manhattan/gene track in the locus viewer</p>
+        </div>
+        <div class="wf-arrow">→</div>
+        <div class="wf-box">
+          <h3>Locus-based enrichment</h3>
+          <p>Genes-in-loci vs. background, tested against the attached evidence (Fisher's exact / Mann–Whitney)</p>
+        </div>
+        <div class="wf-arrow">→</div>
+        <div class="wf-box">
+          <h3>Export</h3>
+          <p>Enrichment results added as their own .xlsx sheet alongside the Gene Constellation tables</p>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<div class="legend">
+  <span><span class="sw" style="background:var(--ingest)"></span>Ingestion &amp; QC</span>
+  <span><span class="sw" style="background:var(--locus)"></span>Per-locus fine-mapping</span>
+  <span><span class="sw" style="background:var(--gene)"></span>Gene / heritability (new)</span>
+  <span><span class="sw" style="background:var(--cross)"></span>Cross-dataset synthesis (new)</span>
+  <span><span class="sw" style="background:var(--danger)"></span>Explicit scope limitation</span>
+</div>
