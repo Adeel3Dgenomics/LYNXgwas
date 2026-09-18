@@ -336,6 +336,32 @@ async function loadProjects() {
   render();
 }
 
+// Small circularized-genome glyph shown next to each dataset's name on the home page — a mini,
+// deterministic (hashed from the project id, so it's stable across reloads) version of the
+// chromosome-ring color scheme used by the full Gene Constellation visualization, so a dataset's
+// icon there and here are visually the "same genome," just zoomed out.
+function miniGenomeIconHash(str) {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) { h = (h * 31 + str.charCodeAt(i)) | 0; }
+  return Math.abs(h);
+}
+function miniGenomeIcon(projectId) {
+  const N = 10;
+  const seed = miniGenomeIconHash(projectId || '');
+  const cx = 9, cy = 9, r = 6.5, sw = 3.4;
+  let arcs = '';
+  for (let i = 0; i < N; i++) {
+    const a0 = (i / N) * 2 * Math.PI - Math.PI / 2;
+    const a1 = ((i + 0.86) / N) * 2 * Math.PI - Math.PI / 2;
+    const x0 = cx + r * Math.cos(a0), y0 = cy + r * Math.sin(a0);
+    const x1 = cx + r * Math.cos(a1), y1 = cy + r * Math.sin(a1);
+    const hue = ((i * 137.5) + (seed % 360)) % 360; // golden-angle spacing, seeded per dataset
+    arcs += '<path d="M' + x0.toFixed(2) + ',' + y0.toFixed(2) + ' A' + r + ',' + r + ' 0 0 1 ' + x1.toFixed(2) + ',' + y1.toFixed(2) + '" '
+      + 'stroke="hsl(' + hue.toFixed(0) + ',62%,54%)" stroke-width="' + sw + '" fill="none" stroke-linecap="round"/>';
+  }
+  return '<svg width="18" height="18" viewBox="0 0 18 18" style="vertical-align:middle;margin-right:0.4rem" aria-hidden="true">' + arcs + '</svg>';
+}
+
 function render() {
   const tbody = document.getElementById('project-tbody');
   const empty = document.getElementById('empty-state');
@@ -363,7 +389,7 @@ function render() {
     const badge = statusBadge(p);
 
     return '<tr onclick="openProject(\'' + esc(p.id) + '\')" data-id="' + esc(p.id) + '">'
-      + '<td title="' + escAttr(name) + '"><b>' + esc(name) + '</b></td>'
+      + '<td title="' + escAttr(name) + '">' + miniGenomeIcon(p.id) + '<b>' + esc(name) + '</b></td>'
       + '<td class="desc" title="' + escAttr(desc) + '">' + esc(desc) + '</td>'
       + '<td title="' + escAttr(String(loci)) + '">' + loci + '</td>'
       + '<td title="' + escAttr(String(snps)) + '">' + snps + '</td>'
@@ -1629,6 +1655,8 @@ async function saveMissingRsid(idx) {
 
 var locusMatrixSelected = {};
 var locusMatrixPollTimer = null;
+var gcWiz = { step: 0 }; // Gene Constellation setup wizard state (separate from the project-creation `wiz`)
+var GC_STEPS = ['Datasets', 'Reference panel & review'];
 
 async function openLocusMatrix() {
   var overlay = document.getElementById('locus-matrix-overlay');
@@ -1641,8 +1669,9 @@ async function openLocusMatrix() {
     document.body.appendChild(overlay);
   }
   locusMatrixSelected = {};
+  gcWiz = { step: 0, name: '', refPanelId: '' };
   if (locusMatrixPollTimer) { clearInterval(locusMatrixPollTimer); locusMatrixPollTimer = null; }
-  renderLocusMatrixForm();
+  await renderLocusMatrixForm();
   overlay.classList.add('open');
 }
 
@@ -1652,35 +1681,68 @@ function closeLocusMatrix() {
   if (locusMatrixPollTimer) { clearInterval(locusMatrixPollTimer); locusMatrixPollTimer = null; }
 }
 
+function gcStepsBarHtml() {
+  return '<div class="wizard-steps">' + GC_STEPS.map(function(_, i) {
+    var cls = i < gcWiz.step ? 'step done' : (i === gcWiz.step ? 'step active' : 'step');
+    return '<div class="' + cls + '"></div>';
+  }).join('') + '</div>'
+  + '<div style="font-size:0.78rem;color:#888;margin:-0.75rem 0 1rem">'
+  + 'Step ' + (gcWiz.step + 1) + ' of ' + GC_STEPS.length + ' — ' + esc(GC_STEPS[gcWiz.step]) + '</div>';
+}
+
 async function renderLocusMatrixForm() {
   var box = document.getElementById('locus-matrix-box');
-  box.innerHTML = '<h3>Locus Matrix</h3>'
-    + '<p style="color:#666;font-size:0.85rem;margin:0.5rem 0 1rem">'
-    + 'Pick two or more datasets to compare. Each SNP\'s best p-value across the selected '
-    + 'datasets is merged (filtered to p&le;5e-3), loci are identified against the reference '
-    + 'panel you choose, and the result is a dataset &times; locus significance grid.</p>'
-    + '<div style="font-size:0.85rem;font-weight:600;margin-bottom:0.4rem">Name (optional)</div>'
-    + '<input id="lm-name" type="text" placeholder="e.g. Hisp vs Wang" style="width:100%;padding:0.4rem;border:1px solid #cbd5e1;border-radius:6px;margin-bottom:1rem;box-sizing:border-box">'
-    + '<div style="font-size:0.85rem;font-weight:600;margin-bottom:0.4rem">Datasets</div>'
-    + '<div id="lm-dataset-list" style="max-height:220px;overflow-y:auto;border:1px solid #e5e7eb;border-radius:8px;padding:0.5rem;margin-bottom:1rem">Loading…</div>'
+  if (gcWiz.step === 0) {
+    box.innerHTML = '<h3>Gene Constellation — cross-dataset comparison</h3>'
+      + gcStepsBarHtml()
+      + '<p style="color:#666;font-size:0.85rem;margin:0.5rem 0 1rem">'
+      + 'Pick two or more datasets to compare. Each SNP\'s best p-value across the selected '
+      + 'datasets is merged (filtered to p&le;5e-3) and loci are identified against a reference '
+      + 'panel you\'ll choose on the next step.</p>'
+      + '<div style="font-size:0.85rem;font-weight:600;margin-bottom:0.4rem">Name (optional)</div>'
+      + '<input id="lm-name" type="text" placeholder="e.g. Hisp vs Wang" value="' + escAttr(gcWiz.name || '') + '" style="width:100%;padding:0.4rem;border:1px solid #cbd5e1;border-radius:6px;margin-bottom:1rem;box-sizing:border-box">'
+      + '<div style="font-size:0.85rem;font-weight:600;margin-bottom:0.4rem">Datasets</div>'
+      + '<div id="lm-dataset-list" style="max-height:260px;overflow-y:auto;border:1px solid #e5e7eb;border-radius:8px;padding:0.5rem;margin-bottom:1rem">Loading…</div>'
+      + '<div id="lm-error" style="color:#dc2626;font-size:0.82rem;margin-bottom:0.5rem"></div>'
+      + '<div style="display:flex;justify-content:flex-end;gap:0.5rem">'
+      + '<button class="btn btn-secondary" onclick="closeLocusMatrix()">Cancel</button>'
+      + '<button class="btn btn-primary" onclick="gcWizNext()">Next</button></div>';
+
+    var listEl = document.getElementById('lm-dataset-list');
+    if (!projects.length) {
+      listEl.innerHTML = '<span style="color:#888;font-size:0.82rem">No projects yet.</span>';
+    } else {
+      listEl.innerHTML = projects.map(function(p) {
+        var name = p.name || p.id;
+        var checked = locusMatrixSelected[p.id] ? ' checked' : '';
+        return '<label style="display:flex;align-items:center;gap:0.5rem;padding:0.25rem 0;font-size:0.85rem">'
+          + '<input type="checkbox" value="' + esc(p.id) + '"' + checked + ' onchange="locusMatrixSelected[\'' + esc(p.id) + '\'] = this.checked">'
+          + '<span>' + esc(name) + '</span></label>';
+      }).join('');
+    }
+    return;
+  }
+
+  // Step 1 (index 1): reference panel + review/confirm
+  var ids = Object.keys(locusMatrixSelected).filter(function(k) { return locusMatrixSelected[k]; });
+  var selectedNames = ids.map(function(id) {
+    var p = projects.find(function(x) { return x.id === id; });
+    return p ? (p.name || p.id) : id;
+  });
+  box.innerHTML = '<h3>Gene Constellation — cross-dataset comparison</h3>'
+    + gcStepsBarHtml()
+    + '<div style="font-size:0.85rem;font-weight:600;margin-bottom:0.4rem">Selected datasets (' + ids.length + ')</div>'
+    + '<div style="font-size:0.82rem;color:#475569;background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:0.5rem 0.75rem;margin-bottom:1rem">'
+    + (selectedNames.length ? selectedNames.map(esc).join(', ') : '<span style="color:#dc2626">None selected — go back</span>')
+    + '</div>'
     + '<div style="font-size:0.85rem;font-weight:600;margin-bottom:0.4rem">Reference panel</div>'
     + '<select id="lm-refpanel" style="width:100%;padding:0.4rem;border:1px solid #cbd5e1;border-radius:6px;margin-bottom:1rem"><option>Loading…</option></select>'
     + '<div id="lm-error" style="color:#dc2626;font-size:0.82rem;margin-bottom:0.5rem"></div>'
-    + '<div style="display:flex;justify-content:flex-end;gap:0.5rem">'
+    + '<div style="display:flex;justify-content:space-between;gap:0.5rem">'
+    + '<button class="btn btn-secondary" onclick="gcWizPrev()">Back</button>'
+    + '<div style="display:flex;gap:0.5rem">'
     + '<button class="btn btn-secondary" onclick="closeLocusMatrix()">Cancel</button>'
-    + '<button class="btn btn-primary" onclick="runLocusMatrix()">Run</button></div>';
-
-  var listEl = document.getElementById('lm-dataset-list');
-  if (!projects.length) {
-    listEl.innerHTML = '<span style="color:#888;font-size:0.82rem">No projects yet.</span>';
-  } else {
-    listEl.innerHTML = projects.map(function(p) {
-      var name = p.name || p.id;
-      return '<label style="display:flex;align-items:center;gap:0.5rem;padding:0.25rem 0;font-size:0.85rem">'
-        + '<input type="checkbox" value="' + esc(p.id) + '" onchange="locusMatrixSelected[\'' + esc(p.id) + '\'] = this.checked">'
-        + '<span>' + esc(name) + '</span></label>';
-    }).join('');
-  }
+    + '<button class="btn btn-primary" onclick="runLocusMatrix()">Run</button></div></div>';
 
   var sel = document.getElementById('lm-refpanel');
   try {
@@ -1690,7 +1752,8 @@ async function renderLocusMatrixForm() {
       sel.innerHTML = '<option value="">No valid reference panels configured</option>';
     } else {
       sel.innerHTML = panels.map(function(rp) {
-        return '<option value="' + esc(rp.id) + '">' + esc(rp.label) + ' (' + esc(rp.population) + ')</option>';
+        var selAttr = rp.id === gcWiz.refPanelId ? ' selected' : '';
+        return '<option value="' + esc(rp.id) + '"' + selAttr + '>' + esc(rp.label) + ' (' + esc(rp.population) + ')</option>';
       }).join('');
     }
   } catch (e) {
@@ -1698,17 +1761,42 @@ async function renderLocusMatrixForm() {
   }
 }
 
+function gcWizSaveFields() {
+  var nameEl = document.getElementById('lm-name');
+  if (nameEl) gcWiz.name = nameEl.value.trim();
+  var panelEl = document.getElementById('lm-refpanel');
+  if (panelEl) gcWiz.refPanelId = panelEl.value;
+}
+
+async function gcWizNext() {
+  gcWizSaveFields();
+  var errEl = document.getElementById('lm-error');
+  if (gcWiz.step === 0) {
+    var ids = Object.keys(locusMatrixSelected).filter(function(k) { return locusMatrixSelected[k]; });
+    if (ids.length < 1) { if (errEl) errEl.textContent = 'Select at least one dataset.'; return; }
+  }
+  gcWiz.step++;
+  await renderLocusMatrixForm();
+}
+
+async function gcWizPrev() {
+  gcWizSaveFields();
+  gcWiz.step--;
+  await renderLocusMatrixForm();
+}
+
 async function runLocusMatrix() {
+  gcWizSaveFields();
   var ids = Object.keys(locusMatrixSelected).filter(function(k) { return locusMatrixSelected[k]; });
   var errEl = document.getElementById('lm-error');
   errEl.textContent = '';
   if (ids.length < 1) { errEl.textContent = 'Select at least one dataset.'; return; }
-  var refPanelId = document.getElementById('lm-refpanel').value;
+  var refPanelId = gcWiz.refPanelId;
   if (!refPanelId) { errEl.textContent = 'Choose a reference panel.'; return; }
-  var name = document.getElementById('lm-name').value.trim();
+  var name = gcWiz.name || '';
 
   var box = document.getElementById('locus-matrix-box');
-  box.innerHTML = '<h3>Locus Matrix</h3>'
+  box.innerHTML = '<h3>Gene Constellation</h3>'
     + '<div id="lm-progress" style="margin:1rem 0;font-size:0.85rem;color:#475569">Starting…</div>'
     + '<div style="display:flex;justify-content:flex-end">'
     + '<button class="btn btn-secondary" onclick="closeLocusMatrix()">Close</button></div>';

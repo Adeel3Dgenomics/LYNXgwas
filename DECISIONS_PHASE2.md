@@ -193,14 +193,25 @@ Lesson for future phases: don't run two file-editing forks against the same work
 without either isolating them (`isolation: "worktree"`) or serializing them — the two-fork approach
 here worked but needed exactly this kind of manual reconciliation pass to be safe to trust.
 
-### 3.6 Multi-dataset wizard rework [ ]
-Rebuild the multi-dataset entry point as a real multi-step wizard using the existing
-`wizard-overlay`/`wiz-steps-bar` components (dataset selection → gene/significance threshold →
-evidence attachment (3.8) → review → run), replacing the current single-screen checkbox picker.
+### 3.6 Multi-dataset wizard rework [x] — done, verified
+The Gene Constellation dataset-picker (formerly a single static screen) is now a real 2-step
+wizard using the same `.wizard-steps`/`.step`/`.step.done`/`.step.active` visual pattern as the
+existing project-creation wizard, with its own separate state (`gcWiz`, not the shared `wiz`
+global, to avoid colliding with an open "New project" wizard): Step 1 — name + dataset checklist;
+Step 2 — selected-datasets review + reference panel + Back/Run. Verified against the live app (a
+throwaway workspace copy + a port-patched test server, cleaned up afterward, original PID-28512
+server on 8765 never touched): screenshotted both steps with Playwright against the real 30-dataset
+corpus — step 1 shows the step bar at 1-of-2 with the real dataset list; clicking Next correctly
+carries the 2 checked datasets into step 2's review summary and step bar advances to 2-of-2 done.
+Evidence-attachment as a 3rd step (originally sketched as part of this item) deferred until 3.8
+(evidence enrichment) actually exists — added then, not before.
 
-### 3.7 Home-page dataset icon [ ]
-Small inline SVG circular genome glyph (mini chromosome-colored ring) next to each project name in
-the home page table.
+### 3.7 Home-page dataset icon [x] — done, verified
+`miniGenomeIcon(projectId)` in `index.html`: a small inline SVG ring of 10 arc segments, colors
+golden-angle-spaced in HSL and seeded from a hash of the project id (deterministic across reloads,
+distinct per dataset), visually echoing the full Gene Constellation ring's color scheme at a
+glance. Verified visually via the same Playwright screenshot pass as 3.6 — distinct, colorful
+rings render correctly next to all 30 real dataset names on the home page.
 
 ### 3.8 Evidence enrichment (PPI / gene expression / flexible schema) [ ]
 New per-project "evidence" upload: CSV/TSV with a gene-symbol column plus arbitrary named
