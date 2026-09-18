@@ -262,11 +262,15 @@ Run the new ANOVA + enrichment (and MAGMA/GCTA if the binaries download successf
 environment) against the already-processed, already-verified 30-dataset corpus on disk
 (`scz-full-demo` workspace) to get real numbers — not illustrative/mocked ones.
 
-### 3.12 Manuscript update [ ]
-New Methods subsections (MAGMA, GCTA-GREML, ANOVA, enrichment, circular visualization), a Results
-subsection reporting 3.11's real numbers, Limitations updated honestly for whatever in 3.1–3.9
-couldn't be fully end-to-end verified in this environment (no R, no FINEMAP-on-Windows, and
-MAGMA/GCTA only if their downloads fail).
+### 3.12 Manuscript update [~] — partially started
+New Methods subsections for MAGMA/GCTA-GREML (§2.5) and the ANOVA module (§2.7), plus a forward
+reference (§2.6) to Gene Constellation, are written and compile cleanly in
+`LYNXgwas-paper/main.tex` (commit `03dd7bd`) — safe to write now since they describe already-built,
+already-tested code, not results that could still change. Deliberately **not yet touched**: the
+Gene Constellation subsubsection's real content/figure (only its `\label` exists so the forward
+reference resolves), the Results section, Discussion, and Limitations — those need 3.8/3.9/3.11 to
+actually finish first, so they report the real final state instead of needing yet another rewrite
+(this is exactly the mistake the user called out earlier this session — not repeating it).
 
 ## 4. Execution order
 
