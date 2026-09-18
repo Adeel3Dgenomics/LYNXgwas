@@ -170,6 +170,7 @@ public class LocalServer {
 
         // ── rsID recovery API ────────────────────────────────────────────
         http.createContext("/api/global-config",     this::globalConfigEndpoint);
+        http.createContext("/api/shared-storage/test", this::sharedStorageTest);
         http.createContext("/api/rsid-recover",      this::rsidRecover);
         http.createContext("/api/rsid-progress",     this::rsidProgressEndpoint);
         http.createContext("/api/rsid-detect",       this::rsidDetect);
@@ -1441,6 +1442,19 @@ public class LocalServer {
             gc.validateAll();
             respond(ex, 200, "application/json", gc.toJson().getBytes("UTF-8"));
         }
+    }
+
+    // POST /api/shared-storage/test — validates the currently-saved shared-storage config (folder
+    // reachability, or a git clone/pull), for the Resources & Settings "Test" button.
+    private void sharedStorageTest(HttpExchange ex) throws IOException {
+        cors(ex); if (preflight(ex)) return;
+        if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) {
+            respond(ex, 405, "application/json", "{\"error\":\"POST required\"}".getBytes()); return;
+        }
+        GlobalConfig gc = GlobalConfig.load();
+        rsid.SharedStorageResolver.Result r = rsid.SharedStorageResolver.test(gc.sharedStorage);
+        String json = "{\"ok\":" + r.ok + ",\"message\":\"" + escJ(r.message) + "\"}";
+        respond(ex, 200, "application/json", json.getBytes("UTF-8"));
     }
 
     // POST /api/rsid-recover — { "project_id": "...", "snp_database_id": "..." }

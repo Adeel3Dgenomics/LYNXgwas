@@ -12,7 +12,8 @@ javac -encoding UTF-8 -d bin -cp "bin$LIBCP" \
   tests/MultiLocusScannerTest.java \
   tests/LdCalculatorTest.java \
   tests/GwasQcTest.java \
-  tests/GlobalConfigTest.java
+  tests/GlobalConfigTest.java \
+  tests/SharedStorageResolverTest.java
 
 FAILED=0
 
@@ -31,6 +32,10 @@ java -cp "bin$LIBCP" GwasQcTest || FAILED=1
 echo
 echo "--- GlobalConfigTest ---"
 java -cp "bin$LIBCP" GlobalConfigTest || FAILED=1
+
+echo
+echo "--- SharedStorageResolverTest ---"
+java -cp "bin$LIBCP" SharedStorageResolverTest || FAILED=1
 
 echo
 if [ "$FAILED" -eq 0 ]; then
