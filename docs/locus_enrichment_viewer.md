@@ -4,8 +4,16 @@ Living design doc for evolving the current **Locus Matrix** (`locus_matrix.html`
 **Locus Enrichment Viewer**: a cross-dataset, multi-evidence-type workspace for known-loci-based
 comparison (GWAS layers today; gene enrichment, pathway, and fine-mapping/PIP layers planned).
 
-Status: **design discussion — no code written yet.** This file is updated as the discussion
-progresses; see the changelog at the bottom for what changed and when.
+Status: **partially superseded, partially still the plan — see the 2026-09-18 changelog entry.**
+`locus_matrix.html` itself has since been replaced by a *different* feature (Gene Constellation —
+see `DECISIONS_PHASE2.md` §3.5), not by the cross-dataset tabbed workspace this doc originally
+proposed. The two are complementary, not the same thing: Gene Constellation is a cross-*disease*,
+gene-level circular visualization; this doc's "Locus Enrichment Viewer" concept — specifically its
+§4 Gene Enrichment tab idea — is the design basis for the evidence-enrichment feature (PPI/gene-
+expression tracks + a locus-based enrichment test) now being built at the **per-project** locus
+viewer (`viewer.html`) level, not as the full cross-dataset workspace described below. That larger
+cross-dataset workspace remains a valid, separate future direction; it just isn't what's being
+built right now. See the changelog for the concrete scope actually being implemented.
 
 ---
 
@@ -114,6 +122,20 @@ Deferred questions (revisit when their features come into scope):
 
 ## 6. Changelog
 
+- **2026-09-18** — Scope resolved for the evidence-enrichment work actually being built this
+  phase, answering open question §5.1 for the *per-project* case (the cross-dataset workspace's
+  version of this question remains open): **import, not compute.** LYNXgwas does not call any
+  GO/STRING API itself; the user uploads their own flexible-schema evidence table (gene symbol +
+  arbitrary numeric/categorical columns — PPI score, expression value, or anything else) per
+  project. LYNXgwas's own compute contribution is a simple, hand-rolled **locus-based enrichment
+  test** (genes-in-identified-loci vs. a background set, Fisher's exact or Mann–Whitney depending
+  on whether the evidence column is categorical or numeric) against that imported evidence — not a
+  full ontology-term enrichment pipeline. The evidence renders as an additional track beneath the
+  existing Manhattan/gene track in `viewer.html`, and results export alongside the other new
+  statistical sheets (ANOVA, MAGMA, GCTA-GREML) in the `.xlsx` export. This answers this doc's
+  original "compute vs. import" question for the shipped feature; the multi-tab, cross-dataset
+  "Locus Enrichment Viewer" this doc otherwise describes (§3, §4's non-Gene-Enrichment tabs) is
+  unaffected and remains open future work, not built in this pass.
 - **2026-08-20** — Initial version. Captures the discussion that moved this from "improve the
   existing Locus Matrix visualization" to "generalize it into a multi-layer Locus Enrichment
   Viewer." Locked: existing-projects-only GWAS ingestion. Deferred: PIP layers, pathway layers,
