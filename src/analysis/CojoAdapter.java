@@ -19,12 +19,8 @@ public class CojoAdapter {
                                   int sampleN, double pCutoff, double collinear,
                                   String gctaBin) throws IOException {
 
-        // ── Verify GCTA binary ──
-        File gctaFile = new File(gctaBin);
-        if (!gctaFile.isAbsolute()) gctaFile = gctaFile.getAbsoluteFile();
-        if (!gctaFile.exists())
-            throw new IOException("GCTA binary not found at: " + gctaFile.getAbsolutePath()
-                + ". Place gcta64.exe in the bin/ folder.");
+        // ── Verify GCTA binary (shared with GctaGremlAdapter — see GctaBinaryResolver) ──
+        File gctaFile = GctaBinaryResolver.verify(gctaBin);
 
         runDir.mkdirs();
 
