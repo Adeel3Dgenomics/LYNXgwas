@@ -22,6 +22,7 @@ javac -encoding UTF-8 -d bin -cp "bin%LIBCP%" ^
   src\rsid\RsidApiCompleter.java ^
   src\rsid\CrossFileLookup.java ^
   src\rsid\RsidPipeline.java ^
+  src\rsid\SharedStorageResolver.java ^
   src\loci\LociIdentifier.java ^
   src\loci\LociProgress.java ^
   src\analysis\ContentHasher.java ^
@@ -40,6 +41,7 @@ javac -encoding UTF-8 -d bin -cp "bin%LIBCP%" ^
   src\analysis\OutputContractValidator.java ^
   src\analysis\ToolDescriptor.java ^
   src\analysis\PluginEngine.java ^
+  src\analysis\SnakemakeSubmitter.java ^
   src\analysis\GctaBinaryResolver.java ^
   src\analysis\CojoAdapter.java ^
   src\analysis\GctaGremlAdapter.java ^

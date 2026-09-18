@@ -112,6 +112,87 @@
       "novelty": null,
       "recurrence": 1,
       "last_touched": "2026-09-14T20:32:04+00:00"
+    },
+    {
+      "kind": "precaution",
+      "title": "Java `static final int` port constants get inlined — recompiling one file won't change other classes' printed values",
+      "summary": "LocalServer.PORT is `public static final int PORT = 8765`, a compile-time constant. Recompiling only LocalServer.java with a new value (e.g. to test on a second port without touching the live server) correctly changes LocalServer's own runtime bind (InetSocketAddress uses the fresh value), but any other already-compiled class that references LocalServer.PORT (e.g. Main.java's startup printf) keeps the OLD value baked in at its call sites, because javac inlines static final primitive/String constants everywhere they're referenced, not just where they're declared. Symptom: the console log says 'Server at http://localhost:8765/' even though netstat shows it's actually listening on 8766. Verify the real bound port with netstat/ss, not by trusting printed log text, whenever only a subset of classes was recompiled.",
+      "detail": null,
+      "domain": "java",
+      "tags": [
+        "java",
+        "javac",
+        "constant-inlining",
+        "testing",
+        "hpc-agnostic"
+      ],
+      "trigger": "Testing a Java app that hardcodes a port/value as `static final`, by recompiling just one file into a copied bin/ to run a second instance on a different port for verification.",
+      "origin": "ai",
+      "attachments": [],
+      "snippet": null,
+      "id": "idea_0004",
+      "state": "seed",
+      "provenance": [
+        {
+          "project": "LYNXgwas",
+          "session": "gene-constellation-task",
+          "ts": "2026-09-18T16:00:38+00:00"
+        }
+      ],
+      "growth_log": [
+        {
+          "session": "gene-constellation-task",
+          "ts": "2026-09-18T16:00:38+00:00",
+          "event": "seeded",
+          "note": "first captured"
+        }
+      ],
+      "edges": [],
+      "embedding": [],
+      "novelty": null,
+      "recurrence": 1,
+      "last_touched": "2026-09-18T16:00:38+00:00"
+    },
+    {
+      "kind": "precaution",
+      "title": "LYNXgwas: raw GWAS input files get deleted post-processing, but .gz originals survive as siblings",
+      "summary": "In this environment's fully-processed demo corpus (scz-full-demo/workspace and disease-demos/), each project's config.properties gwas.file points at a decompressed .tsv/.txt that no longer exists on disk (deleted after the earlier full-reprocessing pass to save space) — but a same-named .tsv.gz/.txt.gz sibling is still present one directory over (e.g. disease-demos/scz_extra/, disease-demos/t2d/, disease-demos/cad/, and scz-full-demo/PGC3_SCZ_full.tsv.gz). MultiLocusMerger/MultiLocusScanner (and presumably the single-project pipeline) read cfg.gwasFile directly and fail with a bare 'file not found' if only the .gz exists. Fix: `gunzip -k -f <the>.gz` to restore the exact decompressed filename the config expects, without touching/deleting the .gz. Needed before any locus-matrix / gene-constellation / multi-dataset run against 'already processed' projects in this corpus can actually execute for real (rather than replaying only previously-cached merged.tsv outputs).",
+      "detail": null,
+      "domain": "lynxgwas",
+      "tags": [
+        "lynxgwas",
+        "gwas",
+        "disk-cleanup",
+        "locus-matrix",
+        "gene-constellation",
+        "test-data"
+      ],
+      "trigger": "A locus-matrix/gene-constellation (or any multi-project merge) run against the scz-full-demo / disease-demos corpus fails with '<file>.tsv (The system cannot find the file specified)'.",
+      "origin": "ai",
+      "attachments": [],
+      "snippet": null,
+      "id": "idea_0005",
+      "state": "seed",
+      "provenance": [
+        {
+          "project": "LYNXgwas",
+          "session": "gene-constellation-task",
+          "ts": "2026-09-18T16:00:38+00:00"
+        }
+      ],
+      "growth_log": [
+        {
+          "session": "gene-constellation-task",
+          "ts": "2026-09-18T16:00:38+00:00",
+          "event": "seeded",
+          "note": "first captured"
+        }
+      ],
+      "edges": [],
+      "embedding": [],
+      "novelty": null,
+      "recurrence": 1,
+      "last_touched": "2026-09-18T16:00:38+00:00"
     }
   ]
 }

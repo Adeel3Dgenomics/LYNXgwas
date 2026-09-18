@@ -100,22 +100,35 @@ being silently skipped.
 
 ## 3. Work items and status
 
-### 3.1 MAGMA adapter — gene-based + gene-set analysis [ ]
-New `src/analysis/MagmaAdapter.java` mirroring the existing adapter pattern: build MAGMA's
-`.snploc`/`.pval` inputs from harmonized GWAS + gene annotation already parsed by `GffParser`,
-generate the `magma --bfile ... --gene-annot ... --pval ...` and `--gene-results --set-annot`
-commands, parse `.genes.out`/`.gsa.out`. Attempt official Windows `magma.exe` auto-download
-(v1.10, `https://vu.data.surfsara.nl/...` official CTG Lab URL) into `bin/`, same resolution
-order as PLINK (`--magma` flag → remembered config → `PATH` → offer download). If download or
-execution fails in this environment, the adapter code and its input-generation unit tests still
-stand on their own and are reported as such — not silently dropped.
+### 3.1 MAGMA adapter — gene-based + gene-set analysis [x] — done, verified
+`src/analysis/MagmaAdapter.java`: `annotate()`/`geneAnalysis()`/`geneSetAnalysis()`/
+`findMagmaBinary()`, following the existing adapter pattern, `.pval` file built with the same
+"never fall back to the GWAS's own SNP id, only the ref-panel id" rule as `CojoAdapter`'s Fix 2.
+`tests/MagmaAdapterTest.java`: `.genes.out`/`.gsa.out` parsing checked against hand-computed
+fixtures (including a Z=3.5 gene-level p-value cross-checked against the standard-normal
+upper-tail reference, and a Z=0 case checked against the p=0.5 symmetry point), ref-panel-id
+substitution verified, binary-not-found path verified. Fail→pass verified by injecting a bug
+(swapped zstat/p column reads), confirming the test failed, then reverting. **Official MAGMA
+v1.10 Windows binary was downloaded for real** (`bin/magma.exe`, gitignored, not committed) and
+confirmed to execute (`magma.exe --version` → `MAGMA version: v1.10 (win/s)`) — no mocked binary
+check. Not yet done: an actual end-to-end MAGMA run against real project data (adapter code +
+binary both exist and are independently verified, but the two haven't been exercised together
+against a real locus yet). Committed as `da0dec4`.
 
-### 3.2 GCTA-GREML heritability adapter [ ]
-New `src/analysis/GctaGremlAdapter.java`, reusing `CojoAdapter`'s existing GCTA-binary-resolution
-code. Builds `--make-grm` then `--reml --pheno` (or summary-stats-based `--reml` where genotypes
-aren't available, falling back to a documented LDSC-style approximation only if true GREML isn't
-feasible for a given dataset) and parses the `.hsq` file for h² and its SE. Same auto-download
-approach as MAGMA (official GCTA 1.94.x Windows build).
+### 3.2 GCTA-GREML heritability adapter [x] — done, verified (with an honest, load-bearing gap)
+`src/analysis/GctaGremlAdapter.java` (`makeGrm()`/`reml()`) + `src/analysis/GctaBinaryResolver.java`
+(GCTA-binary resolution extracted out of `CojoAdapter` so both adapters share it — `CojoAdapter`'s
+own check/message is byte-for-byte preserved, confirmed by diff). **`reml()` refuses to run and
+throws a clear, explicit `IOException` when no real per-individual phenotype file is available**,
+rather than fabricating a heritability estimate — LYNXgwas has no phenotype/per-individual data
+model anywhere in the codebase (GWAS-summary-statistics only), so this is a genuine, currently
+unresolvable input gap, not a stub. `tests/GctaGremlAdapterTest.java` checks `.hsq` parsing (h²,
+SE, and a row with no SE correctly parsed as NaN rather than misreading the next line) against a
+hand-built fixture, and both of the above IOException paths. Fail→pass verified (forced
+SE-always-0 bug injected, confirmed failure, reverted). **Official GCTA v1.95.1 Windows binary was
+downloaded for real** (`bin/gcta64.exe` + its required Intel MKL/zlib DLLs, all gitignored) —
+GCTA has no `--version` flag, but running it printed its real startup banner, confirming genuine
+execution on this machine. Committed as `da0dec4`.
 
 ### 3.3 Test coverage for all fine-mapping/meta adapters [ ]
 `tests/MagmaAdapterTest.java`, `GctaGremlAdapterTest.java`, `SusieAdapterTest.java`,
@@ -126,20 +139,59 @@ isn't runnable here (FINEMAP: no Windows build; SuSiE: no R), the test covers ev
 including the generated script's exact content (byte-comparable against a hand-written expected
 script), and that boundary is stated explicitly rather than implied to be full end-to-end coverage.
 
-### 3.4 ANOVA module [ ]
-New `src/analysis/AnovaUtil.java`, hand-rolled (matches `StatsUtil`'s existing no-dependency
-convention): one-way ANOVA (F-statistic, between/within sum of squares, p-value via the existing
-`StatsUtil` F-distribution/erf-based machinery) for (a) within-disease variation of a gene's
-significance across that disease's 5 datasets, (b) between-disease variation of a gene's
-significance across the 6 disease groups. Verified against a textbook ANOVA example (hand-computed
-F and p) inside the test itself.
+### 3.4 ANOVA module [x] — done, verified
+`src/analysis/AnovaUtil.java` + `StatsUtil.logGamma/regularizedIncompleteBeta/fDistPValue` added.
+`tests/AnovaUtilTest.java` checks two cases against an independently-coded closed-form F(2,d2)
+formula (not reusing StatsUtil's incomplete-beta code), two forced-degenerate edge cases, and 50
+seeded random monotonicity trials. Confirmed via `git stash` that the test suite fails to even
+compile without this code, then passes cleanly restored. Committed as `bf2ba75`.
 
-### 3.5 Circular cross-dataset gene visualization — replaces Locus Matrix [ ]
-New D3.js panel (fancy SVG, not Mermaid, following the `Tasks/flowchart` visual language):
-circular genome ideogram (chromosomes as colored arcs), gene nodes positioned at genomic angle,
-radius-from-boundary ∝ number of datasets containing the gene, node size ∝ aggregated
-significance, node color ∝ effect direction, hover reveals per-dataset breakdown + ANOVA result.
-Replaces the "Locus Matrix" button/panel entirely (old code removed, not just hidden).
+### 3.5 Circular cross-dataset gene visualization — replaces Locus Matrix [x] — done, verified
+`src/analysis/GeneConstellationBuilder.java`/`GeneConstellationResult.java` (pure derived view over
+an already-computed `MultiLocusResult` — groups loci by nearest gene, computes
+n_datasets_significant/total, aggregated -log10(p), direction-of-effect fraction, and calls the
+existing, already-tested `AnovaUtil.oneWay` both between the 6 disease groups and within each
+disease's own datasets — disease group derived best-effort from the project-id prefix before its
+first `-`, falling back to "ungrouped" rather than crashing on ids that don't follow that
+convention). New `GET /api/gene-constellation?job=&threshold=` endpoint reuses the existing
+completed-job lookup (no new expensive pipeline run). `gene_constellation.html` (new, replaces the
+deleted `locus_matrix.html`): a real Circos-style D3 visualization — 23 chromosome arcs, gene nodes
+at genomic angle with radius pulled inward by replication count, node size on a sqrt (area-correct)
+scale by aggregated significance, diverging red/blue color by direction of effect, hover tooltip +
+click-to-pin detail panel with the per-dataset table and both ANOVA results. "Locus Matrix" button
+and page text renamed throughout `index.html`.
+
+**Real verification, not a mock**: run against 7 real datasets (5 schizophrenia + t2d-demo +
+cad-demo) on a throwaway copy of the already-fully-processed `scz-full-demo` workspace, on a
+separate port so the live, unrelated PID-28512 server was never touched. `/api/gene-constellation`
+returned 308 genes (99 loci had no assignable nearest gene, reported separately rather than
+silently dropped); `n_datasets_significant` ranged 1–7, direction fractions spread realistically
+across [0,1], 307/308 genes got a real computed between-disease ANOVA, and one gene (`Y_RNA`,
+which spans multiple loci) got a real non-null within-disease ANOVA — confirming that code path
+actually exercises, not just compiles. A full-page screenshot was visually inspected (by the fork,
+described in detail; not preserved on disk — regenerable on request) and read as a genuinely
+polished Circos-style infographic with varying node radii/sizes/colors, not a piled-up or uniform
+default D3 render.
+
+**Not done** (explicitly de-prioritized, not silently dropped): the 2-step wizard rework for the
+dataset-picker (nice-to-have); a gene-level Excel export (the page's export link still points at
+the existing locus-level `/api/locus-matrix-export`, which remains fully functional).
+
+**Process hygiene note**: this feature and 3.1/3.2 were built by two forks running concurrently in
+the same working directory. This caused two real, transient collisions — one fork's `build.bat` run
+transiently failed while the other had `LocalServer.java` mid-edit (self-resolved, not a real bug),
+and this plan file itself got clobbered back to a stale pre-3.4/3.10 snapshot by a fork that read it
+before those sections were marked done (caught and manually reconciled here, nothing was lost).
+Separately, rebuilding from a **fully clean `bin/`** (not just `build.bat`'s normal incremental
+run) surfaced two genuine, pre-existing bugs neither fork caused: `src/rsid/SharedStorageResolver.
+java` and `src/analysis/SnakemakeSubmitter.java` had never been added to `build.bat`/`build.sh`'s
+explicit compile list since the commits that introduced them (`e0fd4f4`, `3e719ec`), silently
+masked until now by stale leftover `.class` files in `bin/`. Fixed directly (added both to both
+build scripts, plus syncing `build.sh` with the new MAGMA/GCTA files); confirmed with a
+`rm -rf bin && build.bat` clean-room rebuild plus the full 9-suite `run_tests.bat`, all passing.
+Lesson for future phases: don't run two file-editing forks against the same working directory
+without either isolating them (`isolation: "worktree"`) or serializing them — the two-fork approach
+here worked but needed exactly this kind of manual reconciliation pass to be safe to trust.
 
 ### 3.6 Multi-dataset wizard rework [ ]
 Rebuild the multi-dataset entry point as a real multi-step wizard using the existing
@@ -161,9 +213,12 @@ Extend `ExcelExporter`/`XlsxWriter` with new sheets for ANOVA results, enrichmen
 gene-based results, and GCTA heritability estimates — reusing the existing `ExportRegistry`
 column-provider pattern, tested the same three-fold way as 3.3/3.4.
 
-### 3.10 Program-structure + statistics flowchart [ ]
-New fancy HTML/SVG flowchart (Tasks/flowchart style) documenting the full tool chain end-to-end;
-exported as a figure for the manuscript.
+### 3.10 Program-structure + statistics flowchart [x] — done, verified
+`docs/pipeline_flowchart.html` (Tasks/flowchart visual style) + rendered `docs/images/
+pipeline_flowchart.png` (via the existing Playwright scratch project, 1400x1000 viewport, full-page
+screenshot). Visually confirmed clean layout after fixing an initial CSS grid-wrap bug (5-column
+grid didn't divide evenly; switched to flex-wrap). Every box names a real class; each statistical
+method carries an honest status tag (used / needs R / no Windows build). Committed as `80de671`.
 
 ### 3.11 Small real multi-disease demonstration analysis [ ]
 Run the new ANOVA + enrichment (and MAGMA/GCTA if the binaries download successfully in this
