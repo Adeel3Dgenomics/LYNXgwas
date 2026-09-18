@@ -269,6 +269,14 @@ td.actions button { margin-right: 0.3rem; }
 
       <h4 style="font-size:0.9rem;margin:1rem 0 0.5rem">API Providers</h4>
       <p style="color:#666;font-size:0.82rem">NCBI dbSNP and gnomAD are available as fallback providers for rsID recovery. Enable them per-project in the "Add rsIDs" dialog. Rate limits: NCBI 3 req/s (higher with API key), gnomAD 5 req/s.</p>
+
+      <h4 style="font-size:0.9rem;margin:1rem 0 0.5rem">Shared Storage</h4>
+      <p style="color:#666;font-size:0.8rem;margin-bottom:0.5rem">Point at a shared lab folder (or a Google Drive/Dropbox desktop sync folder — any local or network path works), or a git repo you already have your own credentials for, so reference panels and annotation files don't need to be re-downloaded per machine.</p>
+      <div id="sharedstorage-form" style="font-size:0.85rem"></div>
+
+      <h4 style="font-size:0.9rem;margin:1rem 0 0.5rem">Cluster (HPC)</h4>
+      <p style="color:#666;font-size:0.8rem;margin-bottom:0.5rem">Optional. Off by default — local processing is unaffected either way. Configures LYNXgwas to submit analysis jobs to a cluster over your own SSH access (key-based only) using Snakemake, instead of running locally.</p>
+      <div id="hpc-form" style="font-size:0.85rem"></div>
     </div>
   </details>
 
@@ -1063,7 +1071,119 @@ async function loadResources() {
     var gc = await (await fetch(API + '/api/global-config')).json();
     renderSnpDatabases(gc.snp_databases || []);
     renderRefPanels(gc.reference_panels || []);
+    renderSharedStorage(gc.shared_storage || {mode:'none', folder_path:'', git_url:'', git_local_clone:''});
+    renderHpc(gc.hpc || {enabled:false, ssh_host:'', ssh_user:'', ssh_key_path:'', remote_work_dir:'',
+      poll_interval_min_minutes:5, poll_interval_max_minutes:20, module_names:{}});
   } catch(e) {}
+}
+
+// ── Shared Storage ──────────────────────────────────────────
+function renderSharedStorage(ss) {
+  var el = document.getElementById('sharedstorage-form');
+  var modeOpts = ['none', 'folder', 'git'].map(function(m) {
+    return '<option value="' + m + '"' + (ss.mode === m ? ' selected' : '') + '>' + m + '</option>';
+  }).join('');
+  el.innerHTML =
+    '<div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.4rem">'
+    + '<label>Mode:</label><select id="ss-mode" onchange="renderSharedStorage({mode:this.value,folder_path:document.getElementById(\'ss-folder\')?document.getElementById(\'ss-folder\').value:\'\',git_url:document.getElementById(\'ss-giturl\')?document.getElementById(\'ss-giturl\').value:\'\',git_local_clone:document.getElementById(\'ss-gitclone\')?document.getElementById(\'ss-gitclone\').value:\'\'})">' + modeOpts + '</select>'
+    + '</div>'
+    + (ss.mode === 'folder' ? '<div style="margin-bottom:0.4rem"><label>Folder path:</label><br><input id="ss-folder" type="text" style="width:100%" value="' + esc(ss.folder_path) + '"></div>' : '')
+    + (ss.mode === 'git' ? (
+        '<div style="margin-bottom:0.4rem"><label>Git URL:</label><br><input id="ss-giturl" type="text" style="width:100%" value="' + esc(ss.git_url) + '"></div>'
+        + '<div style="margin-bottom:0.4rem"><label>Local clone path:</label><br><input id="ss-gitclone" type="text" style="width:100%" value="' + esc(ss.git_local_clone) + '"></div>'
+      ) : '')
+    + '<div style="display:flex;gap:0.5rem">'
+    + '<button class="btn btn-secondary" onclick="saveSharedStorage()">Save</button>'
+    + '<button class="btn btn-secondary" onclick="testSharedStorage()">Test</button>'
+    + '</div>'
+    + '<div id="ss-test-result" style="margin-top:0.4rem;font-size:0.8rem"></div>';
+}
+
+async function saveSharedStorage() {
+  var gc = await (await fetch(API + '/api/global-config')).json();
+  var mode = document.getElementById('ss-mode').value;
+  gc.shared_storage = {
+    mode: mode,
+    folder_path: mode === 'folder' && document.getElementById('ss-folder') ? document.getElementById('ss-folder').value : (gc.shared_storage || {}).folder_path || '',
+    git_url: mode === 'git' && document.getElementById('ss-giturl') ? document.getElementById('ss-giturl').value : (gc.shared_storage || {}).git_url || '',
+    git_local_clone: mode === 'git' && document.getElementById('ss-gitclone') ? document.getElementById('ss-gitclone').value : (gc.shared_storage || {}).git_local_clone || ''
+  };
+  await fetch(API + '/api/global-config', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(gc) });
+  await loadResources();
+}
+
+async function testSharedStorage() {
+  // loadResources() (awaited above) re-renders #sharedstorage-form, so grabbing the element
+  // reference only after saveSharedStorage() fully resolves avoids writing into a DOM node that's
+  // already been replaced (which would silently discard the result).
+  await saveSharedStorage();
+  var el = document.getElementById('ss-test-result');
+  el.textContent = 'Testing...';
+  try {
+    var r = await (await fetch(API + '/api/shared-storage/test', { method: 'POST' })).json();
+    el.innerHTML = '<span style="color:' + (r.ok ? '#065f46' : '#dc2626') + '">' + esc(r.message) + '</span>';
+  } catch (e) {
+    el.innerHTML = '<span style="color:#dc2626">Request failed: ' + esc(e.message) + '</span>';
+  }
+}
+
+// ── HPC / Snakemake ──────────────────────────────────────────
+function renderHpc(hpc) {
+  var el = document.getElementById('hpc-form');
+  var modules = hpc.module_names || {};
+  var moduleRows = Object.keys(modules).map(function(tool) {
+    return '<tr><td>' + esc(tool) + '</td><td>' + esc(modules[tool]) + '</td>'
+      + '<td><button class="btn btn-secondary" style="padding:0.1rem 0.4rem;font-size:0.72rem" onclick="removeHpcModule(\'' + esc(tool) + '\')">Remove</button></td></tr>';
+  }).join('');
+  el.innerHTML =
+    '<div style="margin-bottom:0.4rem"><label><input id="hpc-enabled" type="checkbox"' + (hpc.enabled ? ' checked' : '') + '> Enable HPC execution</label></div>'
+    + '<div style="margin-bottom:0.4rem"><label>SSH host:</label> <input id="hpc-host" type="text" value="' + esc(hpc.ssh_host) + '"></div>'
+    + '<div style="margin-bottom:0.4rem"><label>SSH user:</label> <input id="hpc-user" type="text" value="' + esc(hpc.ssh_user) + '"></div>'
+    + '<div style="margin-bottom:0.4rem"><label>Private key path:</label> <input id="hpc-key" type="text" style="width:60%" value="' + esc(hpc.ssh_key_path) + '"> <span style="color:#888;font-size:0.75rem">(key-based auth only — no password is ever stored)</span></div>'
+    + '<div style="margin-bottom:0.4rem"><label>Remote work dir:</label> <input id="hpc-workdir" type="text" style="width:60%" value="' + esc(hpc.remote_work_dir) + '"></div>'
+    + '<div style="margin-bottom:0.4rem"><label>Poll interval (minutes):</label> '
+    + '<input id="hpc-poll-min" type="number" min="1" style="width:4em" value="' + hpc.poll_interval_min_minutes + '"> to '
+    + '<input id="hpc-poll-max" type="number" min="1" style="width:4em" value="' + hpc.poll_interval_max_minutes + '"></div>'
+    + '<div style="margin-bottom:0.3rem"><b>Module names</b> (tool &rarr; <code>module load</code> argument)</div>'
+    + '<table style="width:100%;font-size:0.8rem;border-collapse:collapse;margin-bottom:0.4rem">'
+    + '<tr style="border-bottom:1px solid #eee"><th style="text-align:left">Tool</th><th style="text-align:left">Module</th><th></th></tr>'
+    + moduleRows + '</table>'
+    + '<button class="btn btn-secondary" onclick="addHpcModule()" style="margin-bottom:0.5rem">+ Add module</button>'
+    + '<div><button class="btn btn-secondary" onclick="saveHpc()">Save</button></div>';
+}
+
+async function addHpcModule() {
+  var tool = prompt('Tool name (e.g. "plink", "r"):');
+  if (!tool) return;
+  var mod = prompt('Module load argument (e.g. "plink/1.9", "R/4.3.1"):');
+  if (!mod) return;
+  var gc = await (await fetch(API + '/api/global-config')).json();
+  if (!gc.hpc) gc.hpc = {};
+  if (!gc.hpc.module_names) gc.hpc.module_names = {};
+  gc.hpc.module_names[tool] = mod;
+  await fetch(API + '/api/global-config', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(gc) });
+  loadResources();
+}
+
+async function removeHpcModule(tool) {
+  var gc = await (await fetch(API + '/api/global-config')).json();
+  if (gc.hpc && gc.hpc.module_names) delete gc.hpc.module_names[tool];
+  await fetch(API + '/api/global-config', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(gc) });
+  loadResources();
+}
+
+async function saveHpc() {
+  var gc = await (await fetch(API + '/api/global-config')).json();
+  gc.hpc = gc.hpc || {};
+  gc.hpc.enabled = document.getElementById('hpc-enabled').checked;
+  gc.hpc.ssh_host = document.getElementById('hpc-host').value;
+  gc.hpc.ssh_user = document.getElementById('hpc-user').value;
+  gc.hpc.ssh_key_path = document.getElementById('hpc-key').value;
+  gc.hpc.remote_work_dir = document.getElementById('hpc-workdir').value;
+  gc.hpc.poll_interval_min_minutes = parseInt(document.getElementById('hpc-poll-min').value, 10) || 5;
+  gc.hpc.poll_interval_max_minutes = parseInt(document.getElementById('hpc-poll-max').value, 10) || 20;
+  await fetch(API + '/api/global-config', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(gc) });
+  await loadResources();
 }
 
 function renderSnpDatabases(dbs) {
