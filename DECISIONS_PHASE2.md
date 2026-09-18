@@ -375,3 +375,33 @@ evidence-attachment step, and no live HPC/SSH execution (unchanged from Phase 1'
 boundary). Nothing in this file has been pushed to GitHub — no repo URL has been provided for
 either `LYNXgwas` (beyond the already-known public repo, which remains ahead of `origin/main` and
 un-pushed pending explicit instruction) or `LYNXgwas-paper` (still private, still no URL given).
+
+## 6. Post-close addition: co-significance links between genes [x] — done, verified
+
+Requested after the above was closed out: lines between gene nodes in Gene Constellation, thickness
+scaled by how many datasets the two genes are independently significant in *together*.
+`GeneConstellationBuilder.buildCoSignificanceEdges()` (new `GeneEdge`/`edges` field on
+`GeneConstellationResult`, new `min_edge_count`/`max_edges` query params on
+`/api/gene-constellation`) computes this per-dataset (cost bounded by that dataset's own
+significant-gene count, not genes² overall) and returns the highest-count pairs (default: count ≥2,
+capped at 150). `tests/GeneConstellationBuilderTest.java` verifies exact hand-computed counts on a
+3-gene/3-dataset fixture, sort order, the cap, and the zero-edges case; fail→pass confirmed via
+`git stash`. Frontend renders edges as gentle Circos-style chords behind the gene nodes with
+sqrt-scaled opacity (tuned after a real screenshot showed the initial version — straight center-pull
+chords, linear opacity, 300-edge cap — read as a visually cluttered "hairball"; reduced to a 150-edge
+cap and a gentler curve/opacity, confirmed materially cleaner via a second screenshot), a hover
+tooltip, and a show/hide toggle. Verified end-to-end against a real 30-dataset run (150 real edges,
+e.g. the previously-flagged `PBX2` outlier shows up as a real hub, co-significant with several other
+genes 8–10 times — consistent with, and further supporting, the "probable MHC-boundary LD artifact"
+interpretation already recorded above).
+
+**Real bug found and fixed while building this**: an initial version used the literal 6-character
+escape sequence `" "` as a map-key delimiter; the edit tooling interpreted and embedded it as an
+actual NUL byte in the `.java` source file rather than leaving the literal escape text (`file`
+reported the source as binary). Caught before committing, fixed with a plain `"@@@"` delimiter;
+confirmed zero NUL bytes remain.
+
+Manuscript not updated for this addition — it was requested and scoped narrowly to the application
+feature itself, not a manuscript revision; the existing Gene Constellation figure/description remain
+accurate as written (they simply don't yet mention edges, which is not a false claim, just an
+omission). Happy to add this on request.
