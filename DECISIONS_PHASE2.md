@@ -130,14 +130,40 @@ downloaded for real** (`bin/gcta64.exe` + its required Intel MKL/zlib DLLs, all 
 GCTA has no `--version` flag, but running it printed its real startup banner, confirming genuine
 execution on this machine. Committed as `da0dec4`.
 
-### 3.3 Test coverage for all fine-mapping/meta adapters [ ]
-`tests/MagmaAdapterTest.java`, `GctaGremlAdapterTest.java`, `SusieAdapterTest.java`,
-`FinemapAdapterTest.java`, `CojoAdapterTest.java`, `ColocAdapterTest.java`, `GwamaAdapterTest.java`
-— input-generation and output-parsing logic tested against synthetic data with hand-computed
-expected results, run through the fail→pass `git stash` cycle. Where the actual external binary
-isn't runnable here (FINEMAP: no Windows build; SuSiE: no R), the test covers everything up to and
-including the generated script's exact content (byte-comparable against a hand-written expected
-script), and that boundary is stated explicitly rather than implied to be full end-to-end coverage.
+### 3.3 Test coverage for all fine-mapping/meta adapters [x] — done, verified
+All 6 previously-zero-coverage adapters now have real regression tests (`tests/{Susie,Finemap,
+Cojo,Coloc,Gwama}AdapterTest.java`, plus `Magma`/`GctaGreml` from 3.1/3.2) — 14 test suites total,
+all passing from a clean-room (`rm -rf bin`) rebuild. Every adapter's tests were verified via a
+real fail→pass cycle (either `git stash` or a deliberately-injected-then-reverted bug), not just
+run-once-and-hope.
+
+Two genuine findings surfaced and handled honestly rather than silently:
+- **Real bug fixed**: `ColocAdapter.prepareRun()` never referenced `BaseStepPipeline.overlapsMhc`
+  at all — unlike the shared base pipeline (which already logs an MHC warning for any adapter,
+  including coloc, before it runs), coloc's own generated script/output carried no such signal on
+  its own. Fixed with a small, deliberately non-statistical change: the same warning text is now
+  also printed into coloc's own generated `coloc_run.R` when the locus overlaps MHC — defense in
+  depth alongside the existing pipeline-level warning, not a change to any coloc computation. The
+  MHC SNP itself is still **not** excluded from `coloc_input.tsv`, matching this project's already-
+  established, deliberate "warn, don't block" MHC policy — verified via a real fail→pass `git
+  stash` cycle on `tests/ColocAdapterTest.java`'s `testMhcRegionWarnsButDoesNotExclude`.
+- **Genuine uncertainty flagged, not guessed at**: `FinemapAdapter` writes `finemap.z` in
+  `harmonized_gwas.tsv`'s own file-iteration order, never re-sorted to match `ld_snp_order.txt`'s
+  position order that the LD matrix (`finemap.ld`) uses. In practice both likely already agree
+  (both ultimately derive from position-sorted upstream files), but nothing in the code actually
+  enforces or verifies this pairing, and it was not fixed without being sure a fix wouldn't have
+  other implications. `tests/FinemapAdapterTest.java` documents this exact current behavior with a
+  deliberately-reversed-order fixture so it cannot silently regress further or be assumed safe.
+  Recorded here as an open item for the manuscript's Limitations section.
+
+**Binary-availability correction**: the official MAGMA v1.10 / GCTA v1.95.1 Windows binaries
+downloaded and confirmed-executing in 3.1/3.2 no longer exist in `bin/` — an unrelated,
+independent `rm -rf bin` clean-room rebuild (done deliberately, to catch the build-script gaps
+recorded under 3.5's process-hygiene note) had the side effect of deleting them, since they are
+correctly gitignored and therefore not restored by a rebuild. The adapter code and all unit tests
+are completely unaffected (none of them depend on the binary being present), and the earlier
+download/execution was real and did happen — but as of this writing `bin/` does not currently
+contain either binary, and re-confirming live execution would require re-downloading them.
 
 ### 3.4 ANOVA module [x] — done, verified
 `src/analysis/AnovaUtil.java` + `StatsUtil.logGamma/regularizedIncompleteBeta/fDistPValue` added.

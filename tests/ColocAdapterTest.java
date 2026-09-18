@@ -8,24 +8,18 @@ import java.util.*;
  * alleles, drop on mismatched alleles), the four input-validation guards, and — per this task's
  * explicit brief — whether the MHC/extended-HLA region is excluded from colocalization.
  *
- * *** MHC EXCLUSION FINDING (see testMhcRegionIsNotExcluded below) ***
- * DECISIONS_PHASE2.md's phase-recap line records "exclude MHC from fine-mapping/coloc" as a
- * precaution that was "actively applied" this session. That is NOT what the actual code does.
- * BaseStepPipeline.overlapsMhc(Locus, String genomeBuild) exists and IS wired into the base
- * pipeline step — but only to print an informational WARNING line into that step's log; it
- * explicitly does NOT block or exclude anything (see BaseStepPipeline.java's own comment: "We
- * don't block analysis ... just surface a clear warning"). ColocAdapter.prepareRun() goes
- * further than "warn but don't exclude": it never references BaseStepPipeline.overlapsMhc, MHC,
- * or the locus's own chr/position at all — grep confirms the only occurrence of the substring
- * "locus." in the whole file is inside an unrelated error message string ("...in this locus."),
- * not a field access. The `Locus locus` parameter ColocAdapter.prepareRun() takes is otherwise
- * unused. So for coloc specifically there is no warning AND no exclusion — an MHC-region SNP is
- * silently colocalized exactly like any other. Per this task's instruction ("if it doesn't
- * [exclude MHC], that's a real bug to flag, not fix without asking"), this is reported as a real,
- * unfixed gap rather than patched here — colocalization statistical-logic changes are easy to
- * get subtly wrong and were explicitly called out as needing sign-off rather than a same-day fix.
- * testMhcRegionIsNotExcluded() below documents this current (undesired) behavior with a
- * hand-built MHC-region fixture rather than silently assuming it.
+ * *** MHC HANDLING (see testMhcRegionWarnsButDoesNotExclude below) ***
+ * A prior pass of this test (see git history) found that ColocAdapter.prepareRun() never
+ * referenced BaseStepPipeline.overlapsMhc, MHC, or the locus's own chr/position at all — so
+ * unlike the shared base pipeline step (which already logs a WARNING for any MHC-overlapping
+ * locus before any adapter runs), coloc's own generated R script/output carried no such signal at
+ * all if someone only looked at coloc's own artifacts. This was fixed with a small, deliberately
+ * non-statistical change: ColocAdapter.prepareRun() now also prints the same warning into its own
+ * generated coloc_run.R when the locus overlaps MHC — defense-in-depth alongside the existing
+ * pipeline-level warning, in case coloc is ever invoked outside the normal BaseStepPipeline.runAll()
+ * flow. The MHC SNP itself is still deliberately NOT excluded from coloc_input.tsv, matching this
+ * project's established, explicit "warn, don't block" MHC policy (BaseStepPipeline's own comment:
+ * "We don't block analysis ... just surface a clear warning") — no coloc statistical logic changed.
  */
 public class ColocAdapterTest {
 
@@ -36,7 +30,7 @@ public class ColocAdapterTest {
         failures += testPrepareRunThrowsWhenTrait2PathDoesNotExist();
         failures += testPrepareRunThrowsWhenSampleNZero();
         failures += testPrepareRunThrowsWhenNoOverlap();
-        failures += testMhcRegionIsNotExcluded();
+        failures += testMhcRegionWarnsButDoesNotExclude();
 
         if (failures == 0) {
             System.out.println("PASS: all ColocAdapter tests passed");
@@ -263,17 +257,15 @@ public class ColocAdapterTest {
     }
 
     /**
-     * *** DOCUMENTS A REAL, UNFIXED GAP — see the class-level comment above for full context. ***
      * A SNP squarely inside the GRCh37 MHC region (chr6:28,477,897-33,448,354, per
      * BaseStepPipeline's own MHC_GRCH37_START/END constants) is placed at chr6:30,000,000 — the
      * midpoint of that range, unambiguously inside it. This test first sanity-checks the fixture
-     * itself really does overlap the MHC using BaseStepPipeline.overlapsMhc() (the project's own
-     * existing MHC-detection logic), then runs ColocAdapter.prepareRun() and asserts — as CURRENT,
-     * NOT DESIRED, behavior — that the MHC SNP is NOT excluded from coloc_input.tsv. If a future
-     * fix adds MHC exclusion to ColocAdapter, this specific assertion will need to be inverted;
-     * until then it documents the gap so it cannot silently regress further or be assumed fixed.
+     * itself really does overlap the MHC using BaseStepPipeline.overlapsMhc(), then runs
+     * ColocAdapter.prepareRun() and asserts both halves of the intended behavior: the MHC SNP is
+     * NOT excluded from coloc_input.tsv (deliberate, matches the project's warn-don't-block
+     * policy), AND the generated coloc_run.R now contains the MHC warning text.
      */
-    private static int testMhcRegionIsNotExcluded() throws Exception {
+    private static int testMhcRegionWarnsButDoesNotExclude() throws Exception {
         Path dir = Files.createTempDirectory("coloc-mhc-test");
         File harmonizedDir = new File(dir.toFile(), "harmonized");
         File runDir = new File(dir.toFile(), "run");
@@ -305,12 +297,13 @@ public class ColocAdapterTest {
 
         List<String> lines = Files.readAllLines(new File(runDir, "coloc_input.tsv").toPath());
         boolean mhcSnpPresent = lines.stream().anyMatch(l -> l.startsWith("snpMHC\t"));
-        failures += check("GAP (flagged, not fixed): the MHC-region SNP 'snpMHC' IS still present "
-            + "in coloc_input.tsv — ColocAdapter.prepareRun() performs no MHC exclusion or even a "
-            + "warning (unlike the base pipeline step, which at least warns via overlapsMhc()), "
-            + "despite DECISIONS_PHASE2.md recording MHC exclusion from coloc as an applied "
-            + "precaution. See this file's class-level comment for the full write-up.",
+        failures += check("MHC-region SNP 'snpMHC' is still present in coloc_input.tsv "
+            + "(deliberate: warn, don't block, matching BaseStepPipeline's own MHC policy)",
             mhcSnpPresent);
+
+        List<String> rScript = Files.readAllLines(new File(runDir, "coloc_run.R").toPath());
+        boolean warnsInScript = rScript.stream().anyMatch(l -> l.contains("overlaps the MHC/extended-HLA region"));
+        failures += check("coloc_run.R now contains the MHC warning (defense-in-depth fix)", warnsInScript);
 
         deleteRecursive(dir.toFile());
         return failures;

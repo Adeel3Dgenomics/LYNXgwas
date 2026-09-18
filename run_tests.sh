@@ -19,7 +19,12 @@ javac -encoding UTF-8 -d bin -cp "bin$LIBCP" \
   tests/SnakemakeSubmitterTest.java \
   tests/AnovaUtilTest.java \
   tests/MagmaAdapterTest.java \
-  tests/GctaGremlAdapterTest.java
+  tests/GctaGremlAdapterTest.java \
+  tests/SusieAdapterTest.java \
+  tests/FinemapAdapterTest.java \
+  tests/CojoAdapterTest.java \
+  tests/ColocAdapterTest.java \
+  tests/GwamaAdapterTest.java
 
 FAILED=0
 
@@ -58,6 +63,26 @@ java -cp "bin$LIBCP" MagmaAdapterTest || FAILED=1
 echo
 echo "--- GctaGremlAdapterTest ---"
 java -cp "bin$LIBCP" GctaGremlAdapterTest || FAILED=1
+
+echo
+echo "--- SusieAdapterTest ---"
+java -cp "bin$LIBCP" SusieAdapterTest || FAILED=1
+
+echo
+echo "--- FinemapAdapterTest ---"
+java -cp "bin$LIBCP" FinemapAdapterTest || FAILED=1
+
+echo
+echo "--- CojoAdapterTest ---"
+java -cp "bin$LIBCP" CojoAdapterTest || FAILED=1
+
+echo
+echo "--- ColocAdapterTest ---"
+java -cp "bin$LIBCP" ColocAdapterTest || FAILED=1
+
+echo
+echo "--- GwamaAdapterTest ---"
+java -cp "bin$LIBCP" GwamaAdapterTest || FAILED=1
 
 echo
 if [ "$FAILED" -eq 0 ]; then

@@ -134,11 +134,11 @@ public class ColocAdapter {
             System.out.printf("[ColocAdapter] Matched %d SNPs (%d trait-2 MAF fallbacks to ref panel/trait-1)%n",
                 matched, fallbackMaf);
 
-            writeRScript(runDir, inputTsv, config, trait2Type, trait2N, trait2NCases, p1, p2, p12);
+            writeRScript(runDir, inputTsv, locus, config, trait2Type, trait2N, trait2NCases, p1, p2, p12);
         }
     }
 
-    private static void writeRScript(File runDir, File inputTsv, Config config,
+    private static void writeRScript(File runDir, File inputTsv, Locus locus, Config config,
                                       String trait2Type, int trait2N, int trait2NCases,
                                       double p1, double p2, double p12) throws IOException {
         boolean t1Binary = "binary".equalsIgnoreCase(config.traitType);
@@ -155,6 +155,16 @@ public class ColocAdapter {
             pw.println("#!/usr/bin/env Rscript");
             pw.println("suppressPackageStartupMessages({ library(coloc); library(data.table) })");
             pw.println();
+            if (BaseStepPipeline.overlapsMhc(locus, config.genomeBuild)) {
+                // Defense-in-depth: BaseStepPipeline.runAll() already logs this same warning before
+                // any adapter runs, but that log line lives in the shared pipeline log, not in
+                // coloc's own output — printing it here too means anyone who only looks at this run's
+                // own R script/console output (e.g. if coloc is ever invoked outside runAll()) still
+                // sees it. Matches the project's established warn-don't-block MHC policy; never blocks.
+                pw.println("cat('WARNING: This locus overlaps the MHC/extended-HLA region. Its unusual LD\\n')");
+                pw.println("cat('  structure breaks the statistical assumptions behind colocalization -- treat\\n')");
+                pw.println("cat('  PP.H0-PP.H4 results here with caution.\\n')");
+            }
             pw.printf("df <- fread('%s', sep='\\t', data.table=FALSE)%n", inputPath);
             pw.println("df$beta1 <- as.numeric(df$beta1); df$se1 <- as.numeric(df$se1)");
             pw.println("df$beta2 <- as.numeric(df$beta2); df$se2 <- as.numeric(df$se2)");

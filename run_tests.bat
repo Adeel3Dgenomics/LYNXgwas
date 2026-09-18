@@ -15,7 +15,12 @@ javac -encoding UTF-8 -d bin -cp "bin%LIBCP%" ^
   tests\SnakemakeSubmitterTest.java ^
   tests\AnovaUtilTest.java ^
   tests\MagmaAdapterTest.java ^
-  tests\GctaGremlAdapterTest.java
+  tests\GctaGremlAdapterTest.java ^
+  tests\SusieAdapterTest.java ^
+  tests\FinemapAdapterTest.java ^
+  tests\CojoAdapterTest.java ^
+  tests\ColocAdapterTest.java ^
+  tests\GwamaAdapterTest.java
 if %ERRORLEVEL% neq 0 (
     echo [FAIL] Test compilation failed.
     exit /b 1
@@ -66,6 +71,31 @@ if %ERRORLEVEL% neq 0 set FAILED=1
 echo.
 echo --- GctaGremlAdapterTest ---
 java -cp "bin%LIBCP%" GctaGremlAdapterTest
+if %ERRORLEVEL% neq 0 set FAILED=1
+
+echo.
+echo --- SusieAdapterTest ---
+java -cp "bin%LIBCP%" SusieAdapterTest
+if %ERRORLEVEL% neq 0 set FAILED=1
+
+echo.
+echo --- FinemapAdapterTest ---
+java -cp "bin%LIBCP%" FinemapAdapterTest
+if %ERRORLEVEL% neq 0 set FAILED=1
+
+echo.
+echo --- CojoAdapterTest ---
+java -cp "bin%LIBCP%" CojoAdapterTest
+if %ERRORLEVEL% neq 0 set FAILED=1
+
+echo.
+echo --- ColocAdapterTest ---
+java -cp "bin%LIBCP%" ColocAdapterTest
+if %ERRORLEVEL% neq 0 set FAILED=1
+
+echo.
+echo --- GwamaAdapterTest ---
+java -cp "bin%LIBCP%" GwamaAdapterTest
 if %ERRORLEVEL% neq 0 set FAILED=1
 
 echo.
