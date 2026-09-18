@@ -43,7 +43,7 @@ run.
 | 2 | Fine-mapping method fidelity (ABF vs real FINEMAP) | **Deferred.** Integrating the real FINEMAP binary is a substantial new external-tool integration (binary distribution, licensing check, new adapter), not a safe same-day autonomous change. Left as future work. | deferred |
 | 3 | Meta-analysis scope (GWAMA single-cohort only) | **Deferred.** True multi-cohort meta-analysis is a statistical-correctness-critical feature; implementing it without domain review risks silently wrong results, worse than the current honest limitation. Left as future work. | deferred |
 | 4 | QC signal not LD-pruned | **Done, but scoped down from the original plan.** True `PLINK --indep-pairwise` pruning needs genotypes/a reference panel, which would break `GwasQc`'s explicit no-external-tool design goal (many projects run QC without ever configuring a reference panel). Implemented **distance-based** pruning instead (keep at most 1 SNP per 250kb per chromosome) — a genotype-free proxy that still substantially reduces dense-LD-block inflation of the median, honestly documented as approximate rather than true LD-based pruning. Also fixed a real cache-staleness bug found while implementing this: the QC result cache was keyed only by GWAS-file hash, so a pre-fix cached result would have been served forever after this change (same file, same hash) — added a cache-format marker so stale caches are recomputed. Verified with `tests/GwasQcTest.java`. | ✅ done, tested |
-| 5 | External dependency management (no bundled ref panel/GFF3) | In progress — see "Shared storage" below. | ⏳ |
+| 5 | External dependency management (no bundled ref panel/GFF3) | **Done** — see "Shared storage + HPC feature build" below for the full implementation (`SharedStorageResolver`, GUI section, test endpoint). This doesn't eliminate the need for a reference panel/GFF3 somewhere, but removes the "re-download per machine/project" pain the limitation was about. | ✅ done, tested |
 | 6 | No automated test suite | **Started, not complete.** This project has no build tool (plain `javac`, no Maven/Gradle), so a full JUnit setup would be new infrastructure; added a dependency-free `tests/` directory (standalone classes with `main()` methods, PASS/FAIL output, non-zero exit on failure) plus `run_tests.bat`/`run_tests.sh`, and wrote real regression tests for every fix made today (3 test files, 8 assertions total, all passing). This is a genuine start, not a comprehensive suite — most existing modules (rsID recovery, fine-mapping adapters, export) still have zero coverage. | 🟡 started |
 | 7 | Single-user, single-machine design | **Deferred.** Adding auth/multi-tenancy is a product-direction decision (which auth model, is shared deployment even wanted), not something to decide unilaterally. Left as future work. | deferred |
 | 8 | Windows-only build tooling | **Done.** Added `build.sh`/`run.sh`/`run_tests.sh` mirroring the `.bat` files file-for-file. Verified: shell syntax checked clean (`sh -n`); the actual `javac`/`java` invocations could only be exercised via git-bash on this Windows machine, which calls the *Windows* JDK (semicolon classpath separator) even though the script correctly uses `:` per the POSIX/Linux JDK convention — so the compile step fails *in this exact test environment* for a reason that has nothing to do with the script being wrong, and it remains genuinely unverified on a real Linux/Mac JDK. Flagged honestly rather than claimed as fully tested. | ✅ (partially verified — see caveat) |
@@ -81,15 +81,52 @@ not a one-shot first-run wizard, it's just more settings tabs, which is simpler,
 the existing UI, and means "reconfigure later" comes for free instead of needing separate wizard-restart
 logic.
 
-## Status: feature build in progress
+## Status: shared storage + HPC feature build — done
 
-Shared storage + HPC/Snakemake feature implementation delegated to a background agent with a
-precise architectural spec (matching `GlobalConfig`'s hand-rolled-JSON style, the existing
-`/api/global-config` GET/POST round-trip, and the flat `<h4>`-section style of the Resources &
-Settings panel — no new frameworks/libraries). It was instructed to update this file's own rows
-for items 5 (external dependency management) and the two new-feature sections as it completes each
-part, run `build.bat`/`run_tests.bat` after every change, and add real tests for all new pure logic.
-Will be reviewed and verified (not just trusted) once it reports back.
+A first attempt at delegating this to a background agent reported "in progress" without having
+actually written any code — caught by the coordinator independently checking `git log`/working-tree
+state rather than trusting the report, and corrected by implementing it directly instead, in five
+concrete, compiled-and-tested steps (each committed separately so the history shows real progress,
+not just a final summary):
+
+1. `src/rsid/GlobalConfig.java` — added `SharedStorage` and `HpcConfig` nested classes + fields,
+   extended `toJson()`/`parse()` to round-trip them (commit `f844afe`). Both default to fully inert
+   (`mode="none"`, `enabled=false`) — zero behavior change for existing installs. Verified with a
+   round-trip unit test (`tests/GlobalConfigTest.java`).
+2. `src/rsid/SharedStorageResolver.java` — resolves a reference-data path against shared storage
+   when it doesn't exist directly; `ensureGitClone()`/`test()` shell out to the user's own `git` via
+   `ProcessBuilder` argument arrays, never a shell string, never touching credentials. New
+   `POST /api/shared-storage/test` endpoint in `LocalServer.java` (commit `e0fd4f4`). Verified with
+   a unit test covering every branch that needs no network access.
+3. Two new `<h4>` sections ("Shared Storage", "Cluster (HPC)") added to the Resources & Settings
+   panel in `index.html`, following the exact existing GET-mutate-POST pattern (commit `c1fc971`).
+   **Verified with a real headless-browser test (Playwright)** against an isolated server instance
+   on a temporary port (8765 was held by the still-running 30-dataset reprocessing job the whole
+   time — confirmed undisturbed before and after; the `PORT` constant was temporarily changed,
+   tested, then reverted, with a clean `git diff` confirming the revert before committing). That
+   test caught a real bug before it shipped: `saveSharedStorage()` called `loadResources()` without
+   awaiting it, so `testSharedStorage()` could write its result into a DOM node that had already
+   been silently replaced by the (still in-flight) re-render — fixed by awaiting `loadResources()`
+   in both `saveSharedStorage()` and `saveHpc()`.
+4. `src/analysis/SnakemakeSubmitter.java` — generates a Snakefile wrapping the existing PLINK
+   subset/LD commands with a `module load` prefix per configured tool; builds `scp`/`ssh` argument
+   arrays (never shell strings); validates every remote-facing config value against shell
+   metacharacters *twice* — once implicitly via `ProcessBuilder`'s argument-array form (blocks
+   local shell injection) and once explicitly via `validateNoShellMetachars()` (blocks the value
+   from changing what the *remote* shell does, which the local argument-array form can't prevent
+   on its own); picks a poll interval that scales with job size within the configured
+   `[min,max]` range. **Per the hard safety constraint, `pollStatus()`/an actual submit path were
+   never invoked against any real host** — only the pure logic (Snakefile content, interval
+   selection, argument-array construction, metachar validation, wrapper-script content) is
+   unit-tested (`tests/SnakemakeSubmitterTest.java`, 7 cases, all passing).
+
+**Explicitly not done, by design**: no "Submit job" button anywhere in the UI — HPC config can be
+saved and validated, but nothing in this pass actually dispatches work to a cluster. Wiring a real
+submit action into the per-project pipeline UI, and testing `pollStatus()`/the scp+ssh submit path
+against a real (or realistic loopback) target, are left as explicit future work for when the user
+is present to supervise the first real connection.
+
+All 7 test files pass via `run_tests.bat`/`run_tests.sh` as of this update.
 
 ## Full 30-dataset, all-loci reprocessing
 

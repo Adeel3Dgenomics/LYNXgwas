@@ -9,7 +9,8 @@ javac -encoding UTF-8 -d bin -cp "bin%LIBCP%" ^
   tests\LdCalculatorTest.java ^
   tests\GwasQcTest.java ^
   tests\GlobalConfigTest.java ^
-  tests\SharedStorageResolverTest.java
+  tests\SharedStorageResolverTest.java ^
+  tests\SnakemakeSubmitterTest.java
 if %ERRORLEVEL% neq 0 (
     echo [FAIL] Test compilation failed.
     exit /b 1
@@ -40,6 +41,11 @@ if %ERRORLEVEL% neq 0 set FAILED=1
 echo.
 echo --- SharedStorageResolverTest ---
 java -cp "bin%LIBCP%" SharedStorageResolverTest
+if %ERRORLEVEL% neq 0 set FAILED=1
+
+echo.
+echo --- SnakemakeSubmitterTest ---
+java -cp "bin%LIBCP%" SnakemakeSubmitterTest
 if %ERRORLEVEL% neq 0 set FAILED=1
 
 echo.
