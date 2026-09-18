@@ -140,6 +140,67 @@ primaries alone), this is expected to take many hours; `ld.parallel.jobs` kept c
 and not the crash-prone 4) with a hard per-locus size cap (skip/flag anything above ~4 Mb) to avoid
 repeating the earlier OOM crash while not being fully serial for a job this large.
 
+**Update — the first full run's "success" report was wrong, caught by direct verification, not
+by trusting the job's own output.** `full_reprocess.py` finished all 30 datasets and wrote
+`full_reprocess_summary.json` with `"status": "ok"` for every one. Spot-checking actual file
+counts in `<project>/data/` (not the JSON summary) showed the 6 primary (`*-demo`) datasets were
+genuinely correct (real, proportional file counts), but **all 24 secondary (`*-src-*`) datasets had
+zero output files** despite being marked done. Root cause, confirmed via
+`curl http://localhost:8765/api/project/<id>/progress` directly against the still-running server:
+every one of the 24 secondary configs has a leftover `col.varid=varid` default that doesn't match
+that dataset's real header (each has a different actual column set), which the pipeline's
+`Config.validate()` treats as a hard error for a *configured-but-absent* optional column — so
+every secondary dataset's processing failed immediately. Separately, `full_reprocess.py`'s
+polling loop only checked `done`, not whether the reported `phase` was actually an error string,
+so it recorded every one of these failures as success. Both are now understood and a fix +
+re-run for the 24 affected datasets is in progress (see task log). Lesson applied going forward
+in this file: a job's own "done"/"ok" self-report is not verification — checking the actual
+artifact (file count, in this case) is.
+
+**Second update — the fix-and-rerun batch also crashed partway, root cause different and smaller.**
+After the `col.varid` fix, re-verified live against the running server that `cad-src-aragam2022`
+genuinely processes correctly (watched real progress, not just a status flag). The corrected batch
+then silently stopped advancing for 30+ minutes with java's memory completely static (not GC noise —
+byte-identical across checks), which looked like it could be a repeat of the original OOM failure
+mode. Direct investigation (querying `/api/project/<id>/progress` live, checking a stdout capture
+file for a Python traceback) found the real cause: the Java pipeline had actually finished
+`cad-src-nam2026` correctly (`done:true`, real files confirmed on disk), but the orchestrator's
+cleanup step (`os.remove()` on the decompressed raw file, to re-gzip it) hit
+`PermissionError: WinError 32` because Windows still held a lock on the file — unlike POSIX, an
+open handle blocks deletion outright. That exception was unhandled and killed the whole batch,
+stopping progress on the 8 datasets still queued behind it, even though the actual GWAS pipeline
+work was fine. Fixed with a retry-with-backoff-then-warn-and-continue wrapper around that one
+`os.remove()` call (never let a housekeeping/cleanup step abort real, already-succeeded work), added
+a missing done-marker for `cad-src-aragam2022` (it was verified correct manually outside the normal
+per-dataset flow, so never got one, and would otherwise have been wastefully reprocessed from
+scratch), and restarted the orchestrator — it correctly skipped everything already marked done and
+resumed exactly where it left off.
+
+**Final result — genuinely complete, independently verified.** All 30 datasets now have real,
+non-zero, loci-proportional output confirmed by direct `ls <project>/data/` file counts (not API
+status, not the orchestrator's own summary JSON alone) across every one of the 6 disease groups:
+
+| Dataset | Files | Dataset | Files | Dataset | Files |
+|---|---|---|---|---|---|
+| scz-demo | 358 | cad-demo | 154 | ra-demo | 134 |
+| scz-src-clozuk2018 | 284 | cad-src-aragam2022 | 422 | ra-src-eyre2012 | 30 |
+| scz-src-pgc1-2011 | 10 | cad-src-hartiala2021 | 166 | ra-src-glanville2021 | 24 |
+| scz-src-pgc2-2014 | 192 | cad-src-nam2026 | 148 | ra-src-shigesi2025 | 8 |
+| scz-src-sweden2013 | 24 | cad-src-nikpay2015 | 88 | ra-src-stahl2010 | 14 |
+| t2d-demo | 274 | alz-demo | 34 | ibd-demo | 186 |
+| t2d-src-diagramv3 | 20 | alz-src-belloy2024 | 4 | ibd-src-franke2010 | 118 |
+| t2d-src-mahajan2018 | 120 | alz-src-eadb2026 | 64 | ibd-src-liu2015 | 280 |
+| t2d-src-saxena2007 | 4 | alz-src-morenograu2019 | 6 | ibd-src-verma2024 | 10 |
+| t2d-src-wood2016 | 4 | alz-src-nicolas2025 | 30 | ibd-src-zorina2023 | 18 |
+
+**Total: 3,228 output files across all 30 datasets.** Datasets with very few/zero loci
+(`t2d-src-saxena2007`, `t2d-src-wood2016`, `alz-src-belloy2024`) are genuine results, not failures —
+these are small/underpowered/narrowly-scoped studies (an early 2007 T2D GWAS, an insulin-secretion-
+focused sub-study, and an X-chromosome-only AD scan respectively), correctly finding few or no
+genome-wide-significant autosomal loci. Java server remained stable throughout (memory fluctuated
+5–8.6GB across the run but never crashed after the two fixes above), no stray processes left
+running unexpectedly.
+
 ## What this file will NOT do
 
 - Will not push anything to GitHub without a repo URL (still not provided).
