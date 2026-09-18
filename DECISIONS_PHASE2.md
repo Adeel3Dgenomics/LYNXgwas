@@ -401,7 +401,9 @@ actual NUL byte in the `.java` source file rather than leaving the literal escap
 reported the source as binary). Caught before committing, fixed with a plain `"@@@"` delimiter;
 confirmed zero NUL bytes remain.
 
-Manuscript not updated for this addition — it was requested and scoped narrowly to the application
-feature itself, not a manuscript revision; the existing Gene Constellation figure/description remain
-accurate as written (they simply don't yet mention edges, which is not a false claim, just an
-omission). Happy to add this on request.
+**Manuscript updated on follow-up request** (`LYNXgwas-paper` commit `fd2cc60`): abstract and the
+Gene Constellation subsubsection now describe the co-significance links, the figure was regenerated
+from a fresh real 30-dataset run showing them overlaid, and the existing PBX2/MHC discussion was
+strengthened with the real observation that PBX2 is the most heavily-linked node in the graph (a
+second, independent piece of evidence for that interpretation). Compiled and visually verified
+(abstract, section, figure, no overflow).
