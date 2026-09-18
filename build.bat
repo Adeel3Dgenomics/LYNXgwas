@@ -26,6 +26,9 @@ javac -encoding UTF-8 -d bin -cp "bin%LIBCP%" ^
   src\loci\LociProgress.java ^
   src\analysis\ContentHasher.java ^
   src\analysis\StatsUtil.java ^
+  src\analysis\AnovaUtil.java ^
+  src\analysis\GeneConstellationResult.java ^
+  src\analysis\GeneConstellationBuilder.java ^
   src\analysis\StepManifest.java ^
   src\analysis\LocusGwasExtractor.java ^
   src\analysis\SnpMatcher.java ^
@@ -37,7 +40,10 @@ javac -encoding UTF-8 -d bin -cp "bin%LIBCP%" ^
   src\analysis\OutputContractValidator.java ^
   src\analysis\ToolDescriptor.java ^
   src\analysis\PluginEngine.java ^
+  src\analysis\GctaBinaryResolver.java ^
   src\analysis\CojoAdapter.java ^
+  src\analysis\GctaGremlAdapter.java ^
+  src\analysis\MagmaAdapter.java ^
   src\analysis\SusieAdapter.java ^
   src\analysis\FinemapAdapter.java ^
   src\analysis\ColocAdapter.java ^
@@ -93,7 +99,7 @@ if not exist output\assets mkdir output\assets
 
 copy /Y index.html output\index.html >nul 2>&1
 copy /Y viewer.html output\viewer.html >nul 2>&1
-copy /Y locus_matrix.html output\locus_matrix.html >nul 2>&1
+copy /Y gene_constellation.html output\gene_constellation.html >nul 2>&1
 copy /Y annotations.js output\annotations.js >nul 2>&1
 if exist output\annotations.js (
     rem already copied from root

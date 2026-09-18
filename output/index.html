@@ -185,7 +185,7 @@ td.actions button { margin-right: 0.3rem; }
       Missing rsIDs
     </button>
     <button class="btn btn-secondary" onclick="openLocusMatrix()">
-      Locus Matrix
+      Gene Constellation
     </button>
     <button class="btn btn-secondary" onclick="openSusiex()">
       SuSiEx
@@ -224,7 +224,7 @@ td.actions button { margin-right: 0.3rem; }
   </div>
 
   <div class="table-wrap" style="margin-top:1.5rem">
-    <h3 style="font-size:0.95rem;margin:0 0 0.5rem">Locus Matrix runs</h3>
+    <h3 style="font-size:0.95rem;margin:0 0 0.5rem">Gene Constellation runs</h3>
     <table>
       <thead>
         <tr>
@@ -240,7 +240,7 @@ td.actions button { margin-right: 0.3rem; }
       <tbody id="locus-matrix-tbody"></tbody>
     </table>
     <div class="empty" id="locus-matrix-empty" style="display:none">
-      <p>No Locus Matrix runs yet. Click <b>Locus Matrix</b> above to compare datasets.</p>
+      <p>No Gene Constellation runs yet. Click <b>Gene Constellation</b> above to compare datasets.</p>
     </div>
   </div>
 
@@ -1749,7 +1749,7 @@ function pollLocusMatrixProgress(jobId) {
         } else {
           el.innerHTML = '<div style="color:#065f46;margin-bottom:0.75rem">Done &mdash; ' + p.loci_found + ' loci found.</div>'
             + '<div style="display:flex;gap:0.5rem">'
-            + '<a class="btn btn-primary" href="locus_matrix.html?job=' + encodeURIComponent(jobId) + '" target="_blank">View Matrix &rarr;</a>'
+            + '<a class="btn btn-primary" href="gene_constellation.html?job=' + encodeURIComponent(jobId) + '" target="_blank">View Constellation &rarr;</a>'
             + '<a class="btn btn-secondary" href="' + API + '/api/locus-matrix-export?job=' + encodeURIComponent(jobId) + '">Export Excel</a>'
             + '</div>';
         }
@@ -2029,7 +2029,7 @@ async function loadLocusMatrixJobs() {
         ? '<span class="badge badge-error" title="' + escAttr(j.error || '') + '">Error</span>'
         : '<span class="badge badge-proc">Running…</span>';
       var actions = (j.status === 'done'
-        ? '<a class="btn btn-secondary" href="locus_matrix.html?job=' + encodeURIComponent(j.job_id) + '" target="_blank">View</a> '
+        ? '<a class="btn btn-secondary" href="gene_constellation.html?job=' + encodeURIComponent(j.job_id) + '" target="_blank">View</a> '
           + '<a class="btn btn-secondary" href="' + API + '/api/locus-matrix-export?job=' + encodeURIComponent(j.job_id) + '">Export</a> '
         : '')
         + '<button class="btn btn-danger" style="padding:0.2rem 0.6rem;font-size:0.75rem" onclick="deleteLocusMatrixJob(\'' + esc(j.job_id) + '\')">Delete</button>';

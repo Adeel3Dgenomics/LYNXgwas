@@ -187,6 +187,7 @@ public class LocalServer {
         http.createContext("/api/locus-matrix-result",   this::locusMatrixResult);
         http.createContext("/api/locus-matrix-export",   this::locusMatrixExport);
         http.createContext("/api/locus-matrix-delete",   this::locusMatrixDelete);
+        http.createContext("/api/gene-constellation",    this::geneConstellation);
         http.createContext("/api/susiex-run",        this::susiexRun);
         http.createContext("/api/susiex-progress",   this::susiexProgress);
         http.createContext("/api/susiex-result",     this::susiexResult);
@@ -2153,6 +2154,29 @@ public class LocalServer {
             return;
         }
         respond(ex, 200, "application/json", result.toJson().getBytes("UTF-8"));
+    }
+
+    // GET /api/gene-constellation?job=<jobId>&threshold=<p>  — derived gene-level view of an
+    // already-completed Locus Matrix job (reuses the same locusMatrixJobs lookup, no new pipeline run).
+    private void geneConstellation(HttpExchange ex) throws IOException {
+        cors(ex); if (preflight(ex)) return;
+        String jobId = queryParam(ex, "job");
+        MultiLocusResult result = jobId != null ? locusMatrixJobs.get(jobId) : null;
+        if (result == null) {
+            respond(ex, 404, "application/json", "{\"error\":\"Job not found or not complete\"}".getBytes());
+            return;
+        }
+        double threshold = GeneConstellationBuilder.DEFAULT_THRESHOLD;
+        String thresholdParam = queryParam(ex, "threshold");
+        if (thresholdParam != null && !thresholdParam.isEmpty()) {
+            try { threshold = Double.parseDouble(thresholdParam); } catch (NumberFormatException ignored) {}
+        }
+        try {
+            GeneConstellationResult gcr = GeneConstellationBuilder.build(result, threshold);
+            respond(ex, 200, "application/json", gcr.toJson().getBytes("UTF-8"));
+        } catch (Exception e) {
+            respond(ex, 500, "application/json", ("{\"error\":\"" + escJ(e.getMessage()) + "\"}").getBytes());
+        }
     }
 
     // GET /api/locus-matrix-export?job=<jobId>
