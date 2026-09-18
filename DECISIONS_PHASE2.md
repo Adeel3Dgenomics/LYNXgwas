@@ -329,19 +329,49 @@ enrichment test (already separately, genuinely verified with real data under 3.8
 — this demonstration is scoped to Gene Constellation + ANOVA, which is what "use the results to
 perform a small multi-disease analysis" concretely maps to given what's actually wired end-to-end.
 
-### 3.12 Manuscript update [~] — partially started
-New Methods subsections for MAGMA/GCTA-GREML (§2.5) and the ANOVA module (§2.7), plus a forward
-reference (§2.6) to Gene Constellation, are written and compile cleanly in
-`LYNXgwas-paper/main.tex` (commit `03dd7bd`) — safe to write now since they describe already-built,
-already-tested code, not results that could still change. Deliberately **not yet touched**: the
-Gene Constellation subsubsection's real content/figure (only its `\label` exists so the forward
-reference resolves), the Results section, Discussion, and Limitations — those need 3.8/3.9/3.11 to
-actually finish first, so they report the real final state instead of needing yet another rewrite
-(this is exactly the mistake the user called out earlier this session — not repeating it).
+### 3.12 Manuscript update [x] — done, verified
+Full final pass in `LYNXgwas-paper/main.tex`, done last so every claim in it reflects the actual
+final, verified state of 3.1–3.11 (commits `03dd7bd` then `9cc0bb4`):
+- Abstract, Discussion, Conclusion rewritten to cover MAGMA/GCTA-GREML/ANOVA/Gene Constellation/
+  evidence enrichment and the real 30-dataset demonstration numbers.
+- New §2.8 "Evidence enrichment" (Fisher's exact / Mann-Whitney, with citations added to
+  `references.bib`).
+- §3.4.1 "Cross-dataset comparison: Gene Constellation" fully rewritten from a `\label`-only
+  placeholder to the real demonstration write-up (696 loci, 534 genes, 414 significant
+  between-disease ANOVAs, the CELSR2/PSRC1/FGF5/TCF21 sanity check, the honestly-reported PBX2/
+  MHC-boundary outlier) with the real figure (`figures/gene_constellation_30dataset.png`).
+- Limitations section: renamed the fixed sort-order-bug context, added the new ColocAdapter
+  MHC-warning fix and the FinemapAdapter z-file-ordering open uncertainty, corrected the now-stale
+  "zero test coverage" claim to the real 15-suite state, and added honest scope bullets for
+  MAGMA/GCTA-GREML (built+tested, not UI-wired, binaries no longer present after the clean-room
+  rebuild) and evidence enrichment's documented simplifications.
 
-## 4. Execution order
+Compiled cleanly (25 pages, no undefined references, no overfull/underfull box warnings from any
+of the new content) and every changed/new page was rendered to PNG and visually inspected — abstract,
+both new subsections, the new figure, and the full Discussion/Limitations/Conclusion/References
+run. No visual defects found.
 
-Sequential by dependency, verified before moving on: 3.4 (ANOVA, self-contained) →
-3.1/3.2 (MAGMA/GCTA adapters + binary acquisition) → 3.3 (tests for all adapters) → 3.5 (circular
-viz, needs ANOVA + real gene/dataset data) → 3.11 (demonstration run) → 3.6/3.7/3.8/3.9/3.10 →
-3.12 (manuscript, last, so it reports only what's actually been verified by then).
+## 4. Execution order (as actually run)
+
+3.4 (ANOVA) → 3.10 (flowchart) → 3.1/3.2 (MAGMA/GCTA adapters, run concurrently with 3.5 — this
+caused the process-hygiene collisions documented under 3.5, reconciled by hand) → 3.5 (Gene
+Constellation) → 3.6/3.7 (wizard rework, homepage icon) → 3.3 (remaining adapter tests, found and
+fixed the ColocAdapter MHC gap) → 3.8/3.9 (evidence enrichment + Excel export) → 3.11 (real
+30-dataset demonstration) → 3.12 (manuscript, last).
+
+## 5. Closing status
+
+All 12 work items are done and independently verified: 15 test suites passing from a clean-room
+(`rm -rf bin && build.bat`) rebuild, every statistical module checked at least three independent
+ways (closed-form/textbook cross-check, fail→pass regression, and either random-trial or real-data
+verification), a real 30-dataset/six-disease demonstration run with results visually and
+numerically inspected, and a fully rewritten, recompiled, visually-QA'd manuscript. Two genuine
+bugs were found and fixed (ColocAdapter's missing MHC warning; two files missing from
+`build.bat`/`build.sh`'s compile list, pre-existing from before this phase). Everything not fully
+completed is recorded honestly above rather than implied done: FinemapAdapter's z-file ordering
+(flagged, unresolved), MAGMA/GCTA-GREML not wired into any UI flow, their binaries no longer
+present in `bin/` after an unrelated clean-room rebuild, the 2-step wizard not extended with an
+evidence-attachment step, and no live HPC/SSH execution (unchanged from Phase 1's hard safety
+boundary). Nothing in this file has been pushed to GitHub — no repo URL has been provided for
+either `LYNXgwas` (beyond the already-known public repo, which remains ahead of `origin/main` and
+un-pushed pending explicit instruction) or `LYNXgwas-paper` (still private, still no URL given).
