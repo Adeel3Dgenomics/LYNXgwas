@@ -239,16 +239,49 @@ distinct per dataset), visually echoing the full Gene Constellation ring's color
 glance. Verified visually via the same Playwright screenshot pass as 3.6 — distinct, colorful
 rings render correctly next to all 30 real dataset names on the home page.
 
-### 3.8 Evidence enrichment (PPI / gene expression / flexible schema) [ ]
-New per-project "evidence" upload: CSV/TSV with a gene-symbol column plus arbitrary named
-numeric/categorical columns, tagged by type (PPI score, expression, other). Rendered as a track
-under the locus/genome plot. New locus-based enrichment test (Fisher's exact / Mann–Whitney,
-hand-rolled, tested) comparing genes-in-loci vs. background for the attached evidence.
+### 3.8 Evidence enrichment (PPI / gene expression / flexible schema) [x] — done, verified
+Per-project evidence upload (`POST/GET/DELETE /api/project/<id>/evidence[/<name>]` in
+`LocalServer.java`): CSV/TSV keyed by an auto-detected or explicit gene-symbol column, every other
+column auto-typed numeric/categorical, stored as `projects/<id>/evidence/<name>.tsv` +
+`.meta.json`. Renders as a track directly under the gene track in `viewer.html` (bars for numeric
+columns, colored swatches + legend for categorical), cached client-side, wired into pan/zoom
+redraw; costs one lightweight list call and zero extra height for projects with no evidence
+attached. New `src/analysis/EnrichmentAnalyzer.java`: Fisher's exact (categorical, exact
+hypergeometric tail-sum via log-binomial-coefficients) and Mann-Whitney U (numeric, tie-corrected
+normal approximation) comparing in-loci genes against a whole-chromosome background —
+`GET /api/project/<id>/enrichment?evidence=<name>`.
 
-### 3.9 Excel export extension [ ]
-Extend `ExcelExporter`/`XlsxWriter` with new sheets for ANOVA results, enrichment results, MAGMA
-gene-based results, and GCTA heritability estimates — reusing the existing `ExportRegistry`
-column-provider pattern, tested the same three-fold way as 3.3/3.4.
+Verified independently: clean-room rebuild + all 15 test suites pass (was 14, now
+`EnrichmentAnalyzerTest` added — 29 checks including Fisher's exact against the classic
+tea-tasting 2×2 with an independently-known exact p-value, Mann-Whitney cross-checked against an
+independently-coded normal-CDF approximation, tie-handling, and edge cases). Fail→pass verified
+(broke the tail-inclusion condition, confirmed 3 failures, reverted). **Real end-to-end run**
+against a throwaway copy of the 30-dataset corpus (original PID-28512 server on 8765 confirmed
+untouched throughout, same StartTime before/after): uploaded a small, clearly-synthetic PPI/tier
+table for genes inside `scz-demo`'s own loci, screenshotted `viewer.html` and visually confirmed
+the evidence track renders correctly aligned under the right genes with correct legend colors, and
+confirmed `/api/enrichment` returns real (non-NaN) statistics. Throwaway copy and its one synthetic
+upload were deleted afterward — no synthetic or real evidence data was left in the actual repo's
+`projects/` directory. Reviewed independently for a path-traversal risk in the upload endpoint's
+user-supplied `name` parameter — `sanitizeEvidenceName()` whitelists `[A-Za-z0-9_.-]` (directory
+separators always stripped), which is sufficient; confirmed by reading the code. Committed as
+`25e98af`.
+
+### 3.9 Excel export extension [x] — done, verified (MAGMA/GCTA export explicitly out of scope)
+New `src/GeneConstellationExcelWriter.java` (mirrors `MultiLocusExcelWriter`'s exact style):
+"Genes" sheet (gene, chr, pos, replication/significance/direction, between-disease ANOVA, and a
+per-disease within-disease ANOVA column, left genuinely blank rather than 0 when not computed) and
+"Per-dataset detail" sheet. New `GET /api/gene-constellation-export` endpoint;
+`gene_constellation.html`'s export link now points here (the older locus-level export remains
+available, not removed). Verified for real: downloaded the file against a real Locus Matrix job
+output (184 loci), confirmed with `openpyxl` it opens as a genuinely valid workbook with the
+expected two sheets and real row/column counts — not just an HTTP 200 check.
+
+**Explicitly out of scope, confirmed no attempt made**: MAGMA gene-based results and GCTA-GREML
+heritability estimates are not wired into any export sheet, because neither adapter is invokable
+from any UI flow yet (they exist only as backend adapters + unit tests, per 3.1/3.2 — there is no
+"run MAGMA on this project" button anywhere). Wiring that up is a distinct, larger task than an
+export-format extension and is recorded here as known future work, not silently dropped.
 
 ### 3.10 Program-structure + statistics flowchart [x] — done, verified
 `docs/pipeline_flowchart.html` (Tasks/flowchart visual style) + rendered `docs/images/
