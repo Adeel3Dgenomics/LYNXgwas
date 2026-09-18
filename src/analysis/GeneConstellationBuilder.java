@@ -17,7 +17,24 @@ public class GeneConstellationBuilder {
 
     private GeneConstellationBuilder() {}
 
+    /** Default minimum co-significance count for a gene pair to be reported as an edge at all
+     *  (pairs that are only ever co-significant in a single dataset would produce a very large,
+     *  visually uninformative edge list). */
+    public static final int DEFAULT_MIN_EDGE_COUNT = 2;
+
+    /** Default cap on the number of edges returned (highest co-significance count first), to keep
+     *  the response and the resulting graph rendering a reasonable size. Chosen empirically against
+     *  a real 30-dataset/534-gene run: 300 pulled in a large tied-count tail that added visual
+     *  clutter without adding information (ties beyond the cap are arbitrary, not more/less
+     *  significant); 150 keeps every clearly-distinguished high-count pair. */
+    public static final int DEFAULT_MAX_EDGES = 150;
+
     public static GeneConstellationResult build(MultiLocusResult mlr, double genomewideThreshold) {
+        return build(mlr, genomewideThreshold, DEFAULT_MIN_EDGE_COUNT, DEFAULT_MAX_EDGES);
+    }
+
+    public static GeneConstellationResult build(MultiLocusResult mlr, double genomewideThreshold,
+                                                 int minEdgeCount, int maxEdges) {
         GeneConstellationResult out = new GeneConstellationResult();
         out.name = mlr.name;
         out.refPanelLabel = mlr.refPanelLabel;
@@ -145,7 +162,57 @@ public class GeneConstellationBuilder {
         }
 
         out.unassignedLociCount = unassigned;
+        out.edges = buildCoSignificanceEdges(genes, genomewideThreshold, minEdgeCount, maxEdges);
         return out;
+    }
+
+    /**
+     * Co-significance edges: for every dataset, collect the set of genes that reach
+     * {@code genomewideThreshold} in it (a gene counts once per dataset even if it spans multiple
+     * locus rows there), then increment a per-pair counter for every pair of genes significant
+     * together in that same dataset. This is a "significant together" count, not a correlation or
+     * shared-variant claim — two genes can be co-significant purely because both happen to be
+     * associated in the same well-powered dataset, with no biological relationship implied.
+     *
+     * Cost is bounded by (genes significant per dataset)^2 summed over datasets, not genes^2
+     * overall, since only genes significant in the *same* dataset are ever compared.
+     */
+    static List<GeneConstellationResult.GeneEdge> buildCoSignificanceEdges(
+            Map<String, GeneAgg> genes, double genomewideThreshold, int minEdgeCount, int maxEdges) {
+        Map<String, Set<String>> significantGenesByDataset = new LinkedHashMap<>();
+        for (Map.Entry<String, GeneAgg> e : genes.entrySet()) {
+            String gene = e.getKey();
+            for (GeneAgg.Obs o : e.getValue().observations) {
+                if (!Double.isNaN(o.bestP) && o.bestP <= genomewideThreshold) {
+                    significantGenesByDataset.computeIfAbsent(o.datasetId, k -> new TreeSet<>()).add(gene);
+                }
+            }
+        }
+
+        Map<String, Integer> pairCounts = new LinkedHashMap<>();
+        for (Set<String> sigGenes : significantGenesByDataset.values()) {
+            List<String> list = new ArrayList<>(sigGenes); // already sorted (TreeSet), so i<j gives a canonical pair order
+            for (int i = 0; i < list.size(); i++) {
+                for (int j = i + 1; j < list.size(); j++) {
+                    String key = list.get(i) + "@@@" + list.get(j);
+                    pairCounts.merge(key, 1, Integer::sum);
+                }
+            }
+        }
+
+        List<GeneConstellationResult.GeneEdge> edges = new ArrayList<>();
+        for (Map.Entry<String, Integer> e : pairCounts.entrySet()) {
+            if (e.getValue() < minEdgeCount) continue;
+            String[] parts = e.getKey().split("@@@", 2);
+            GeneConstellationResult.GeneEdge edge = new GeneConstellationResult.GeneEdge();
+            edge.geneA = parts[0];
+            edge.geneB = parts[1];
+            edge.count = e.getValue();
+            edges.add(edge);
+        }
+        edges.sort((a, b) -> Integer.compare(b.count, a.count)); // highest co-significance first
+        if (edges.size() > maxEdges) edges = edges.subList(0, maxEdges);
+        return edges;
     }
 
     /** Best-effort disease-group key: substring of the project id before its first '-'.

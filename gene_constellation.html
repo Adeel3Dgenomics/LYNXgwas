@@ -182,6 +182,18 @@
           <div class="grad-labels"><span>protective</span><span>mixed</span><span>risk</span></div>
         </div>
       </div>
+      <div class="legend-row">
+        <svg class="legend-swatch" width="26" height="26">
+          <line x1="3" y1="21" x2="23" y2="5" stroke="#C9D0DE" stroke-width="1"/>
+          <line x1="3" y1="13" x2="23" y2="13" stroke="#C9D0DE" stroke-width="4"/>
+        </svg>
+        <div class="txt"><b>Links — co-significance</b>A line joins two genes for every dataset where <i>both</i> independently reach significance. Thicker = significant together more often. Not a claim of a biological relationship, just how often the two co-occur.</div>
+      </div>
+      <div class="legend-row" id="edge-toggle-row">
+        <label style="display:flex;align-items:center;gap:.4rem;cursor:pointer;font-size:.78rem;color:var(--ink)">
+          <input type="checkbox" id="edge-toggle" checked> Show co-significance links
+        </label>
+      </div>
     </div>
     <div class="legend-card">
       <h3>Chromosomes</h3>
@@ -294,7 +306,8 @@ function render(data) {
   document.getElementById('hdr-meta').innerHTML =
     '<b>' + nDatasets + '</b> datasets &nbsp;·&nbsp; <b>' + genes.length + '</b> genes plotted' +
     (data.unassigned_loci_count ? ' &nbsp;·&nbsp; <b>' + data.unassigned_loci_count + '</b> loci with no nearest gene (excluded)' : '') +
-    ' &nbsp;·&nbsp; threshold p&le;' + data.threshold;
+    ' &nbsp;·&nbsp; threshold p&le;' + data.threshold +
+    ((data.edges || []).length ? ' &nbsp;·&nbsp; <b>' + data.edges.length + '</b> co-significance links' : '');
 
   document.getElementById('run-summary').innerHTML =
     '<div>Run: <b style="color:var(--ink);font-family:var(--font-mono)">' + esc(data.name) + '</b></div>' +
@@ -398,6 +411,53 @@ function render(data) {
       color: colorOf(gg)
     };
   }).filter(Boolean);
+
+  var byGeneName = new Map();
+  placed.forEach(function(p) { byGeneName.set(p.g.gene, p); });
+
+  // ── Co-significance links, drawn first so they sit behind the gene nodes ──
+  var edges = (data.edges || []).map(function(e) {
+    var a = byGeneName.get(e.gene_a), b = byGeneName.get(e.gene_b);
+    if (!a || !b) return null; // one endpoint had no plottable chr/pos — skip rather than guess a position
+    return { a: a, b: b, count: e.count };
+  }).filter(Boolean);
+
+  var edgeGroup = g.append('g').attr('class', 'edge-group');
+  if (edges.length) {
+    var counts = edges.map(function(e) { return e.count; });
+    var minC = d3.min(counts), maxC = d3.max(counts);
+    var widthScale = d3.scaleLinear().domain([minC, maxC]).range([0.4, 3.2]).clamp(true);
+    // Opacity uses sqrt scaling so the handful of genuinely high-count pairs stand out clearly
+    // against a faint background of lower-count ones, rather than every edge reading as similar.
+    var opacityScale = d3.scalePow().exponent(2).domain([minC, maxC]).range([0.05, 0.5]).clamp(true);
+
+    // sorted so high-count (most important) edges draw last, on top of the faint low-count haze
+    var edgesSorted = edges.slice().sort(function(a, b) { return a.count - b.count; });
+
+    edgeGroup.selectAll('.gene-edge').data(edgesSorted).enter().append('path')
+      .attr('class', 'gene-edge')
+      .attr('d', function(e) {
+        // Quadratic Bezier pulled gently toward the center (15% of the way) for a soft Circos-style
+        // arc that hugs the inside of the ring — a straight chord or a strong center-pull both read
+        // as a "hairball" once there are 100+ edges; a gentle arc keeps the ring's own layout legible.
+        var mx = (e.a.x + e.b.x) / 2 * 0.85, my = (e.a.y + e.b.y) / 2 * 0.85;
+        return 'M' + e.a.x + ',' + e.a.y + ' Q' + mx + ',' + my + ' ' + e.b.x + ',' + e.b.y;
+      })
+      .attr('fill', 'none')
+      .attr('stroke', '#E8ECF5')
+      .attr('stroke-width', function(e) { return widthScale(e.count); })
+      .attr('stroke-opacity', function(e) { return opacityScale(e.count); })
+      .attr('stroke-linecap', 'round')
+      .on('mousemove', function(ev, e) {
+        showTip(ev, '<div class="tt-gene">' + esc(e.a.g.gene) + ' — ' + esc(e.b.g.gene) + '</div>' +
+          '<div class="tt-sub">significant together in ' + e.count + ' dataset' + (e.count === 1 ? '' : 's') + '</div>');
+      })
+      .on('mouseleave', hideTip);
+  }
+  document.getElementById('edge-toggle-row').style.display = edges.length ? '' : 'none';
+  var edgeToggle = document.getElementById('edge-toggle');
+  edgeToggle.checked = true;
+  edgeToggle.onchange = function() { edgeGroup.style('display', edgeToggle.checked ? null : 'none'); };
 
   var nodeG = g.selectAll('.gene-node').data(placed).enter().append('g').attr('class', 'gene-node')
     .attr('transform', function(d) { return 'translate(' + d.x + ',' + d.y + ')'; });

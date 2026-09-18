@@ -11,6 +11,14 @@ public class GeneConstellationResult {
     public int unassignedLociCount = 0;
     public List<MultiLocusResult.DatasetInfo> datasets = new ArrayList<>();
     public List<GeneEntry> genes = new ArrayList<>();
+    public List<GeneEdge> edges = new ArrayList<>();
+
+    /** A "significant together" edge between two genes: the number of datasets in which both
+     *  independently reach the significance threshold (not a correlation or shared-variant claim). */
+    public static class GeneEdge {
+        public String geneA = "", geneB = "";
+        public int count = 0;
+    }
 
     public static class PerDataset {
         public String id, name, disease;
@@ -60,6 +68,18 @@ public class GeneConstellationResult {
         for (int i = 0; i < genes.size(); i++) {
             if (i > 0) j.append(",");
             appendGene(j, genes.get(i));
+        }
+        j.append("],");
+
+        j.append("\"edges\":[");
+        for (int i = 0; i < edges.size(); i++) {
+            if (i > 0) j.append(",");
+            GeneEdge e = edges.get(i);
+            j.append("{");
+            kv(j, "gene_a", e.geneA); j.append(",");
+            kv(j, "gene_b", e.geneB); j.append(",");
+            j.append("\"count\":").append(e.count);
+            j.append("}");
         }
         j.append("]");
         j.append("}");

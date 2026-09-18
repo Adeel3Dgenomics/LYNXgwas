@@ -2187,8 +2187,18 @@ public class LocalServer {
         if (thresholdParam != null && !thresholdParam.isEmpty()) {
             try { threshold = Double.parseDouble(thresholdParam); } catch (NumberFormatException ignored) {}
         }
+        int minEdgeCount = GeneConstellationBuilder.DEFAULT_MIN_EDGE_COUNT;
+        String minEdgeParam = queryParam(ex, "min_edge_count");
+        if (minEdgeParam != null && !minEdgeParam.isEmpty()) {
+            try { minEdgeCount = Math.max(1, Integer.parseInt(minEdgeParam)); } catch (NumberFormatException ignored) {}
+        }
+        int maxEdges = GeneConstellationBuilder.DEFAULT_MAX_EDGES;
+        String maxEdgesParam = queryParam(ex, "max_edges");
+        if (maxEdgesParam != null && !maxEdgesParam.isEmpty()) {
+            try { maxEdges = Math.max(0, Integer.parseInt(maxEdgesParam)); } catch (NumberFormatException ignored) {}
+        }
         try {
-            GeneConstellationResult gcr = GeneConstellationBuilder.build(result, threshold);
+            GeneConstellationResult gcr = GeneConstellationBuilder.build(result, threshold, minEdgeCount, maxEdges);
             respond(ex, 200, "application/json", gcr.toJson().getBytes("UTF-8"));
         } catch (Exception e) {
             respond(ex, 500, "application/json", ("{\"error\":\"" + escJ(e.getMessage()) + "\"}").getBytes());
