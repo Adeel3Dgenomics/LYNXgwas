@@ -152,7 +152,8 @@
   <h1>Gene Constellation</h1>
   <div class="meta" id="hdr-meta">Loading…</div>
   <div class="top-actions">
-    <a class="btn" id="export-link" href="#">Export Excel (locus-level)</a>
+    <a class="btn" id="export-link" href="#">Export Excel (gene-level)</a>
+    <a class="btn" id="export-link-locus" href="#" title="The original locus-level export (one row per locus)">Export Excel (locus-level)</a>
   </div>
 </header>
 
@@ -238,7 +239,8 @@ var CHR_PALETTE = CHR_ORDER.map(function(c, i) {
 
 var params = new URLSearchParams(location.search);
 var jobId = params.get('job');
-document.getElementById('export-link').href = '/api/locus-matrix-export?job=' + encodeURIComponent(jobId || '');
+document.getElementById('export-link').href = '/api/gene-constellation-export?job=' + encodeURIComponent(jobId || '');
+document.getElementById('export-link-locus').href = '/api/locus-matrix-export?job=' + encodeURIComponent(jobId || '');
 
 var W = 860, H = 860, CX = W / 2, CY = H / 2;
 var RING_OUTER = 372, RING_INNER = 350;

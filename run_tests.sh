@@ -11,6 +11,7 @@ done
 javac -encoding UTF-8 -d bin -cp "bin$LIBCP" \
   src/analysis/StatsUtil.java \
   src/analysis/AnovaUtil.java \
+  src/analysis/EnrichmentAnalyzer.java \
   tests/MultiLocusScannerTest.java \
   tests/LdCalculatorTest.java \
   tests/GwasQcTest.java \
@@ -24,7 +25,8 @@ javac -encoding UTF-8 -d bin -cp "bin$LIBCP" \
   tests/FinemapAdapterTest.java \
   tests/CojoAdapterTest.java \
   tests/ColocAdapterTest.java \
-  tests/GwamaAdapterTest.java
+  tests/GwamaAdapterTest.java \
+  tests/EnrichmentAnalyzerTest.java
 
 FAILED=0
 
@@ -83,6 +85,10 @@ java -cp "bin$LIBCP" ColocAdapterTest || FAILED=1
 echo
 echo "--- GwamaAdapterTest ---"
 java -cp "bin$LIBCP" GwamaAdapterTest || FAILED=1
+
+echo
+echo "--- EnrichmentAnalyzerTest ---"
+java -cp "bin$LIBCP" EnrichmentAnalyzerTest || FAILED=1
 
 echo
 if [ "$FAILED" -eq 0 ]; then

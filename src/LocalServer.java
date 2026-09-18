@@ -188,6 +188,7 @@ public class LocalServer {
         http.createContext("/api/locus-matrix-export",   this::locusMatrixExport);
         http.createContext("/api/locus-matrix-delete",   this::locusMatrixDelete);
         http.createContext("/api/gene-constellation",    this::geneConstellation);
+        http.createContext("/api/gene-constellation-export", this::geneConstellationExport);
         http.createContext("/api/susiex-run",        this::susiexRun);
         http.createContext("/api/susiex-progress",   this::susiexProgress);
         http.createContext("/api/susiex-result",     this::susiexResult);
@@ -479,6 +480,21 @@ public class LocalServer {
             projectProgressEndpoint(ex, projectId);
         } else if (action.equals("qc")) {
             projectQc(ex, projectId, projectDir);
+        } else if (action.equals("evidence")) {
+            if ("POST".equalsIgnoreCase(ex.getRequestMethod())) {
+                projectEvidenceUpload(ex, projectId, projectDir);
+            } else {
+                projectEvidenceList(ex, projectDir);
+            }
+        } else if (action.startsWith("evidence/")) {
+            String evName = action.substring("evidence/".length());
+            if ("DELETE".equalsIgnoreCase(ex.getRequestMethod())) {
+                projectEvidenceDelete(ex, projectDir, evName);
+            } else {
+                projectEvidenceGet(ex, projectDir, evName);
+            }
+        } else if (action.equals("enrichment")) {
+            projectEnrichment(ex, projectId, projectDir);
         } else {
             respond(ex, 404, "application/json",
                 ("{\"error\":\"Unknown action: " + escJ(action) + "\"}").getBytes());
@@ -2198,6 +2214,352 @@ public class LocalServer {
                 "attachment; filename=\"locus_matrix_" + jobId + ".xlsx\"");
             ex.sendResponseHeaders(200, bytes.length);
             try (OutputStream os = ex.getResponseBody()) { os.write(bytes); }
+        } catch (Exception e) {
+            respond(ex, 500, "application/json", ("{\"error\":\"" + escJ(e.getMessage()) + "\"}").getBytes());
+        }
+    }
+
+    // GET /api/gene-constellation-export?job=<jobId>&threshold=<p> — gene-level Excel export,
+    // mirrors locusMatrixExport's structure exactly (same job lookup, same response headers).
+    private void geneConstellationExport(HttpExchange ex) throws IOException {
+        cors(ex); if (preflight(ex)) return;
+        String jobId = queryParam(ex, "job");
+        MultiLocusResult result = jobId != null ? locusMatrixJobs.get(jobId) : null;
+        if (result == null) {
+            respond(ex, 404, "application/json", "{\"error\":\"Job not found or not complete\"}".getBytes());
+            return;
+        }
+        double threshold = GeneConstellationBuilder.DEFAULT_THRESHOLD;
+        String thresholdParam = queryParam(ex, "threshold");
+        if (thresholdParam != null && !thresholdParam.isEmpty()) {
+            try { threshold = Double.parseDouble(thresholdParam); } catch (NumberFormatException ignored) {}
+        }
+        try {
+            GeneConstellationResult gcr = GeneConstellationBuilder.build(result, threshold);
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            GeneConstellationExcelWriter.write(gcr, baos);
+            byte[] bytes = baos.toByteArray();
+            ex.getResponseHeaders().set("Content-Type",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+            ex.getResponseHeaders().set("Content-Disposition",
+                "attachment; filename=\"gene_constellation_" + jobId + ".xlsx\"");
+            ex.sendResponseHeaders(200, bytes.length);
+            try (OutputStream os = ex.getResponseBody()) { os.write(bytes); }
+        } catch (Exception e) {
+            respond(ex, 500, "application/json", ("{\"error\":\"" + escJ(e.getMessage()) + "\"}").getBytes());
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    //  EVIDENCE (Feature A) — per-project gene-level evidence tables
+    //  Stored at projects/<id>/evidence/<name>.tsv + <name>.meta.json.
+    //  No multipart parsing in this codebase (checked: every existing upload-shaped endpoint
+    //  reads a raw request body), so uploads are POST with the raw file body plus
+    //  ?name=&kind=&gene_col= query params, per the project's established simple-HTTP-handling
+    //  convention.
+    // ══════════════════════════════════════════════════════════════════════
+
+    private static String sanitizeEvidenceName(String name) {
+        return name == null ? "" : name.trim().replaceAll("[^A-Za-z0-9_.-]", "_");
+    }
+
+    /** Minimal CSV/TSV line splitter: tab-delimited lines split on tab as-is; comma-delimited
+     *  lines get basic double-quote handling (quoted commas don't split, "" is an escaped quote). */
+    private static String[] splitDelimited(String line, String delim) {
+        if ("\t".equals(delim)) return line.split("\t", -1);
+        List<String> out = new ArrayList<>();
+        StringBuilder cur = new StringBuilder();
+        boolean inQuotes = false;
+        for (int i = 0; i < line.length(); i++) {
+            char c = line.charAt(i);
+            if (inQuotes) {
+                if (c == '"') {
+                    if (i + 1 < line.length() && line.charAt(i + 1) == '"') { cur.append('"'); i++; }
+                    else inQuotes = false;
+                } else cur.append(c);
+            } else {
+                if (c == '"') inQuotes = true;
+                else if (c == ',') { out.add(cur.toString()); cur.setLength(0); }
+                else cur.append(c);
+            }
+        }
+        out.add(cur.toString());
+        return out.toArray(new String[0]);
+    }
+
+    // GET /api/project/{id}/evidence — list attached evidence tables (each meta.json is already
+    // valid JSON in the exact shape we want to return, so this just concatenates them into an array).
+    private void projectEvidenceList(HttpExchange ex, String projectDir) throws IOException {
+        File evDir = new File(projectDir, "evidence");
+        File[] metas = evDir.isDirectory() ? evDir.listFiles((d, n) -> n.endsWith(".meta.json")) : null;
+        StringBuilder j = new StringBuilder("[");
+        if (metas != null) {
+            Arrays.sort(metas, Comparator.comparing(File::getName));
+            for (int i = 0; i < metas.length; i++) {
+                if (i > 0) j.append(",");
+                j.append(new String(Files.readAllBytes(metas[i].toPath()), "UTF-8"));
+            }
+        }
+        j.append("]");
+        respond(ex, 200, "application/json", j.toString().getBytes("UTF-8"));
+    }
+
+    // POST /api/project/{id}/evidence?name=<name>&kind=<ppi|expression|other>&gene_col=<col>
+    // Body = raw CSV or TSV file content (header row required; delimiter auto-detected: a tab
+    // in the header line means TSV, else comma).
+    private void projectEvidenceUpload(HttpExchange ex, String projectId, String projectDir) throws IOException {
+        if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) {
+            respond(ex, 405, "application/json", "{\"error\":\"POST required\"}".getBytes()); return;
+        }
+        String name = sanitizeEvidenceName(queryParam(ex, "name"));
+        if (name.isEmpty()) {
+            respond(ex, 400, "application/json", "{\"error\":\"name is required\"}".getBytes()); return;
+        }
+        String kind = queryParam(ex, "kind");
+        if (kind == null || !(kind.equals("ppi") || kind.equals("expression") || kind.equals("other"))) kind = "other";
+        String geneColParam = queryParam(ex, "gene_col");
+
+        String text = new String(readAll(ex.getRequestBody()), "UTF-8");
+        if (text.trim().isEmpty()) {
+            respond(ex, 400, "application/json", "{\"error\":\"Empty upload\"}".getBytes()); return;
+        }
+        String[] lines = text.split("\r\n|\n|\r");
+        int hIdx = 0;
+        while (hIdx < lines.length && lines[hIdx].trim().isEmpty()) hIdx++;
+        if (hIdx >= lines.length) {
+            respond(ex, 400, "application/json", "{\"error\":\"No header row found\"}".getBytes()); return;
+        }
+        String headerLine = lines[hIdx];
+        String delim = headerLine.contains("\t") ? "\t" : ",";
+        String[] headers = splitDelimited(headerLine, delim);
+        for (int i = 0; i < headers.length; i++) headers[i] = headers[i].trim();
+
+        int geneColIdx = -1;
+        if (geneColParam != null && !geneColParam.trim().isEmpty()) {
+            for (int i = 0; i < headers.length; i++) {
+                if (headers[i].equalsIgnoreCase(geneColParam.trim())) { geneColIdx = i; break; }
+            }
+            if (geneColIdx < 0) {
+                respond(ex, 400, "application/json",
+                    ("{\"error\":\"gene_col '" + escJ(geneColParam) + "' not found in header\"}").getBytes()); return;
+            }
+        } else {
+            String[] candidates = {"gene", "gene_symbol", "symbol", "gene_name"};
+            search:
+            for (String cand : candidates) {
+                for (int i = 0; i < headers.length; i++) {
+                    if (headers[i].equalsIgnoreCase(cand)) { geneColIdx = i; break search; }
+                }
+            }
+            if (geneColIdx < 0) {
+                respond(ex, 400, "application/json",
+                    "{\"error\":\"Could not auto-detect a gene-symbol column (expected one of gene/gene_symbol/symbol/gene_name); specify gene_col explicitly\"}".getBytes());
+                return;
+            }
+        }
+        String geneColName = headers[geneColIdx];
+
+        List<String[]> rows = new ArrayList<>();
+        for (int i = hIdx + 1; i < lines.length; i++) {
+            if (lines[i].trim().isEmpty()) continue;
+            rows.add(splitDelimited(lines[i], delim));
+        }
+        if (rows.isEmpty()) {
+            respond(ex, 400, "application/json", "{\"error\":\"No data rows found\"}".getBytes()); return;
+        }
+
+        List<String> otherCols = new ArrayList<>();
+        for (String h : headers) if (!h.equals(geneColName)) otherCols.add(h);
+        Map<String, Boolean> numericFlag = new LinkedHashMap<>();
+        for (String col : otherCols) numericFlag.put(col, true);
+        for (String[] r : rows) {
+            for (int i = 0; i < headers.length; i++) {
+                String h = headers[i];
+                if (h.equals(geneColName)) continue;
+                String v = i < r.length ? r[i].trim() : "";
+                if (v.isEmpty()) continue;
+                if (Boolean.TRUE.equals(numericFlag.get(h))) {
+                    try { Double.parseDouble(v); } catch (NumberFormatException e) { numericFlag.put(h, false); }
+                }
+            }
+        }
+
+        File evDir = new File(projectDir, "evidence");
+        evDir.mkdirs();
+        File tsvFile = new File(evDir, name + ".tsv");
+        File metaFile = new File(evDir, name + ".meta.json");
+        try (PrintWriter pw = new PrintWriter(new OutputStreamWriter(new FileOutputStream(tsvFile), "UTF-8"))) {
+            pw.println(String.join("\t", headers));
+            for (String[] r : rows) {
+                StringBuilder line = new StringBuilder();
+                for (int i = 0; i < headers.length; i++) {
+                    if (i > 0) line.append('\t');
+                    String v = i < r.length ? r[i].trim() : "";
+                    line.append(v.replace("\t", " "));
+                }
+                pw.println(line);
+            }
+        }
+
+        StringBuilder meta = new StringBuilder();
+        meta.append("{");
+        meta.append("\"name\":\"").append(escJ(name)).append("\",");
+        meta.append("\"kind\":\"").append(escJ(kind)).append("\",");
+        meta.append("\"gene_col\":\"").append(escJ(geneColName)).append("\",");
+        meta.append("\"row_count\":").append(rows.size()).append(",");
+        meta.append("\"columns\":[");
+        for (int i = 0; i < otherCols.size(); i++) {
+            if (i > 0) meta.append(",");
+            meta.append("{\"name\":\"").append(escJ(otherCols.get(i))).append("\",\"type\":\"")
+                .append(Boolean.TRUE.equals(numericFlag.get(otherCols.get(i))) ? "numeric" : "categorical")
+                .append("\"}");
+        }
+        meta.append("]}");
+        try (PrintWriter pw = new PrintWriter(new OutputStreamWriter(new FileOutputStream(metaFile), "UTF-8"))) {
+            pw.print(meta);
+        }
+
+        respond(ex, 200, "application/json", meta.toString().getBytes("UTF-8"));
+        System.out.printf("[Server] Uploaded evidence '%s' (%s) to project '%s': %d rows%n",
+            name, kind, projectId, rows.size());
+    }
+
+    // GET /api/project/{id}/evidence/{name} — full parsed content as JSON: gene -> {column: value}
+    private void projectEvidenceGet(HttpExchange ex, String projectDir, String rawName) throws IOException {
+        String name = sanitizeEvidenceName(rawName);
+        File evDir = new File(projectDir, "evidence");
+        File tsvFile = new File(evDir, name + ".tsv");
+        File metaFile = new File(evDir, name + ".meta.json");
+        if (!tsvFile.exists() || !metaFile.exists()) {
+            respond(ex, 404, "application/json", "{\"error\":\"Evidence table not found\"}".getBytes()); return;
+        }
+        String metaJson = new String(Files.readAllBytes(metaFile.toPath()), "UTF-8");
+        String geneCol = extractStr(metaJson, "gene_col");
+
+        StringBuilder j = new StringBuilder("{");
+        boolean first = true;
+        try (BufferedReader br = new BufferedReader(new InputStreamReader(new FileInputStream(tsvFile), "UTF-8"))) {
+            String header = br.readLine();
+            if (header != null) {
+                String[] headers = header.split("\t", -1);
+                int geneIdx = -1;
+                for (int i = 0; i < headers.length; i++) if (headers[i].equals(geneCol)) { geneIdx = i; break; }
+                String line;
+                while (geneIdx >= 0 && (line = br.readLine()) != null) {
+                    if (line.trim().isEmpty()) continue;
+                    String[] fields = line.split("\t", -1);
+                    if (geneIdx >= fields.length) continue;
+                    String gene = fields[geneIdx].trim();
+                    if (gene.isEmpty()) continue;
+                    if (!first) j.append(",");
+                    first = false;
+                    j.append("\"").append(escJ(gene)).append("\":{");
+                    boolean f2 = true;
+                    for (int i = 0; i < headers.length; i++) {
+                        if (i == geneIdx) continue;
+                        if (!f2) j.append(",");
+                        f2 = false;
+                        String v = i < fields.length ? fields[i].trim() : "";
+                        j.append("\"").append(escJ(headers[i])).append("\":\"").append(escJ(v)).append("\"");
+                    }
+                    j.append("}");
+                }
+            }
+        }
+        j.append("}");
+        respond(ex, 200, "application/json", j.toString().getBytes("UTF-8"));
+    }
+
+    // DELETE /api/project/{id}/evidence/{name}
+    private void projectEvidenceDelete(HttpExchange ex, String projectDir, String rawName) throws IOException {
+        String name = sanitizeEvidenceName(rawName);
+        File evDir = new File(projectDir, "evidence");
+        File tsvFile = new File(evDir, name + ".tsv");
+        File metaFile = new File(evDir, name + ".meta.json");
+        boolean existed = tsvFile.exists() || metaFile.exists();
+        tsvFile.delete();
+        metaFile.delete();
+        if (!existed) {
+            respond(ex, 404, "application/json", "{\"error\":\"Evidence table not found\"}".getBytes()); return;
+        }
+        respond(ex, 200, "application/json", "{\"ok\":true}".getBytes());
+    }
+
+    // GET /api/project/{id}/enrichment?evidence=<name> — locus-based enrichment test (Fisher's
+    // exact for categorical columns, Mann-Whitney U for numeric columns) of this project's
+    // identified-loci genes against a background gene set, run live (not cached/precomputed).
+    private void projectEnrichment(HttpExchange ex, String projectId, String projectDir) throws IOException {
+        String evidenceName = queryParam(ex, "evidence");
+        if (evidenceName == null || evidenceName.trim().isEmpty()) {
+            respond(ex, 400, "application/json", "{\"error\":\"evidence query param is required\"}".getBytes()); return;
+        }
+        String name = sanitizeEvidenceName(evidenceName);
+        File evDir = new File(projectDir, "evidence");
+        File tsvFile = new File(evDir, name + ".tsv");
+        File metaFile = new File(evDir, name + ".meta.json");
+        if (!tsvFile.exists() || !metaFile.exists()) {
+            respond(ex, 404, "application/json", "{\"error\":\"Evidence table not found\"}".getBytes()); return;
+        }
+
+        ProjectState ps = ensureProjectState(projectId, projectDir);
+        if (ps == null || ps.gff == null || ps.outputs == null) {
+            respond(ex, 400, "application/json", "{\"error\":\"Project not available\"}".getBytes()); return;
+        }
+
+        try {
+            String metaJson = new String(Files.readAllBytes(metaFile.toPath()), "UTF-8");
+            String geneCol = extractStr(metaJson, "gene_col");
+            Map<String, String> columnTypes = new LinkedHashMap<>();
+            for (String c : extractObjectArray(metaJson, "columns")) {
+                String cname = extractStr(c, "name");
+                String ctype = extractStr(c, "type");
+                if (cname != null) columnTypes.put(cname, ctype);
+            }
+
+            Map<String, Map<String, String>> evidence = new LinkedHashMap<>();
+            try (BufferedReader br = new BufferedReader(new InputStreamReader(new FileInputStream(tsvFile), "UTF-8"))) {
+                String header = br.readLine();
+                if (header != null) {
+                    String[] headers = header.split("\t", -1);
+                    int geneIdx = -1;
+                    for (int i = 0; i < headers.length; i++) if (headers[i].equals(geneCol)) { geneIdx = i; break; }
+                    String line;
+                    while (geneIdx >= 0 && (line = br.readLine()) != null) {
+                        if (line.trim().isEmpty()) continue;
+                        String[] fields = line.split("\t", -1);
+                        if (geneIdx >= fields.length) continue;
+                        String gene = fields[geneIdx].trim();
+                        if (gene.isEmpty()) continue;
+                        Map<String, String> row = new LinkedHashMap<>();
+                        for (int i = 0; i < headers.length; i++) {
+                            if (i == geneIdx) continue;
+                            row.put(headers[i], i < fields.length ? fields[i].trim() : "");
+                        }
+                        evidence.put(gene, row);
+                    }
+                }
+            }
+
+            // In-loci genes: genes overlapping this project's own identified loci (already-parsed
+            // annotation, reused as-is — see LocusOutput.genes / ensureProjectState).
+            Set<String> inLociGenes = new LinkedHashSet<>();
+            Set<String> chrs = new LinkedHashSet<>();
+            for (LocusOutput lo : ps.outputs) {
+                chrs.add(lo.chr);
+                for (Gene g : lo.genes) if (g.geneName != null) inLociGenes.add(g.geneName);
+            }
+
+            // Background: every gene in the parsed GFF3 on the same chromosome(s) as those loci.
+            Set<String> backgroundGenes = new LinkedHashSet<>();
+            for (String chr : chrs) {
+                for (Gene g : ps.gff.overlapping(chr, 0, Long.MAX_VALUE)) {
+                    if (g.geneName != null) backgroundGenes.add(g.geneName);
+                }
+            }
+
+            EnrichmentAnalyzer.Result result =
+                EnrichmentAnalyzer.run(inLociGenes, backgroundGenes, evidence, columnTypes);
+            respond(ex, 200, "application/json", result.toJson().getBytes("UTF-8"));
         } catch (Exception e) {
             respond(ex, 500, "application/json", ("{\"error\":\"" + escJ(e.getMessage()) + "\"}").getBytes());
         }

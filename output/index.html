@@ -405,6 +405,7 @@ function render() {
       + '<button class="btn btn-secondary" onclick="exportExcel(\'' + esc(p.id) + '\')" title="Export Excel">Excel</button>'
       + '<button class="btn btn-secondary" style="background:#d1fae5;color:#065f46" onclick="openProjectAnalysis(\'' + esc(p.id) + '\')" title="Build analysis base artifacts">Analyze</button>'
       + '<button class="btn btn-secondary" onclick="openGwasQc(\'' + esc(p.id) + '\')" title="Genomic inflation / confounding triage">QC</button>'
+      + '<button class="btn btn-secondary" onclick="openEvidence(\'' + esc(p.id) + '\')" title="Attach gene-level evidence data (PPI, expression, etc.)">Evidence</button>'
       + '<button class="btn btn-danger" style="padding:0.2rem 0.6rem;font-size:0.75rem" onclick="deleteProject(\'' + esc(p.id) + '\')" title="Delete project">Delete</button>'
       + '</td></tr>';
   }).join('');
@@ -2096,6 +2097,97 @@ function submitGwasQcIntercept(projectId) {
   var val = parseFloat(document.getElementById('qc-ldsc-input').value);
   if (!isFinite(val)) return;
   renderGwasQc(projectId, val);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Evidence — attach per-gene PPI/expression/other data to a project
+// ═══════════════════════════════════════════════════════════════
+async function openEvidence(projectId) {
+  var overlay = document.getElementById('evidence-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'evidence-overlay';
+    overlay.className = 'wizard-overlay';
+    overlay.innerHTML = '<div class="wizard-box" style="max-width:560px;width:90vw" id="evidence-box"></div>';
+    overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.classList.remove('open'); });
+    document.body.appendChild(overlay);
+  }
+  overlay.classList.add('open');
+  await renderEvidenceBox(projectId);
+}
+
+async function renderEvidenceBox(projectId, message) {
+  var box = document.getElementById('evidence-box');
+  box.innerHTML = '<h3>Evidence — ' + esc(projectId) + '</h3><div style="margin:1rem 0;color:#666;font-size:0.85rem">Loading…</div>';
+  try {
+    var resp = await fetch(API + '/api/project/' + encodeURIComponent(projectId) + '/evidence');
+    var list = await resp.json();
+    var rows = (list || []).map(function(e) {
+      var cols = (e.columns || []).map(function(c) { return c.name + ' (' + c.type + ')'; }).join(', ');
+      return '<tr><td title="' + escAttr(cols) + '"><b>' + esc(e.name) + '</b></td><td>' + esc(e.kind) + '</td>'
+        + '<td>' + e.row_count + '</td>'
+        + '<td><button class="btn btn-danger" style="padding:0.15rem 0.5rem;font-size:0.72rem" onclick="deleteEvidence(\'' + esc(projectId) + '\',\'' + esc(e.name) + '\')">Delete</button></td></tr>';
+    }).join('');
+    var html = '<h3>Evidence — ' + esc(projectId) + '</h3>'
+      + '<p style="color:#666;font-size:0.8rem;margin:0.25rem 0 0.75rem">Per-gene data (PPI scores, expression, or any other numeric/categorical table keyed by gene symbol). Attached tables render as a track under the gene track in the locus viewer and can be tested for locus-based enrichment.</p>'
+      + (message ? '<div style="color:' + (message.ok ? '#059669' : '#dc2626') + ';font-size:0.8rem;margin-bottom:0.5rem">' + esc(message.text) + '</div>' : '')
+      + '<table style="width:100%;font-size:0.82rem;margin-bottom:1rem"><thead><tr><th style="text-align:left">Name</th><th>Kind</th><th># genes</th><th></th></tr></thead><tbody>'
+      + (rows || '<tr><td colspan="4" style="color:#94a3b8;padding:0.5rem 0">No evidence tables attached yet.</td></tr>')
+      + '</tbody></table>'
+      + '<div style="border-top:1px solid #e5e7eb;padding-top:0.75rem">'
+      + '<div style="font-weight:600;font-size:0.85rem;margin-bottom:0.5rem">Upload new evidence table (CSV or TSV, header row required)</div>'
+      + '<div style="display:flex;flex-direction:column;gap:0.5rem">'
+      + '<input type="file" id="evidence-file" accept=".csv,.tsv,.txt">'
+      + '<div style="display:flex;gap:0.5rem">'
+      + '<select id="evidence-kind" style="flex:1;padding:0.35rem"><option value="ppi">PPI</option><option value="expression">Expression</option><option value="other">Other</option></select>'
+      + '<input id="evidence-gene-col" type="text" placeholder="Gene-symbol column (if not auto-detected)" style="flex:1;padding:0.35rem">'
+      + '</div>'
+      + '<input id="evidence-name" type="text" placeholder="Display name (optional, defaults to file name)" style="padding:0.35rem">'
+      + '<div style="display:flex;justify-content:flex-end;gap:0.5rem">'
+      + '<button class="btn btn-secondary" onclick="document.getElementById(\'evidence-overlay\').classList.remove(\'open\')">Close</button>'
+      + '<button class="btn btn-primary" onclick="submitEvidenceUpload(\'' + esc(projectId) + '\')">Upload</button>'
+      + '</div></div></div>';
+    box.innerHTML = html;
+  } catch (e) {
+    box.innerHTML = '<h3>Evidence</h3><div style="color:#dc2626;margin:1rem 0;font-size:0.85rem">' + esc(e.message) + '</div>';
+  }
+}
+
+async function submitEvidenceUpload(projectId) {
+  var fileInput = document.getElementById('evidence-file');
+  var file = fileInput && fileInput.files[0];
+  if (!file) { alert('Choose a file first.'); return; }
+  var kind = document.getElementById('evidence-kind').value;
+  var geneCol = document.getElementById('evidence-gene-col').value.trim();
+  var name = document.getElementById('evidence-name').value.trim() || file.name.replace(/\.[^.]+$/, '');
+  try {
+    var text = await file.text();
+    var qs = '?name=' + encodeURIComponent(name) + '&kind=' + encodeURIComponent(kind)
+      + (geneCol ? '&gene_col=' + encodeURIComponent(geneCol) : '');
+    var resp = await fetch(API + '/api/project/' + encodeURIComponent(projectId) + '/evidence' + qs, {
+      method: 'POST',
+      headers: {'Content-Type': 'text/plain; charset=utf-8'},
+      body: text
+    });
+    var d = await resp.json();
+    if (!resp.ok) {
+      await renderEvidenceBox(projectId, {ok:false, text: d.error || 'Upload failed'});
+      return;
+    }
+    await renderEvidenceBox(projectId, {ok:true, text: 'Uploaded "' + name + '" (' + d.row_count + ' genes).'});
+  } catch (e) {
+    await renderEvidenceBox(projectId, {ok:false, text: e.message});
+  }
+}
+
+async function deleteEvidence(projectId, name) {
+  if (!confirm('Delete evidence table "' + name + '"?')) return;
+  try {
+    await fetch(API + '/api/project/' + encodeURIComponent(projectId) + '/evidence/' + encodeURIComponent(name), { method: 'DELETE' });
+    await renderEvidenceBox(projectId);
+  } catch (e) {
+    alert('Failed to delete: ' + e.message);
+  }
 }
 
 async function loadLocusMatrixJobs() {

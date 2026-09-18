@@ -7,6 +7,7 @@ for %%f in (lib\*.jar) do call set "LIBCP=%%LIBCP%%;%%f"
 javac -encoding UTF-8 -d bin -cp "bin%LIBCP%" ^
   src\analysis\StatsUtil.java ^
   src\analysis\AnovaUtil.java ^
+  src\analysis\EnrichmentAnalyzer.java ^
   tests\MultiLocusScannerTest.java ^
   tests\LdCalculatorTest.java ^
   tests\GwasQcTest.java ^
@@ -20,7 +21,8 @@ javac -encoding UTF-8 -d bin -cp "bin%LIBCP%" ^
   tests\FinemapAdapterTest.java ^
   tests\CojoAdapterTest.java ^
   tests\ColocAdapterTest.java ^
-  tests\GwamaAdapterTest.java
+  tests\GwamaAdapterTest.java ^
+  tests\EnrichmentAnalyzerTest.java
 if %ERRORLEVEL% neq 0 (
     echo [FAIL] Test compilation failed.
     exit /b 1
@@ -96,6 +98,11 @@ if %ERRORLEVEL% neq 0 set FAILED=1
 echo.
 echo --- GwamaAdapterTest ---
 java -cp "bin%LIBCP%" GwamaAdapterTest
+if %ERRORLEVEL% neq 0 set FAILED=1
+
+echo.
+echo --- EnrichmentAnalyzerTest ---
+java -cp "bin%LIBCP%" EnrichmentAnalyzerTest
 if %ERRORLEVEL% neq 0 set FAILED=1
 
 echo.

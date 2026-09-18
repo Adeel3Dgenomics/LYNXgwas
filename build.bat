@@ -53,6 +53,7 @@ javac -encoding UTF-8 -d bin -cp "bin%LIBCP%" ^
   src\analysis\SusiexAdapter.java ^
   src\analysis\AnalysisColumnProvider.java ^
   src\analysis\BaseStepPipeline.java ^
+  src\analysis\EnrichmentAnalyzer.java ^
   src\export\ColumnSpec.java ^
   src\export\GwasSchema.java ^
   src\export\SnpContext.java ^
@@ -79,6 +80,7 @@ javac -encoding UTF-8 -d bin -cp "bin%LIBCP%" ^
   src\MultiLocusScanner.java ^
   src\MultiLocusResult.java ^
   src\MultiLocusExcelWriter.java ^
+  src\GeneConstellationExcelWriter.java ^
   src\PlinkSubsetter.java ^
   src\LdCalculator.java ^
   src\SnpAnnotator.java ^
