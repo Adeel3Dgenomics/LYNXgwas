@@ -142,9 +142,22 @@ public class MultiLocusScanner {
         ScanOneResult result = new ScanOneResult();
         result.agg = agg;
         result.extraColumns = new ArrayList<>();
-        List<Integer> activeIdx = new ArrayList<>();
-        int nextLocusIdx = 0;
-        String currentChr = null;
+
+        // Per-chromosome index lists sorted by start, so lookup works regardless of whether the
+        // raw GWAS file itself is sorted by position (it frequently isn't — see GwasParser, which
+        // solves the same problem the same way). A sequential sweep that assumes file order was
+        // used here previously and silently dropped coverage for any dataset that wasn't sorted.
+        // Loci in `sorted` are a union across every dataset's own independently-clumped list, so
+        // one dataset may label chromosomes "1" while another uses "chr1" — normalize both sides
+        // of the lookup or a dataset's own rows silently fail to match loci contributed by a
+        // differently-labeled dataset.
+        Map<String, List<Integer>> indicesByChrom = new HashMap<>();
+        for (int i = 0; i < sorted.size(); i++) {
+            indicesByChrom.computeIfAbsent(normalizeChr(sorted.get(i).chr), k -> new ArrayList<>()).add(i);
+        }
+        for (List<Integer> idxList : indicesByChrom.values()) {
+            idxList.sort(Comparator.comparingLong(i -> sorted.get(i).start));
+        }
 
         try (BufferedReader br = new BufferedReader(new FileReader(cfg.gwasFile), 1024 * 1024)) {
             String header = br.readLine();
@@ -192,24 +205,21 @@ public class MultiLocusScanner {
                     p   = Double.parseDouble(f[iP].trim());
                 } catch (NumberFormatException e) { continue; }
 
-                int chrI = Locus.chrToInt(chr);
-                if (!chr.equals(currentChr)) {
-                    activeIdx.clear();
-                    currentChr = chr;
-                    while (nextLocusIdx < sorted.size()
-                           && Locus.chrToInt(sorted.get(nextLocusIdx).chr) < chrI) {
-                        nextLocusIdx++;
-                    }
-                }
+                List<Integer> chromIdx = indicesByChrom.get(normalizeChr(chr));
+                if (chromIdx == null) continue;
 
-                while (nextLocusIdx < sorted.size()) {
-                    LociIdentifier.IdentifiedLocus cand = sorted.get(nextLocusIdx);
-                    if (Locus.chrToInt(cand.chr) != chrI) break;
-                    if (cand.start > pos) break;
-                    activeIdx.add(nextLocusIdx);
-                    nextLocusIdx++;
+                // Binary search: first position where start > pos, mirroring GwasParser's
+                // interval lookup so this scan is correct regardless of file sort order.
+                int bsLo = 0, bsHi = chromIdx.size();
+                while (bsLo < bsHi) {
+                    int mid = (bsLo + bsHi) >>> 1;
+                    if (sorted.get(chromIdx.get(mid)).start <= pos) bsLo = mid + 1; else bsHi = mid;
                 }
-                activeIdx.removeIf(idx -> sorted.get(idx).end < pos);
+                List<Integer> activeIdx = new ArrayList<>();
+                for (int ai = 0; ai < bsLo; ai++) {
+                    int idx = chromIdx.get(ai);
+                    if (sorted.get(idx).end >= pos) activeIdx.add(idx);
+                }
                 if (activeIdx.isEmpty()) continue;
 
                 String rsid  = (iRsid  >= 0 && iRsid  < f.length) ? f[iRsid].trim()  : "";
@@ -252,6 +262,16 @@ public class MultiLocusScanner {
             }
         }
         return result;
+    }
+
+    /** Strips an optional "chr"/"Chr"/"CHR" prefix and uppercases, so "1" and "chr1" (or "X" and
+     *  "chrX") key the same chromosome bucket regardless of which convention a given dataset uses. */
+    static String normalizeChr(String chr) {
+        String c = chr.trim();
+        if (c.length() > 3 && (c.startsWith("chr") || c.startsWith("Chr") || c.startsWith("CHR"))) {
+            c = c.substring(3);
+        }
+        return c.toUpperCase();
     }
 
     private static double parseD(String v) {

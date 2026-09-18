@@ -1,0 +1,112 @@
+# Autonomous execution log — limitations fixes + HPC/shared-storage features
+
+Started 2026-09-17, while the user is away from the computer. This file records the plan and every
+non-obvious decision made while executing it, per the user's explicit request. Updated as work
+progresses — check timestamps/checkmarks below for current status, not just the plan text.
+
+## Scope, as requested
+
+1. Fix each limitation listed in the manuscript's Limitations section, one by one, where a real
+   autonomous fix is safe and verifiable.
+2. Add: shared-storage options for reference data (private GitHub repo, shared lab folder, cloud-synced
+   folder) so users don't have to re-download PLINK/GFF3/reference panels every time.
+3. Add: optional HPC/cluster execution — user provides SSH access, the app generates and submits a
+   Snakemake workflow remotely, polls job status on a configurable interval (5–20 min), using
+   user-specified module names for cluster-side tools. Must be **opt-in** (local execution stays the
+   default) and safe.
+4. Add: a GUI setup/configuration wizard for all of the above, re-runnable any time from the home page.
+5. Reprocess all 6 diseases × 5 datasets (30 total) with **every** genome-wide-significant locus fully
+   processed (not just the ~14-locus illustrative subset used for the manuscript figures).
+
+## Hard safety boundary set for this session (decision, not negotiable)
+
+**No autonomous SSH connection to any real, external, production system** (including the user's own
+HPC cluster referenced elsewhere in this environment) will be attempted while unsupervised. Reasons:
+- The user's own standing instructions elsewhere in this environment describe a cluster incident where
+  a single bare command on a login node once cascaded into hung sessions — i.e. there is a specific,
+  known-bad failure mode for unsupervised SSH/cluster interaction with this exact user.
+- Autonomous, unattended use of SSH credentials against a real external system is exactly the class of
+  action the general operating instructions require a human present for.
+
+Consequence: the HPC feature is built completely (config, GUI, Snakemake generation, SSH invocation via
+the system `ssh`/`scp` binaries using key-based auth only, job status polling) and tested as far as
+possible **without** a live external target (config round-trip, generated-file correctness, and a
+loopback test against `localhost` if an SSH server is available on this machine). Connecting it to the
+user's actual cluster is left as a manual step for when they're back and can supervise the first real
+run.
+
+## Per-limitation decisions
+
+| # | Limitation (from manuscript) | Decision | Status |
+|---|---|---|---|
+| 1 | Parallel LD memory scaling (OOM crash) | **Done.** Found the actual root cause while implementing this: `--ld-window-kb` for the index-SNP r2 scan (Step B) scaled directly with the locus's *raw genomic span*, uncapped — an 8.8Mb MHC-sized locus drove PLINK into a multi-thousand-kb window against tens of thousands of markers. Added `MAX_LD_WINDOW_KB` (2000) cap — bounds the actual memory/runtime driver directly, not just a band-aid on thread count. Also added a lighter defense-in-depth: the worker pool drops to at most 2 concurrent jobs (from whatever `ld.parallel.jobs` is configured) whenever any locus in the batch spans over 4Mb. Verified with `tests/LdCalculatorTest.java`. | ✅ done, tested |
+| 2 | Fine-mapping method fidelity (ABF vs real FINEMAP) | **Deferred.** Integrating the real FINEMAP binary is a substantial new external-tool integration (binary distribution, licensing check, new adapter), not a safe same-day autonomous change. Left as future work. | deferred |
+| 3 | Meta-analysis scope (GWAMA single-cohort only) | **Deferred.** True multi-cohort meta-analysis is a statistical-correctness-critical feature; implementing it without domain review risks silently wrong results, worse than the current honest limitation. Left as future work. | deferred |
+| 4 | QC signal not LD-pruned | **Done, but scoped down from the original plan.** True `PLINK --indep-pairwise` pruning needs genotypes/a reference panel, which would break `GwasQc`'s explicit no-external-tool design goal (many projects run QC without ever configuring a reference panel). Implemented **distance-based** pruning instead (keep at most 1 SNP per 250kb per chromosome) — a genotype-free proxy that still substantially reduces dense-LD-block inflation of the median, honestly documented as approximate rather than true LD-based pruning. Also fixed a real cache-staleness bug found while implementing this: the QC result cache was keyed only by GWAS-file hash, so a pre-fix cached result would have been served forever after this change (same file, same hash) — added a cache-format marker so stale caches are recomputed. Verified with `tests/GwasQcTest.java`. | ✅ done, tested |
+| 5 | External dependency management (no bundled ref panel/GFF3) | In progress — see "Shared storage" below. | ⏳ |
+| 6 | No automated test suite | **Started, not complete.** This project has no build tool (plain `javac`, no Maven/Gradle), so a full JUnit setup would be new infrastructure; added a dependency-free `tests/` directory (standalone classes with `main()` methods, PASS/FAIL output, non-zero exit on failure) plus `run_tests.bat`/`run_tests.sh`, and wrote real regression tests for every fix made today (3 test files, 8 assertions total, all passing). This is a genuine start, not a comprehensive suite — most existing modules (rsID recovery, fine-mapping adapters, export) still have zero coverage. | 🟡 started |
+| 7 | Single-user, single-machine design | **Deferred.** Adding auth/multi-tenancy is a product-direction decision (which auth model, is shared deployment even wanted), not something to decide unilaterally. Left as future work. | deferred |
+| 8 | Windows-only build tooling | **Done.** Added `build.sh`/`run.sh`/`run_tests.sh` mirroring the `.bat` files file-for-file. Verified: shell syntax checked clean (`sh -n`); the actual `javac`/`java` invocations could only be exercised via git-bash on this Windows machine, which calls the *Windows* JDK (semicolon classpath separator) even though the script correctly uses `:` per the POSIX/Linux JDK convention — so the compile step fails *in this exact test environment* for a reason that has nothing to do with the script being wrong, and it remains genuinely unverified on a real Linux/Mac JDK. Flagged honestly rather than claimed as fully tested. | ✅ (partially verified — see caveat) |
+| 9 | Locus Matrix coverage inconsistency (found during validation, not yet a doc'd limitation) | **Root cause found and fixed** — actually two compounding bugs: (a) `MultiLocusScanner.scanOne` assumed the raw GWAS file is sorted by chr:pos (a sequential sweep that never backtracks `nextLocusIdx`), unlike `GwasParser` which explicitly handles unsorted files via interval lookup — rewritten to reuse that same interval-lookup approach; (b) chromosome label mismatches across datasets in the same comparison (e.g. one file using "1", another "chr1") silently failed to match — added `normalizeChr()` used consistently on both sides of the lookup. Both fixes verified with a real regression test (`tests/MultiLocusScannerTest.java`) that fails against the pre-fix code and passes after. | ✅ done, tested |
+
+## New features
+
+### Shared storage for reference data
+Options implemented: (a) a plain shared filesystem path (works for any network/lab-shared drive or a
+locally-synced cloud folder — Google Drive Desktop, Dropbox, etc. all present as an ordinary local path
+once synced, so this one config option covers all of them without needing a real OAuth integration);
+(b) a git repository URL, cloned/pulled on demand (covers private GitHub repos with an SSH deploy key or
+HTTPS token the user already has configured in their own git credential store — this app shells out to
+the user's own `git`, it does not handle credentials itself). Decision: **not** building a bespoke Google
+Drive API/OAuth integration — out of scope for a same-day autonomous change and the synced-folder path
+covers the real use case with far less risk.
+
+### HPC/Snakemake execution
+Opt-in, configured via a new "Cluster (HPC)" settings tab: SSH host, username, path to an existing
+private key (never a password field — key-based auth only), remote working directory, a free-form
+module-name map (tool → `module load <name>`), and a poll-interval range (5–20 minutes, the app should
+pick within this range based on the submitted job's expected size rather than a fixed value). The app
+generates a Snakefile wrapping the existing per-locus pipeline (PLINK subset → LD → export), copies it
+and the minimal required inputs to the remote working directory via `scp`, submits with
+`ssh <host> "cd <remotedir> && snakemake --cores <n> --jobs <m>"` in the background, and polls job
+status on the configured interval via `squeue`/`qstat` (whichever the target scheduler uses — both
+attempted, first one that returns a sane result wins). All remote commands are invoked via
+`ProcessBuilder` with argument arrays (never a concatenated shell string), so no path/hostname the user
+types can be interpreted as extra shell syntax.
+
+### GUI setup wizard
+Extends the existing home-page "Resources & Settings" panel (already present in `index.html`) with two
+new tabs: "Shared storage" and "Cluster (HPC)", both re-openable and re-editable at any time — this is
+not a one-shot first-run wizard, it's just more settings tabs, which is simpler, more consistent with
+the existing UI, and means "reconfigure later" comes for free instead of needing separate wizard-restart
+logic.
+
+## Status: feature build in progress
+
+Shared storage + HPC/Snakemake feature implementation delegated to a background agent with a
+precise architectural spec (matching `GlobalConfig`'s hand-rolled-JSON style, the existing
+`/api/global-config` GET/POST round-trip, and the flat `<h4>`-section style of the Resources &
+Settings panel — no new frameworks/libraries). It was instructed to update this file's own rows
+for items 5 (external dependency management) and the two new-feature sections as it completes each
+part, run `build.bat`/`run_tests.bat` after every change, and add real tests for all new pure logic.
+Will be reviewed and verified (not just trusted) once it reports back.
+
+## Full 30-dataset, all-loci reprocessing
+
+Launched as a background task (see task log below) reusing the existing scz-full-demo infrastructure
+(1000G EUR reference panel, gzip-compressed raw files decompressed on demand). Unlike the manuscript
+validation (which processed ~14 illustrative loci per dataset), this run processes **every**
+genome-wide-significant locus found by clumping, for **all 30 datasets** (not just the 6 primaries) —
+i.e., the 24 datasets previously used only for the lightweight Locus Matrix scan now also get full
+PLINK-subset + LD + annotation treatment. Given locus counts already observed (178/130/70/70/70/70 for
+primaries alone), this is expected to take many hours; `ld.parallel.jobs` kept conservative (2, not 1
+and not the crash-prone 4) with a hard per-locus size cap (skip/flag anything above ~4 Mb) to avoid
+repeating the earlier OOM crash while not being fully serial for a job this large.
+
+## What this file will NOT do
+
+- Will not push anything to GitHub without a repo URL (still not provided).
+- Will not attempt any live HPC/cluster connection.
+- Will not touch the real research project data under LYNXgwas's own `projects/` folder.
+- Will not update the manuscript's claims about a fix until that fix has actually been rebuilt and
+  verified working, not just written.

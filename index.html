@@ -1859,7 +1859,7 @@ async function renderGwasQc(projectId, ldscIntercept) {
     }
     var lambdaColor = d.lambda_flagged ? '#dc2626' : '#059669';
     var html = '<h3>GWAS QC</h3>'
-      + '<p style="color:#666;font-size:0.8rem;margin:0.5rem 0 1rem">Computed from all ' + d.n_snps.toLocaleString() + ' SNPs in this project\'s GWAS file (not LD-pruned — a quick triage signal, not a substitute for a real LDSC run).</p>'
+      + '<p style="color:#666;font-size:0.8rem;margin:0.5rem 0 1rem">Computed from ' + d.n_snps.toLocaleString() + ' distance-pruned SNPs (one per 250kb per chromosome, out of ' + d.n_snps_scanned.toLocaleString() + ' scanned) — an approximate, genotype-free independence filter, not real LD-based pruning, so this remains a quick triage signal rather than a substitute for a real LDSC run.</p>'
       + '<div style="display:flex;gap:1.5rem;margin-bottom:1rem">'
       + '<div><div style="font-size:0.75rem;color:#666">Genomic inflation (&lambda;<sub>GC</sub>)</div>'
       + '<div style="font-size:1.4rem;font-weight:700;color:' + lambdaColor + '">' + d.lambda_gc.toFixed(3) + '</div></div>'

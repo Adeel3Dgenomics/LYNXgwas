@@ -1,0 +1,39 @@
+@echo off
+echo === Running LYNXgwas tests ===
+
+set "LIBCP="
+for %%f in (lib\*.jar) do call set "LIBCP=%%LIBCP%%;%%f"
+
+javac -encoding UTF-8 -d bin -cp "bin%LIBCP%" ^
+  tests\MultiLocusScannerTest.java ^
+  tests\LdCalculatorTest.java ^
+  tests\GwasQcTest.java
+if %ERRORLEVEL% neq 0 (
+    echo [FAIL] Test compilation failed.
+    exit /b 1
+)
+
+set FAILED=0
+
+echo.
+echo --- MultiLocusScannerTest ---
+java -cp "bin%LIBCP%" MultiLocusScannerTest
+if %ERRORLEVEL% neq 0 set FAILED=1
+
+echo.
+echo --- LdCalculatorTest ---
+java -cp "bin%LIBCP%" LdCalculatorTest
+if %ERRORLEVEL% neq 0 set FAILED=1
+
+echo.
+echo --- GwasQcTest ---
+java -cp "bin%LIBCP%" GwasQcTest
+if %ERRORLEVEL% neq 0 set FAILED=1
+
+echo.
+if %FAILED%==0 (
+    echo [OK] All test suites passed.
+) else (
+    echo [FAIL] One or more test suites failed.
+    exit /b 1
+)

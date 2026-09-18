@@ -547,7 +547,11 @@ public class LocalServer {
         if (cacheFile.exists()) {
             try {
                 String cached = new String(Files.readAllBytes(cacheFile.toPath()), "UTF-8");
-                if (gwasHash.equals(extractStr(cached, "gwas_hash"))) {
+                // "n_snps_scanned" was added when distance-based pruning was introduced; a cache
+                // written before that fix has the same gwas_hash (the GWAS file didn't change) but
+                // holds an unpruned lambda_GC — without this check it would be served forever.
+                boolean cacheIsCurrentFormat = cached.contains("\"n_snps_scanned\"");
+                if (cacheIsCurrentFormat && gwasHash.equals(extractStr(cached, "gwas_hash"))) {
                     if (ldscIntercept == null) {
                         respond(ex, 200, "application/json", cached.getBytes("UTF-8"));
                         return;
@@ -555,6 +559,7 @@ public class LocalServer {
                     r = new GwasQc.Result();
                     r.ok = true;
                     r.nSnps = (int) parseDoubleOr(extractStr(cached, "n_snps"), 0);
+                    r.nSnpsScanned = (int) parseDoubleOr(extractStr(cached, "n_snps_scanned"), 0);
                     r.medianChi2 = parseDoubleOr(extractStr(cached, "median_chi2"), Double.NaN);
                     r.meanChi2 = parseDoubleOr(extractStr(cached, "mean_chi2"), Double.NaN);
                     r.lambdaGC = parseDoubleOr(extractStr(cached, "lambda_gc"), Double.NaN);

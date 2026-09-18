@@ -12,6 +12,17 @@ import java.util.concurrent.*;
  */
 public class LdCalculator {
 
+    /** Hard cap on the --ld-window-kb span used for the index-SNP r2 scan (Step B), regardless of
+     *  how wide the locus itself is. See the note at its use site for why this exists. */
+    static final long MAX_LD_WINDOW_KB = 2000;
+
+    /** kb window for the index-SNP r2 scan: the locus's own padded span, capped at
+     *  MAX_LD_WINDOW_KB so an oversized locus (e.g. the MHC region) can't drive PLINK's
+     *  memory/runtime unboundedly. Package-visible for direct unit testing. */
+    static long computeWindowKb(long paddedStart, long paddedEnd) {
+        return Math.min(MAX_LD_WINDOW_KB, (paddedEnd - paddedStart) / 1000 + 2);
+    }
+
     public static class LdResult {
         /** "chr:pos" → r² with the top SNP. Used for Manhattan coloring. */
         public Map<String, Double> r2ByPos  = new HashMap<>();
@@ -29,8 +40,20 @@ public class LdCalculator {
             ProgressTracker                         progress) {
 
         Map<Integer, LdResult> results = new ConcurrentHashMap<>();
-        ExecutorService pool = Executors.newFixedThreadPool(
-            Math.max(1, config.ldParallelJobs));
+        // Defense in depth on top of the MAX_LD_WINDOW_KB cap above: an oversized locus (wide span,
+        // dense subset) still costs more per-job than a typical one, so don't let the full
+        // configured parallelism stack several such jobs at once. This only kicks in when a
+        // genuinely large locus is present — ordinary batches keep full parallelism.
+        long maxSpanBp = 0;
+        for (Locus locus : loci) maxSpanBp = Math.max(maxSpanBp, locus.paddedEnd - locus.paddedStart);
+        int effectiveJobs = maxSpanBp > 4_000_000
+            ? Math.min(2, Math.max(1, config.ldParallelJobs))
+            : Math.max(1, config.ldParallelJobs);
+        if (effectiveJobs < config.ldParallelJobs) {
+            System.out.printf("[LD] Largest locus in this batch spans %.1fMb — reducing parallel LD " +
+                "jobs from %d to %d for this run%n", maxSpanBp / 1e6, config.ldParallelJobs, effectiveJobs);
+        }
+        ExecutorService pool = Executors.newFixedThreadPool(effectiveJobs);
         List<Future<?>> futures = new ArrayList<>();
 
         for (Locus locus : loci) {
@@ -122,7 +145,14 @@ public class LdCalculator {
         // top SNP itself isn't in the ref panel) so Manhattan r²-coloring still works.
         if (anchorBimId != null) {
             String ldIdxPrefix = ldDir + "/locus_" + locus.index + "_index";
-            long   windowKb    = (locus.paddedEnd - locus.paddedStart) / 1000 + 2;
+            // Uncapped, this scales with the locus's raw genomic span: an ~8.8Mb region (e.g. the
+            // extended MHC) drives --ld-window-kb into the thousands against a ref-panel subset
+            // with tens of thousands of markers, which previously exhausted native process memory
+            // and crashed the JVM when several such loci ran concurrently (see manuscript Section 3
+            // / DECISIONS.md). LD beyond a couple Mb of the lead SNP is rarely informative anyway
+            // (LD decays well within this range in essentially all human populations), so capping
+            // here is both the memory fix and a reasonable scientific default.
+            long windowKb = computeWindowKb(locus.paddedStart, locus.paddedEnd);
             runPlink(Arrays.asList(
                 plinkBin,
                 "--bfile",        subPrefix,
