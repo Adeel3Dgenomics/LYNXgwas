@@ -13,6 +13,8 @@ public class GlobalConfig {
     public List<RefPanel> referencePanels = new ArrayList<>();
     public List<SnpDatabase> snpDatabases = new ArrayList<>();
     public NcbiApiConfig ncbiApi = new NcbiApiConfig();
+    public SharedStorage sharedStorage = new SharedStorage();
+    public HpcConfig hpc = new HpcConfig();
 
     public static class RefPanel {
         public String id = "";
@@ -75,6 +77,34 @@ public class GlobalConfig {
         public String apiKey = "";
         public int rateLimitPerSec = 3;
         public boolean restrictToLeadSnps = true;
+    }
+
+    /** Alternative to per-user download for large reference data (PLINK panels, GFF3
+     *  annotation): a shared local/network folder (also covers a Google Drive/Dropbox desktop
+     *  sync folder — those just look like an ordinary path once synced, no OAuth needed), or a
+     *  git repo the user already has their own credentials configured for. This app never
+     *  handles a token or password itself — "git" mode only ever shells out to the user's own
+     *  installed git binary. */
+    public static class SharedStorage {
+        public String mode = "none"; // "none" | "folder" | "git"
+        public String folderPath = "";
+        public String gitUrl = "";
+        public String gitLocalClone = "";
+    }
+
+    /** Optional, opt-in remote execution on an HPC cluster via the user's own SSH access. Disabled
+     *  by default — local execution is completely unaffected either way. sshKeyPath is a path to
+     *  an existing private key file; there is deliberately no password field anywhere in this
+     *  config, key-based auth only. */
+    public static class HpcConfig {
+        public boolean enabled = false;
+        public String sshHost = "";
+        public String sshUser = "";
+        public String sshKeyPath = "";
+        public String remoteWorkDir = "";
+        public Map<String, String> moduleNames = new LinkedHashMap<>();
+        public int pollIntervalMinMinutes = 5;
+        public int pollIntervalMaxMinutes = 20;
     }
 
     // ── Persistence ──────────────────────────────────────────────
@@ -187,7 +217,26 @@ public class GlobalConfig {
         j.append(",\"api_key\":\"").append(esc(ncbiApi.apiKey)).append('"');
         j.append(",\"rate_limit_per_sec\":").append(ncbiApi.rateLimitPerSec);
         j.append(",\"restrict_to_lead_snps\":").append(ncbiApi.restrictToLeadSnps);
-        j.append("}}");
+        j.append("},\"shared_storage\":{");
+        j.append("\"mode\":\"").append(esc(sharedStorage.mode)).append('"');
+        j.append(",\"folder_path\":\"").append(esc(sharedStorage.folderPath)).append('"');
+        j.append(",\"git_url\":\"").append(esc(sharedStorage.gitUrl)).append('"');
+        j.append(",\"git_local_clone\":\"").append(esc(sharedStorage.gitLocalClone)).append('"');
+        j.append("},\"hpc\":{");
+        j.append("\"enabled\":").append(hpc.enabled);
+        j.append(",\"ssh_host\":\"").append(esc(hpc.sshHost)).append('"');
+        j.append(",\"ssh_user\":\"").append(esc(hpc.sshUser)).append('"');
+        j.append(",\"ssh_key_path\":\"").append(esc(hpc.sshKeyPath)).append('"');
+        j.append(",\"remote_work_dir\":\"").append(esc(hpc.remoteWorkDir)).append('"');
+        j.append(",\"poll_interval_min_minutes\":").append(hpc.pollIntervalMinMinutes);
+        j.append(",\"poll_interval_max_minutes\":").append(hpc.pollIntervalMaxMinutes);
+        j.append(",\"module_names\":{");
+        int mi = 0;
+        for (Map.Entry<String, String> en : hpc.moduleNames.entrySet()) {
+            if (mi++ > 0) j.append(',');
+            j.append('"').append(esc(en.getKey())).append("\":\"").append(esc(en.getValue())).append('"');
+        }
+        j.append("}}}");
         return j.toString();
     }
 
@@ -195,6 +244,12 @@ public class GlobalConfig {
 
     private static GlobalConfig createDefault() {
         return new GlobalConfig();
+    }
+
+    /** Test-only entry point into the otherwise-private parse() — this project has no test
+     *  framework to grant package-private access across the default/rsid package boundary. */
+    public static GlobalConfig parseForTest(String json) {
+        return parse(json);
     }
 
     private static GlobalConfig parse(String json) {
@@ -235,7 +290,68 @@ public class GlobalConfig {
                 gc.ncbiApi.restrictToLeadSnps = !"false".equals(jsonStr(obj, "restrict_to_lead_snps"));
             }
         }
+        // Parse shared_storage
+        int ssStart = json.indexOf("\"shared_storage\"");
+        if (ssStart >= 0) {
+            int objStart = json.indexOf('{', ssStart);
+            int objEnd = findMatchingBrace(json, objStart);
+            if (objStart >= 0 && objEnd > objStart) {
+                String obj = json.substring(objStart, objEnd + 1);
+                String mode = jsonStr(obj, "mode");
+                if (!mode.isEmpty()) gc.sharedStorage.mode = mode;
+                gc.sharedStorage.folderPath = jsonStr(obj, "folder_path");
+                gc.sharedStorage.gitUrl = jsonStr(obj, "git_url");
+                gc.sharedStorage.gitLocalClone = jsonStr(obj, "git_local_clone");
+            }
+        }
+        // Parse hpc
+        int hpcStart = json.indexOf("\"hpc\"");
+        if (hpcStart >= 0) {
+            int objStart = json.indexOf('{', hpcStart);
+            int objEnd = findMatchingBrace(json, objStart);
+            if (objStart >= 0 && objEnd > objStart) {
+                String obj = json.substring(objStart, objEnd + 1);
+                gc.hpc.enabled = "true".equals(jsonStr(obj, "enabled"));
+                gc.hpc.sshHost = jsonStr(obj, "ssh_host");
+                gc.hpc.sshUser = jsonStr(obj, "ssh_user");
+                gc.hpc.sshKeyPath = jsonStr(obj, "ssh_key_path");
+                gc.hpc.remoteWorkDir = jsonStr(obj, "remote_work_dir");
+                String pMin = jsonStr(obj, "poll_interval_min_minutes");
+                if (!pMin.isEmpty()) gc.hpc.pollIntervalMinMinutes = Integer.parseInt(pMin);
+                String pMax = jsonStr(obj, "poll_interval_max_minutes");
+                if (!pMax.isEmpty()) gc.hpc.pollIntervalMaxMinutes = Integer.parseInt(pMax);
+                int mnStart = obj.indexOf("\"module_names\"");
+                if (mnStart >= 0) {
+                    int mnObjStart = obj.indexOf('{', mnStart);
+                    int mnObjEnd = findMatchingBrace(obj, mnObjStart);
+                    if (mnObjStart >= 0 && mnObjEnd > mnObjStart) {
+                        gc.hpc.moduleNames = parseStringMap(obj.substring(mnObjStart + 1, mnObjEnd));
+                    }
+                }
+            }
+        }
         return gc;
+    }
+
+    private static Map<String, String> parseStringMap(String inner) {
+        Map<String, String> map = new LinkedHashMap<>();
+        int i = 0;
+        while (i < inner.length()) {
+            int keyStart = inner.indexOf('"', i);
+            if (keyStart < 0) break;
+            int keyEnd = skipString(inner, keyStart);
+            String key = inner.substring(keyStart + 1, keyEnd);
+            int colon = inner.indexOf(':', keyEnd);
+            if (colon < 0) break;
+            int valStart = inner.indexOf('"', colon);
+            if (valStart < 0) break;
+            int valEnd = skipString(inner, valStart);
+            String val = inner.substring(valStart + 1, valEnd)
+                .replace("\\\"", "\"").replace("\\\\", "\\");
+            map.put(key, val);
+            i = valEnd + 1;
+        }
+        return map;
     }
 
     private static List<RefPanel> parseRefPanels(String arr) {
