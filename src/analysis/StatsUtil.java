@@ -84,4 +84,78 @@ public class StatsUtil {
         if (!Double.isFinite(se) || se <= 0) return null;
         return new double[]{beta, se};
     }
+
+    /** Lanczos approximation of ln(Gamma(x)), g=7, n=9 coefficients (Numerical Recipes 3rd ed. 6.1). */
+    private static final double[] LANCZOS_G = {
+        0.99999999999980993, 676.5203681218851, -1259.1392167224028,
+        771.32342877765313, -176.61502916214059, 12.507343278686905,
+        -0.13857109526572012, 9.9843695780195716e-6, 1.5056327351493116e-7
+    };
+
+    public static double logGamma(double x) {
+        if (x < 0.5) {
+            // reflection formula
+            return Math.log(Math.PI / Math.sin(Math.PI * x)) - logGamma(1 - x);
+        }
+        x -= 1;
+        double a = LANCZOS_G[0];
+        double t = x + 7.5;
+        for (int i = 1; i < 9; i++) a += LANCZOS_G[i] / (x + i);
+        return 0.5 * Math.log(2 * Math.PI) + (x + 0.5) * Math.log(t) - t + Math.log(a);
+    }
+
+    /** Continued-fraction evaluation used by {@link #regularizedIncompleteBeta} (Numerical Recipes 6.4). */
+    private static double betacf(double a, double b, double x) {
+        final int MAXIT = 200;
+        final double EPS = 3.0e-14, FPMIN = 1.0e-300;
+        double qab = a + b, qap = a + 1, qam = a - 1;
+        double c = 1, d = 1 - qab * x / qap;
+        if (Math.abs(d) < FPMIN) d = FPMIN;
+        d = 1 / d;
+        double h = d;
+        for (int m = 1; m <= MAXIT; m++) {
+            int m2 = 2 * m;
+            double aa = m * (b - m) * x / ((qam + m2) * (a + m2));
+            d = 1 + aa * d; if (Math.abs(d) < FPMIN) d = FPMIN;
+            c = 1 + aa / c; if (Math.abs(c) < FPMIN) c = FPMIN;
+            d = 1 / d;
+            h *= d * c;
+            aa = -(a + m) * (qab + m) * x / ((a + m2) * (qap + m2));
+            d = 1 + aa * d; if (Math.abs(d) < FPMIN) d = FPMIN;
+            c = 1 + aa / c; if (Math.abs(c) < FPMIN) c = FPMIN;
+            d = 1 / d;
+            double del = d * c;
+            h *= del;
+            if (Math.abs(del - 1.0) < EPS) break;
+        }
+        return h;
+    }
+
+    /**
+     * Regularized incomplete beta function I_x(a,b), i.e. the Beta(a,b) CDF at x, via the
+     * continued-fraction method (Numerical Recipes 3rd ed. section 6.4). Used to compute exact
+     * F-distribution and Student's t p-values without an external math library.
+     */
+    public static double regularizedIncompleteBeta(double x, double a, double b) {
+        if (x <= 0) return 0;
+        if (x >= 1) return 1;
+        double bt = Math.exp(logGamma(a + b) - logGamma(a) - logGamma(b)
+                + a * Math.log(x) + b * Math.log(1 - x));
+        if (x < (a + 1) / (a + b + 2)) {
+            return bt * betacf(a, b, x) / a;
+        } else {
+            return 1 - bt * betacf(b, a, 1 - x) / b;
+        }
+    }
+
+    /**
+     * Upper-tail p-value P(F &gt; f) for the F(d1,d2) distribution, computed via the relation
+     * P(F&gt;f) = I_{d2/(d2+d1*f)}(d2/2, d1/2) — the complementary form, evaluated directly
+     * (not as 1 - CDF) so it stays accurate for large F/small p without subtractive cancellation.
+     */
+    public static double fDistPValue(double f, double d1, double d2) {
+        if (!(f > 0) || !Double.isFinite(f)) return 1.0;
+        double x = d2 / (d2 + d1 * f);
+        return regularizedIncompleteBeta(x, d2 / 2.0, d1 / 2.0);
+    }
 }

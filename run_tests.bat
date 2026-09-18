@@ -5,12 +5,15 @@ set "LIBCP="
 for %%f in (lib\*.jar) do call set "LIBCP=%%LIBCP%%;%%f"
 
 javac -encoding UTF-8 -d bin -cp "bin%LIBCP%" ^
+  src\analysis\StatsUtil.java ^
+  src\analysis\AnovaUtil.java ^
   tests\MultiLocusScannerTest.java ^
   tests\LdCalculatorTest.java ^
   tests\GwasQcTest.java ^
   tests\GlobalConfigTest.java ^
   tests\SharedStorageResolverTest.java ^
-  tests\SnakemakeSubmitterTest.java
+  tests\SnakemakeSubmitterTest.java ^
+  tests\AnovaUtilTest.java
 if %ERRORLEVEL% neq 0 (
     echo [FAIL] Test compilation failed.
     exit /b 1
@@ -46,6 +49,11 @@ if %ERRORLEVEL% neq 0 set FAILED=1
 echo.
 echo --- SnakemakeSubmitterTest ---
 java -cp "bin%LIBCP%" SnakemakeSubmitterTest
+if %ERRORLEVEL% neq 0 set FAILED=1
+
+echo.
+echo --- AnovaUtilTest ---
+java -cp "bin%LIBCP%" AnovaUtilTest
 if %ERRORLEVEL% neq 0 set FAILED=1
 
 echo.

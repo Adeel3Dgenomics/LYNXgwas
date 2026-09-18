@@ -9,12 +9,15 @@ for f in lib/*.jar; do
 done
 
 javac -encoding UTF-8 -d bin -cp "bin$LIBCP" \
+  src/analysis/StatsUtil.java \
+  src/analysis/AnovaUtil.java \
   tests/MultiLocusScannerTest.java \
   tests/LdCalculatorTest.java \
   tests/GwasQcTest.java \
   tests/GlobalConfigTest.java \
   tests/SharedStorageResolverTest.java \
-  tests/SnakemakeSubmitterTest.java
+  tests/SnakemakeSubmitterTest.java \
+  tests/AnovaUtilTest.java
 
 FAILED=0
 
@@ -41,6 +44,10 @@ java -cp "bin$LIBCP" SharedStorageResolverTest || FAILED=1
 echo
 echo "--- SnakemakeSubmitterTest ---"
 java -cp "bin$LIBCP" SnakemakeSubmitterTest || FAILED=1
+
+echo
+echo "--- AnovaUtilTest ---"
+java -cp "bin$LIBCP" AnovaUtilTest || FAILED=1
 
 echo
 if [ "$FAILED" -eq 0 ]; then
