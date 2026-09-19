@@ -107,10 +107,33 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   background:rgba(255,255,255,0.1);color:#e0e7ff;font-size:10px;font-weight:600;cursor:pointer}
 .lh-op-btn:hover{background:rgba(255,255,255,0.25);color:#fff}
 .lh-genes{flex:1;font-size:11px;color:#c4b5fd}
+.lh-l2g{color:#67e8f9;font-weight:600}
+.lh-l2g .lh-l2g-score{color:#a5f3fc;font-weight:400}
+.lh-enh-toggle{color:#a5f3fc;font-weight:400;font-style:italic;cursor:pointer;margin-left:4px;text-decoration:underline dotted}
+.lh-enh-toggle:hover{color:#fff}
 .lh-top{font-size:11px;text-align:right;white-space:nowrap}
 .lh-top strong{color:#fbbf24}
 .warning-banner{background:#fffbeb;color:#92400e;padding:4px 14px;
   font-size:11px;border-bottom:1px solid #fde68a}
+.novelty-badge{position:relative;display:inline-block;padding:2px 9px;border-radius:10px;
+  font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;
+  white-space:nowrap;cursor:default}
+.novelty-badge.novel{background:#059669;color:#fff}
+.novelty-badge.known-same{background:#dc2626;color:#fff;cursor:pointer}
+.novelty-badge.known-other{background:#2563eb;color:#fff;cursor:pointer}
+.novelty-badge.known-unspecified{background:#d97706;color:#fff;cursor:pointer}
+.novelty-badge.hidden{display:none}
+.novelty-tooltip{display:none;position:absolute;top:calc(100% + 6px);left:0;z-index:20;
+  min-width:240px;max-width:360px;background:#1e293b;color:#e2e8f0;border-radius:8px;
+  padding:8px 10px;font-size:11px;font-weight:400;text-transform:none;letter-spacing:normal;
+  white-space:normal;box-shadow:0 4px 16px rgba(0,0,0,.35)}
+.novelty-badge:hover .novelty-tooltip{display:block}
+.novelty-tooltip .nt-row{padding:3px 0;border-top:1px solid rgba(255,255,255,0.08)}
+.novelty-tooltip .nt-row:first-child{border-top:none}
+.novelty-tooltip .nt-trait{font-weight:600;color:#fff;display:block}
+.novelty-tooltip a{color:#93c5fd;text-decoration:none}
+.novelty-tooltip a:hover{text-decoration:underline}
+.novelty-tooltip .nt-more{color:#94a3b8;padding-top:4px}
 .empty-msg{padding:40px;text-align:center;color:#94a3b8;font-style:italic}
 .plot-loading{padding:32px;text-align:center;color:#94a3b8;font-size:12px}
 
@@ -515,6 +538,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   <button id="export-excel-btn" onclick="exportLocusExcel()" style="padding:5px 14px;background:#065f46;color:#fff;border:none;border-radius:14px;font-size:12px;cursor:pointer;margin-left:6px">Export Excel</button>
   <button id="reorder-loci-btn" onclick="reorderLoci()" title="Renumber loci to match genomic (chr:pos) order"
     style="padding:5px 14px;background:#374151;color:#fff;border:none;border-radius:14px;font-size:12px;cursor:pointer;margin-left:6px">Reorder Loci</button>
+  <a id="catalog-report-btn" href="#" title="Download a TSV of every locus's known/novel verdict and overlapping GWAS Catalog associations (trait, gene, p-value, study, PMID, URL)"
+    style="padding:5px 14px;background:#4338ca;color:#fff;border:none;border-radius:14px;font-size:12px;cursor:pointer;margin-left:6px;text-decoration:none;display:inline-block">Export Catalog Report</a>
 </div>
 
 <!-- Sidebar rail (visible when sidebar collapsed) -->
@@ -822,6 +847,9 @@ async function init() {
     return;
   }
 
+  const catalogReportBtn = document.getElementById('catalog-report-btn');
+  if (catalogReportBtn) catalogReportBtn.href = PROJECT_API + '/catalog-report';
+
   let manifestOk = false;
   try { manifest = await loadManifest(); manifestOk = true; } catch(e) {}
 
@@ -969,6 +997,7 @@ function makePanelShell(entry) {
   d.innerHTML = `
     <div class="locus-header">
       <div class="lh-title">${entry.locus_name}  —  Chr${entry.chr}:${fmtN(entry.start)}–${fmtN(entry.end)}</div>
+      <span class="novelty-badge hidden" id="novelty-badge-${entry.index}"></span>
       <div class="lh-ops">
         <button class="lh-op-btn lh-analyze-btn" data-idx="${entry.index}" title="Run analysis on this locus" style="border-color:rgba(34,197,94,0.5);color:#86efac">Analyze</button>
         <button class="lh-op-btn lh-delete-btn" data-idx="${entry.index}" title="Delete this locus" style="border-color:rgba(239,68,68,0.5);color:#fca5a5">Delete</button>
@@ -992,18 +1021,188 @@ function makePanelShell(entry) {
   return d;
 }
 
+function noveltyRefHref(h) {
+  if (h.pubmed_id) return 'https://pubmed.ncbi.nlm.nih.gov/' + encodeURIComponent(h.pubmed_id) + '/';
+  if (h.link) return /^https?:\/\//i.test(h.link) ? h.link : 'https://' + h.link;
+  return null;
+}
+
+async function loadNoveltyBadge(locusIndex, panelEl) {
+  const badge = panelEl.querySelector('#novelty-badge-' + locusIndex);
+  if (!badge || !PROJECT_API) return;
+  try {
+    const r = await fetch(PROJECT_API + '/locus/' + locusIndex + '/novelty');
+    if (!r.ok) return;
+    const j = await r.json();
+    if (!j.ok || !j.verdict) return;
+    const isNovel = j.verdict === 'novel';
+    const VERDICT_LABEL = {
+      novel: 'Novel',
+      known_same_trait: 'Known (same trait)',
+      known_other_trait: 'Known (other trait)',
+      known_unspecified: 'Known'
+    };
+    const verdictClass = {
+      novel: 'novel', known_same_trait: 'known-same',
+      known_other_trait: 'known-other', known_unspecified: 'known-unspecified'
+    }[j.verdict] || 'known-unspecified';
+    badge.className = 'novelty-badge ' + verdictClass;
+    badge.textContent = VERDICT_LABEL[j.verdict] || j.verdict;
+
+    if (isNovel || !j.hits || j.hits.length === 0) return; // nothing to reference for a novel locus
+    const totalCount = j.total_count != null ? j.total_count : j.hits.length;
+
+    // Hover: quick peek at the first few hits, plus what disease/trait keyword (if any) was matched against.
+    const shown = j.hits.slice(0, 5);
+    const rowHtml = h => {
+      const href = noveltyRefHref(h);
+      const ref = href ? `<a href="${href}" target="_blank" rel="noopener">${h.pubmed_id ? 'PMID ' + escapeHtml(h.pubmed_id) : 'source'}</a>` : '';
+      return `<div class="nt-row"><span class="nt-trait">${escapeHtml(h.trait || h.mapped_trait || '(trait unavailable)')}</span>${ref}</div>`;
+    };
+    const tip = document.createElement('div');
+    tip.className = 'novelty-tooltip';
+    const matchNoteHtml = j.trait_used
+      ? `<div class="nt-more" style="padding-bottom:4px">Matched against your project's disease/trait: "${escapeHtml(j.trait_used)}"</div>`
+      : '';
+    tip.innerHTML = matchNoteHtml + shown.map(rowHtml).join('') +
+      (totalCount > shown.length ? `<div class="nt-more">Click for all ${totalCount} references</div>` : '');
+    badge.appendChild(tip);
+
+    // Click: open every reference (trait, gene, p-value, study, PMID/URL) in a new window.
+    badge.addEventListener('click', () => openNoveltyReferencesWindow(locusIndex, j.hits, totalCount));
+  } catch (e) { /* leave badge hidden */ }
+}
+
+function openNoveltyReferencesWindow(locusIndex, hits, totalCount) {
+  const rowHtml = h => {
+    const href = noveltyRefHref(h);
+    const link = href ? `<a href="${href}" target="_blank" rel="noopener">${href}</a>` : '—';
+    return `<tr>
+      <td>${escapeHtml(h.trait || h.mapped_trait || '(trait unavailable)')}</td>
+      <td>${escapeHtml(h.mapped_gene || '—')}</td>
+      <td>${escapeHtml(h.pvalue_display || fmtP(h.pvalue))}</td>
+      <td>${escapeHtml(h.study_accession || '—')}</td>
+      <td>${h.pubmed_id ? escapeHtml(h.pubmed_id) : '—'}</td>
+      <td>${link}</td>
+    </tr>`;
+  };
+  const html = `<!DOCTYPE html><html><head><title>Locus ${locusIndex} — Known associations</title>
+    <meta charset="UTF-8">
+    <style>
+      body{font-family:-apple-system,Segoe UI,sans-serif;margin:24px;color:#1e293b;background:#f8fafc}
+      h1{font-size:16px;margin:0 0 4px}
+      p.sub{color:#64748b;font-size:12px;margin:0 0 16px}
+      table{border-collapse:collapse;width:100%;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.08);border-radius:8px;overflow:hidden}
+      th,td{padding:8px 12px;text-align:left;font-size:12px;border-bottom:1px solid #e2e8f0}
+      th{background:#1e293b;color:#fff;font-weight:600;position:sticky;top:0}
+      tr:hover td{background:#f1f5f9}
+      a{color:#4f46e5;text-decoration:none}
+      a:hover{text-decoration:underline}
+    </style></head>
+    <body>
+      <h1>Locus ${locusIndex} — ${totalCount} known GWAS Catalog association${totalCount === 1 ? '' : 's'}</h1>
+      <p class="sub">${totalCount > hits.length
+        ? `Showing the ${hits.length} most significant of ${totalCount} total — this locus has too many reported associations to list them all.`
+        : `Every previously reported association overlapping this locus's region.`}</p>
+      <table>
+        <thead><tr><th>Trait</th><th>Gene</th><th>P-value</th><th>Study</th><th>PMID</th><th>URL</th></tr></thead>
+        <tbody>${hits.map(rowHtml).join('')}</tbody>
+      </table>
+    </body></html>`;
+  const win = window.open('', '_blank');
+  if (!win) { alert('Pop-up blocked — allow pop-ups for this page to view references.'); return; }
+  win.document.open();
+  win.document.write(html);
+  win.document.close();
+}
+
+async function loadL2GInfo(locusIndex, panelEl) {
+  const genesEl = panelEl.querySelector('.lh-genes');
+  if (!genesEl || !PROJECT_API) return;
+  try {
+    const r = await fetch(PROJECT_API + '/locus/' + locusIndex + '/l2g');
+    if (!r.ok) return;
+    const j = await r.json();
+    if (!j.ok || !j.genes || j.genes.length === 0) return; // no Open Targets data for this locus — say nothing
+
+    const top = j.genes[0];
+    const nearestText = genesEl.dataset.nearestText || '';
+    const l2gHtml = `<span class="lh-l2g" title="Open Targets locus-to-gene prediction, ${j.credible_set_count} prior stud${j.credible_set_count === 1 ? 'y' : 'ies'}">` +
+      `Likely causal: ${escapeHtml(top.gene)} <span class="lh-l2g-score">(${top.score.toFixed(2)})</span></span>`;
+
+    // Enhancer-to-gene evidence for that SAME top gene, if any — a click-through link, not shown
+    // inline, since it's a secondary detail (which tissue the regulatory link is active in) that most
+    // locus views don't need up front, and coverage is patchy enough (real, well-studied loci often
+    // have none) that showing it as an always-visible badge would just create empty-looking noise.
+    const enhMatch = (j.enhancer_genes || []).find(e => e.gene === top.gene);
+    let enhHtml = '';
+    if (enhMatch && enhMatch.evidence.length > 0) {
+      const n = enhMatch.evidence.length;
+      enhHtml = ` <span class="lh-enh-toggle">${n} tissue${n === 1 ? '' : 's'} (enhancer evidence) &#8599;</span>`;
+    }
+
+    genesEl.innerHTML = (nearestText ? escapeHtml(nearestText) + ' &nbsp;·&nbsp; ' : '') + l2gHtml + enhHtml;
+    const toggle = genesEl.querySelector('.lh-enh-toggle');
+    if (toggle) toggle.addEventListener('click', () => openEnhancerEvidenceWindow(locusIndex, enhMatch));
+  } catch (e) { /* say nothing on failure — this is a bonus annotation, not core data */ }
+}
+
+function openEnhancerEvidenceWindow(locusIndex, enhMatch) {
+  const rowHtml = ev => `<tr>
+      <td>${escapeHtml(ev.biosample || '—')}</td>
+      <td>${ev.score.toFixed(3)}</td>
+      <td>${ev.distance_to_tss != null ? fmtN(ev.distance_to_tss) + ' bp' : '—'}</td>
+      <td>${ev.pmid ? `<a href="https://pubmed.ncbi.nlm.nih.gov/${encodeURIComponent(ev.pmid)}/" target="_blank" rel="noopener">${escapeHtml(ev.pmid)}</a>` : '—'}</td>
+    </tr>`;
+  const html = `<!DOCTYPE html><html><head><title>Locus ${locusIndex} — Enhancer-to-gene evidence</title>
+    <meta charset="UTF-8">
+    <style>
+      body{font-family:-apple-system,Segoe UI,sans-serif;margin:24px;color:#1e293b;background:#f8fafc}
+      h1{font-size:16px;margin:0 0 4px}
+      p.sub{color:#64748b;font-size:12px;margin:0 0 16px}
+      table{border-collapse:collapse;width:100%;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.08);border-radius:8px;overflow:hidden}
+      th,td{padding:8px 12px;text-align:left;font-size:12px;border-bottom:1px solid #e2e8f0}
+      th{background:#0e7490;color:#fff;font-weight:600;position:sticky;top:0}
+      tr:hover td{background:#f1f5f9}
+      a{color:#0e7490;text-decoration:none}
+      a:hover{text-decoration:underline}
+    </style></head>
+    <body>
+      <h1>Locus ${locusIndex} — ${escapeHtml(enhMatch.gene)}: ${enhMatch.evidence.length} enhancer-to-gene evidence row${enhMatch.evidence.length === 1 ? '' : 's'}</h1>
+      <p class="sub">ENCODE E2G (ABC-model-based) regulatory evidence linking this gene to enhancer activity, by tissue/cell type.</p>
+      <table>
+        <thead><tr><th>Tissue / cell type</th><th>Score</th><th>Distance to TSS</th><th>PMID</th></tr></thead>
+        <tbody>${enhMatch.evidence.map(rowHtml).join('')}</tbody>
+      </table>
+    </body></html>`;
+  const win = window.open('', '_blank');
+  if (!win) { alert('Pop-up blocked — allow pop-ups for this page to view references.'); return; }
+  win.document.open();
+  win.document.write(html);
+  win.document.close();
+}
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  }[c]));
+}
+
 function fillPanel(data, panelEl) {
   panelEl.querySelector('.plot-loading')?.remove();
 
   // Update header
   const genes = (data.nearest_genes || []).join(', ');
   panelEl.querySelector('.lh-genes').textContent = genes ? `Nearest: ${genes}` : '';
+  panelEl.querySelector('.lh-genes').dataset.nearestText = genes ? `Nearest: ${genes}` : '';
   if (data.top_snp) {
     panelEl.querySelector('.lh-top').innerHTML =
       `Top SNP: <strong>${data.top_snp.id}</strong>&nbsp; p = ${fmtP(data.top_snp.pvalue)}`;
   } else {
     panelEl.querySelector('.lh-top').textContent = 'No SNPs';
   }
+  loadNoveltyBadge(data.locus_index, panelEl);
+  loadL2GInfo(data.locus_index, panelEl);
 
   // Annotation badges + mini-bars in locus header
   if (window.ANNOT && window.ANNOT.config) {

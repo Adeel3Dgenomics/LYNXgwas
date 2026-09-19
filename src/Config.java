@@ -45,6 +45,8 @@ public class Config {
     public String effectType        = "";     // "beta", "OR", "logOR"
     public String genomeBuild       = "GRCh37";
     public String ancestry          = "";
+    public String diseaseName       = "";     // free-text trait/disease name, used as the default
+                                               // keyword for the GWAS-Catalog known-vs-novel same-trait check
 
     /**
      * Load config from a project directory's config.properties.
@@ -140,6 +142,7 @@ public class Config {
         effectType         = p.getProperty("effect.type", effectType);
         genomeBuild        = p.getProperty("genome.build", genomeBuild);
         ancestry           = p.getProperty("ancestry", ancestry.isEmpty() ? refPanelPopulation : ancestry);
+        diseaseName        = p.getProperty("disease.name", diseaseName);
 
         // Auto-enable LD if ref.panel.path is set and ld.enabled not explicitly false
         if (!refPanelPath.isEmpty() && !p.containsKey("ld.enabled")) ldEnabled = true;
@@ -197,6 +200,7 @@ public class Config {
         kv(j, "effect.type", effectType, false);
         kv(j, "genome.build", genomeBuild, false);
         kv(j, "ancestry", ancestry, false);
+        kv(j, "disease.name", diseaseName, false);
         j.append('}');
         return j.toString();
     }
@@ -269,6 +273,7 @@ public class Config {
             pw.println("effect.type=" + effectType);
             pw.println("genome.build=" + genomeBuild);
             pw.println("ancestry=" + ancestry);
+            pw.println("disease.name=" + diseaseName);
         }
     }
 
@@ -326,6 +331,7 @@ public class Config {
         effectType         = jsonStr(json, "effect.type",  effectType);
         genomeBuild        = jsonStr(json, "genome.build", genomeBuild);
         ancestry           = jsonStr(json, "ancestry",     ancestry);
+        diseaseName        = jsonStr(json, "disease.name", diseaseName);
 
         if (!refPanelPath.isEmpty() && !ldEnabled) ldEnabled = true;
     }

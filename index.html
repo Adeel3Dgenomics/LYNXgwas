@@ -729,7 +729,11 @@ function wizRenderParams(c) {
     + '</select></div>'
     + '<div class="wiz-field"><label>Ancestry / Population</label>'
     + '<input data-wiz-key="ancestry" value="' + escAttr(cfg['ancestry'] || cfg['ref.panel.population'] || '') + '">'
-    + '<div class="hint">E.g. EUR, EAS, AFR, AMR, SAS, Hispanic, etc.</div></div>';
+    + '<div class="hint">E.g. EUR, EAS, AFR, AMR, SAS, Hispanic, etc.</div></div>'
+    + '<div class="wiz-field"><label>Disease / Trait name</label>'
+    + '<input data-wiz-key="disease.name" value="' + escAttr(cfg['disease.name'] || '') + '" placeholder="e.g. Schizophrenia">'
+    + '<div class="hint">Used to tell "known for this exact disease" apart from "known for something else" '
+    + 'when checking each locus against the GWAS Catalog. Leave blank to just flag any prior report as "known".</div></div>';
 }
 
 function wizRenderPreview(c) {
@@ -752,7 +756,8 @@ function wizRenderPreview(c) {
     ['N controls', cfg['n.controls'] || '(not set)'],
     ['Trait type', cfg['trait.type'] || '(not set)'],
     ['Genome build', cfg['genome.build'] || 'GRCh37'],
-    ['Ancestry', cfg['ancestry'] || cfg['ref.panel.population'] || '(not set)']
+    ['Ancestry', cfg['ancestry'] || cfg['ref.panel.population'] || '(not set)'],
+    ['Disease / Trait', cfg['disease.name'] || '(not set — any prior report counts as "known")']
   ];
   c.innerHTML = '<table class="wiz-summary-table">'
     + rows.map(function(r) { return '<tr><td>' + esc(r[0]) + '</td><td>' + esc(String(r[1] || '')) + '</td></tr>'; }).join('')
@@ -768,7 +773,7 @@ async function wizSubmit() {
     'col.beta','col.or','col.se','col.n','col.maf','col.info','top.snp.file',
     'locus.padding','ld.enabled','ld.triangle.boundary','ld.r2.threshold',
     'ld.parallel.jobs','threads','max.snps.per.locus','split.ld.threshold','split.min.distance.bp',
-    'sample.n','n.cases','n.controls','trait.type','effect.type','genome.build','ancestry'];
+    'sample.n','n.cases','n.controls','trait.type','effect.type','genome.build','ancestry','disease.name'];
   keys.forEach(function(k) { if (cfg[k] !== undefined) configBody[k] = cfg[k]; });
 
   try {
