@@ -39,7 +39,10 @@ LocalServer.java  ────────────────────�
    ├── RsidPipeline               rsID recovery (HTSJDK + optional API)  │
    ├── LociIdentifier             GWAS → PLINK clump → loci.txt          │
    ├── LocusUpdater               live resize / split / create loci      │
-   └── PluginEngine               run R/binary analysis tools per locus  │
+   ├── PluginEngine               run R/binary analysis tools per locus  │
+   ├── GwasCatalogLocalIndex      local known/novel check (GRCh38 only)  │
+   ├── OpenTargetsL2GClient       live causal-gene + enhancer lookup     │
+   └── GenomeLiftover             GRCh37→GRCh38 for the two rows above   │
                                                                           │
 projects/{id}/data/               ◄──── static JSON served directly ─────┘
 ```
@@ -71,6 +74,14 @@ LYNXgwas/
 │   ├── LocusOutput.java
 │   ├── Snp.java
 │   ├── Gene.java / Transcript.java / Exon.java
+│   ├── GenomeLiftover.java       # GRCh37 -> GRCh38 (HTSJDK LiftOver)
+│   │
+│   ├── catalog/                  # GWAS Catalog known/novel-locus module
+│   │   ├── GwasCatalogLocalIndex.java
+│   │   └── GwasCatalogClient.java
+│   │
+│   ├── opentargets/               # Open Targets locus-to-gene module
+│   │   └── OpenTargetsL2GClient.java
 │   │
 │   ├── rsid/                     # rsID recovery module
 │   │   ├── RsidPipeline.java
@@ -149,7 +160,13 @@ LYNXgwas/
 │   └── global.json               # Shared ref panels + SNP databases
 │
 ├── resources/
-│   └── gencode.v37.annotation.gff3
+│   ├── gencode.v37.annotation.gff3
+│   └── hg19ToHg38.over.chain      # GenomeLiftover's chain file (not bundled — see below)
+│
+├── gwascatalog_data/              # GWAS Catalog bulk snapshot + rsID/region index (not bundled)
+│   ├── gwas-catalog-download-associations-alt-full.tsv
+│   ├── rsid_index.tsv
+│   └── region_index.tsv
 │
 ├── input/                        # GWAS summary statistics files
 ├── lib/                          # HTSJDK + dependencies (JAR files)
@@ -251,6 +268,23 @@ LYNXgwas/
 | `SnpColumnProvider.java` | Provides standard GWAS SNP column values for export. |
 | `LocusColumnProvider.java` | Provides locus-level column values for export. |
 
+### `src/catalog/` — GWAS Catalog Known/Novel-Locus Check
+
+| File | Role |
+|---|---|
+| `GwasCatalogLocalIndex.java` | Local-first lookup against the public EBI GWAS Catalog bulk associations dump (~1.19M rows, GRCh38 only — the Catalog publishes no GRCh37 variant). Builds two on-disk indexes in one streaming pass: rsID → byte offset(s) (`lookup()`, exact-variant hits) and chr → sorted (position, offset, trait-text) (`overlap()`/`classify()`, region-overlap known/novel verdict). `overlapCount()` is a pure binary search with zero disk seeks, so the exact hit count and the known/novel verdict stay correct even for a locus with tens of thousands of associations (APOE, the MHC region); the *displayed* hit list is capped at `MAX_OVERLAP_HITS` (200, sorted by significance) purely to keep response size sane. Same-trait matching scans the in-memory trait-text array for every overlapping row (not just the capped list), so a rare matching trait buried outside the top 200 by p-value is never missed. `Hit.pvalueDisplay()` falls back to the Catalog's own `PVALUE_MLOG` column when the raw p-value has underflowed past `Double.MIN_VALUE` (routine on mega-loci). |
+| `GwasCatalogClient.java` | Live EBI GWAS Catalog REST API client (`www.ebi.ac.uk/gwas/rest/api`) — kept for the exact-SNP lookup path, but **not** used for the region-overlap check: that API only returns a p-value inline per association, with trait and study each needing a separate follow-up GET, which turns a popular-SNP lookup into hundreds of round trips (confirmed hanging past 90s on rs429358/APOE) — `GwasCatalogLocalIndex` exists specifically to avoid that. |
+
+### `src/opentargets/` — Locus-to-Gene / Enhancer-to-Gene
+
+| File | Role |
+|---|---|
+| `OpenTargetsL2GClient.java` | Live Open Targets Platform GraphQL client (`api.platform.opentargets.org/api/v4/graphql`). L2G scores are only published in bulk as ~554MB of Apache Parquet — a format this codebase has no reader for and doesn't want a new dependency for — so this queries live instead: `search(rsid)` resolves an rsID to Open Targets' own variant ID, then a single `variant → credibleSets → l2GPredictions` query returns every prior study's causal-gene prediction for that locus in one round trip (~0.3–0.7s even for APOE's 1,748 credible sets). `enhancerToGenes` rides along in that same query — zero extra HTTP calls — adding per-tissue regulatory evidence (ENCODE E2G / ABC-model-based: score, distance-to-TSS, PMID) for genes L2G already flagged. Both aggregate by gene (max score across studies) and disk-cache per rsID. Returns an empty result (not an error) for any locus Open Targets hasn't ingested, including every genuinely novel locus by construction — no liftover needed here, since rsID-based lookup is build-agnostic. |
+
+### `GenomeLiftover.java` — GRCh37 → GRCh38 Coordinate Conversion
+
+Wraps HTSJDK's `LiftOver` (already a dependency for VCF/dbSNP work — no new one added) around the standard UCSC `hg19ToHg38.over.chain`. `GwasCatalogLocalIndex` is GRCh38-only, but `genome.build=GRCh37` is LYNXgwas's own project default — without this, a GRCh37 project's known/novel check would silently compare hg19 locus coordinates against hg38 Catalog positions. `needsLiftover(genomeBuild)` gates the conversion so GRCh38 projects pay zero cost; `toGRCh38(chr, start, end)` returns `ok=false` with a clear error (never a silent fallback to the un-lifted coordinates) when a region has no confident chain mapping. Not needed for the `opentargets` package — see above. Validated against two independent anchors before use: rs429358's documented hg19 position (chr19:45,411,941) lifts to exactly the hg38 position Open Targets independently reports (chr19:44,908,684), and rs2238057's known hg38 position round-trips hg38→hg19→hg38 back to the exact original coordinate.
+
 ---
 
 ## Frontend — Pages and UI Forms
@@ -315,6 +349,9 @@ Triggered by **+ New project** or **Edit**. 5 steps:
 - Effect type (dropdown: Auto-detect / Beta / Odds Ratio / Log Odds Ratio)
 - Genome build (dropdown: GRCh37/hg19 / GRCh38/hg38)
 - Ancestry / Population (text, e.g. EUR, EAS, Hispanic)
+- Disease / Trait name (text, optional — e.g. "Schizophrenia"; used as the default keyword for the
+  GWAS Catalog same-trait vs. other-trait known-locus split. Leave blank and any prior report at that
+  position counts as simply "known".)
 
 **Step 5 — Preview**
 - Summary table of all settings before submit
@@ -410,7 +447,9 @@ Single-file viewer (~4,500 lines). Uses D3.js for all rendering.
 #### Main Layout (per locus panel)
 
 From top to bottom:
-1. **Panel header**: locus name, chromosome:start-end, top SNP rsID, ref panel population, prev/next navigation
+1. **Panel header**: locus name, chromosome:start-end, top SNP rsID, ref panel population, prev/next
+   navigation, a known/novel badge, and (when available) locus-to-gene / enhancer-to-gene results —
+   see **Known/Novel Badge & Locus-to-Gene Panel** below
 2. **Annotation tracks**: configurable tracks above the Manhattan plot (point, bar, flag styles)
 3. **Manhattan plot**: -log10(p) vs position; SNPs colored by LD r² (red→blue gradient); hover tooltip
 4. **Context sketch**: mini overview of chromosome with locus position indicator
@@ -448,6 +487,35 @@ From top to bottom:
 3. Choose columns to display
 4. Configure track style (point / bar / flag) and Manhattan channel (color / size / shape)
 5. Save → writes `annotations.yaml` via `POST /api/project/{id}/annotation-config`
+
+---
+
+#### Known/Novel Badge & Locus-to-Gene Panel
+
+Two independent, asynchronously-loaded pieces of context per locus, both silent (no badge, no extra
+text) when there's nothing to say — neither ever shows an empty state or a loading spinner in the
+header.
+
+**Known/novel badge** (`GET .../locus/{n}/novelty`) — a colored pill next to the locus title:
+- **Novel** (green) — no prior GWAS Catalog association overlaps this locus's region at all.
+- **Known** (amber) — overlaps exist, but no disease/trait name is configured for the project, so
+  "known" just means "reported for *something*."
+- **Known (same trait)** (red) / **Known (other trait)** (blue) — shown once `disease.name` is set:
+  whether any overlapping association's trait text matches that keyword.
+
+Hovering shows a quick preview (up to 5 hits, trait + PMID link); clicking opens a new tab with the
+full reference table (trait, gene, p-value, study, PMID, URL) — capped at 200 rows for a mega-locus,
+with an honest "showing N most significant of TOTAL" note rather than silently truncating.
+
+**Locus-to-gene / enhancer-to-gene** (`GET .../locus/{n}/l2g`) — appended after the nearest-gene text:
+`Likely causal: GENE (score)`, and, only if Open Targets also has enhancer-activity evidence for that
+same gene, a click-through `N tissues (enhancer evidence) ↗` link opening a table of tissue, score,
+distance-to-TSS, and PMID.
+
+**Whole-project export**: the **Export Catalog Report** toolbar button downloads `GET
+.../catalog-report` — one TSV row per (locus, overlapping hit), with the same verdict/cap semantics
+as the per-locus endpoint, plus a `verdict_region_grch38` column showing what was actually queried
+when the project's own coordinates needed liftover first.
 
 ---
 
@@ -598,6 +666,20 @@ All endpoints served by `LocalServer.java` on port 8765.
 | `/api/susiex-progress` | GET | `?job=<id>` — `{"status":"running"\|"done"\|"error", "error":...}` |
 | `/api/susiex-result` | GET | `?job=<id>` — `{"ok","n_credible_sets","rows":[{"snp_id","chr","pos","pip","cs_id"}, ...]}` |
 
+### GWAS Catalog Known/Novel Check
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/api/project/{id}/locus/{n}/catalog` | GET | Exact-SNP GWAS Catalog lookup for this locus's top SNP — trait, gene, p-value, study, PMID, URL per hit |
+| `/api/project/{id}/locus/{n}/novelty` | GET | `?trait=...` (optional; defaults to the project's `disease.name`) — known/novel verdict for this locus's *region* (not just the top SNP), `total_count` (exact, uncapped), and up to 200 hits sorted by significance. Auto-lifts GRCh37 project coordinates to GRCh38 first. |
+| `/api/project/{id}/catalog-report` | GET | `?trait=...` — whole-project TSV export, one row per (locus, hit), with verdict + total-count columns |
+
+### Open Targets Locus-to-Gene / Enhancer-to-Gene
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/api/project/{id}/locus/{n}/l2g` | GET | Ranked causal-gene predictions (score, supporting-study count) for this locus's top SNP, plus enhancer-to-gene regulatory evidence (tissue, score, distance-to-TSS, PMID) for each gene L2G flagged. Empty (not an error) when Open Targets has no data for this locus. |
+
 ### Annotations and Export
 
 | Endpoint | Method | Description |
@@ -719,8 +801,9 @@ projects/{project_id}/
 | `n.cases` / `n.controls` | `0` | **Yes** | Case/control counts, enforced by the wizard alongside `sample.n` (at least one of the pair must be set) |
 | `trait.type` | — | No | `quantitative` or `binary` |
 | `effect.type` | — | No | `beta`, `OR`, or `logOR` |
-| `genome.build` | `GRCh37` | No | `GRCh37` or `GRCh38` |
+| `genome.build` | `GRCh37` | No | `GRCh37` or `GRCh38`. `GRCh37` projects get their locus coordinates auto-lifted to GRCh38 (via `GenomeLiftover`) before the GWAS Catalog known/novel check, since the Catalog publishes GRCh38 only. |
 | `ancestry` | — | No | Population label for analysis tools (e.g. `EAS`, `EUR`) |
+| `disease.name` | — | No | Free-text trait/disease name (e.g. `Schizophrenia`). Default keyword for the GWAS Catalog same-trait vs. other-trait known-locus split; a request's own `?trait=` query param overrides it. |
 
 ### Global: `config/global.json`
 
@@ -783,3 +866,7 @@ The server stays running until Ctrl+C. The browser UI is served at `http://local
 | **Tool descriptors as YAML** | New analysis tools can be added without recompiling Java; the engine auto-discovers `tools/*.yaml` at startup |
 | **JSONP wrapper (`locus_N.js`)** | Enables static file serving without CORS issues when opening from a local filesystem |
 | **rsID patching in-place** | rsID recovery patches existing locus JSONs without a full pipeline rerun; fingerprint updated to avoid re-patching |
+| **GWAS Catalog: local index, not the live REST API** | The live API returns a p-value inline per association but needs a separate follow-up GET each for trait and study — hundreds of round trips for a popular SNP (confirmed hanging past 90s on APOE). A local rsID + region index over the public bulk file answers the same question with disk seeks only. |
+| **GWAS Catalog: exact count uncapped, hit list capped at 200** | A handful of loci (APOE, the MHC region) have tens of thousands of associations; seeking and serializing all of them turned one request into 12s/4.5MB. The count comes from a pure binary search (free); only the *displayed* list is capped, and same-trait matching still scans every overlapping row in memory so a rare match past the cap is never missed. |
+| **Open Targets: live GraphQL, not the bulk Parquet dump** | L2G/enhancer-to-gene scores are only published in bulk as Apache Parquet, which would need a new dependency this codebase has never carried (every other data source here is hand-parsed text). The live API nests `credibleSets`/`l2GPredictions`/`enhancerToGenes` in one query per locus instead, avoiding both the dependency and any N+1 risk. |
+| **Liftover only where coordinates are compared directly** | `GwasCatalogLocalIndex` compares raw chr:pos and is GRCh38-only, so a `GRCh37` project needs `GenomeLiftover` first. `OpenTargetsL2GClient` resolves by rsID text through Open Targets' own search, which is build-agnostic — no liftover involved there. |
