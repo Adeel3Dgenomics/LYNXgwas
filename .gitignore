@@ -60,6 +60,7 @@ __pycache__/
 # Local dev/test scratch (GWAS Catalog bulk snapshot + index, downloaded tool binaries, synthetic
 # test fixtures, ad-hoc build/run logs) — none of this belongs in version control
 gwascatalog_data/
+regulatory_data/
 testdata/
 tools-bin/
 scratch_*
