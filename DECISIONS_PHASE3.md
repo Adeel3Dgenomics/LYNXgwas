@@ -64,6 +64,15 @@ truth, and is written up as such in the manuscript rather than overclaimed.
 
 ## 3. Work items and status
 
+### 3.0 Real data download [x] — done, verified
+All 15 files (5 tissues × 3 marks) downloaded for real from the live Roadmap Epigenomics server into
+`regulatory_data/<EID>/` (gitignored, matching `gwascatalog_data/`'s existing convention). Verified
+non-corrupt: `zcat`'d and confirmed real 10-column narrowPeak rows with plausible chromosome/position
+values (e.g. E073-H3K27ac: 206,746 real peaks). Total on-disk size 31 MB for all 15 files — confirms
+the storage-saving design target from section 2 (narrowPeak instead of bigWig, one shared copy per
+tissue instead of per project) up front, before any feature code exists to consume them.
+Citation for the manuscript: Roadmap Epigenomics Consortium et al. (2015), *Nature* 518:317–330.
+
 ### 3.1 Backend: regulatory peak ingestion + interval index [ ]
 New ingestion for BED/narrowPeak-format evidence (chrom, start, end, name, score, strand,
 signalValue, pValue, qValue, peak) — a genuinely different shape from the existing gene-symbol-keyed
