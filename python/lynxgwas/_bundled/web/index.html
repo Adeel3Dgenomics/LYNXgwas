@@ -185,7 +185,7 @@ td.actions button { margin-right: 0.3rem; }
       Missing rsIDs
     </button>
     <button class="btn btn-secondary" onclick="openLocusMatrix()">
-      Locus Matrix
+      Gene Constellation
     </button>
     <button class="btn btn-secondary" onclick="openSusiex()">
       SuSiEx
@@ -224,7 +224,7 @@ td.actions button { margin-right: 0.3rem; }
   </div>
 
   <div class="table-wrap" style="margin-top:1.5rem">
-    <h3 style="font-size:0.95rem;margin:0 0 0.5rem">Locus Matrix runs</h3>
+    <h3 style="font-size:0.95rem;margin:0 0 0.5rem">Gene Constellation runs</h3>
     <table>
       <thead>
         <tr>
@@ -240,7 +240,7 @@ td.actions button { margin-right: 0.3rem; }
       <tbody id="locus-matrix-tbody"></tbody>
     </table>
     <div class="empty" id="locus-matrix-empty" style="display:none">
-      <p>No Locus Matrix runs yet. Click <b>Locus Matrix</b> above to compare datasets.</p>
+      <p>No Gene Constellation runs yet. Click <b>Gene Constellation</b> above to compare datasets.</p>
     </div>
   </div>
 
@@ -269,6 +269,14 @@ td.actions button { margin-right: 0.3rem; }
 
       <h4 style="font-size:0.9rem;margin:1rem 0 0.5rem">API Providers</h4>
       <p style="color:#666;font-size:0.82rem">NCBI dbSNP and gnomAD are available as fallback providers for rsID recovery. Enable them per-project in the "Add rsIDs" dialog. Rate limits: NCBI 3 req/s (higher with API key), gnomAD 5 req/s.</p>
+
+      <h4 style="font-size:0.9rem;margin:1rem 0 0.5rem">Shared Storage</h4>
+      <p style="color:#666;font-size:0.8rem;margin-bottom:0.5rem">Point at a shared lab folder (or a Google Drive/Dropbox desktop sync folder — any local or network path works), or a git repo you already have your own credentials for, so reference panels and annotation files don't need to be re-downloaded per machine.</p>
+      <div id="sharedstorage-form" style="font-size:0.85rem"></div>
+
+      <h4 style="font-size:0.9rem;margin:1rem 0 0.5rem">Cluster (HPC)</h4>
+      <p style="color:#666;font-size:0.8rem;margin-bottom:0.5rem">Optional. Off by default — local processing is unaffected either way. Configures LYNXgwas to submit analysis jobs to a cluster over your own SSH access (key-based only) using Snakemake, instead of running locally.</p>
+      <div id="hpc-form" style="font-size:0.85rem"></div>
     </div>
   </details>
 
@@ -328,6 +336,32 @@ async function loadProjects() {
   render();
 }
 
+// Small circularized-genome glyph shown next to each dataset's name on the home page — a mini,
+// deterministic (hashed from the project id, so it's stable across reloads) version of the
+// chromosome-ring color scheme used by the full Gene Constellation visualization, so a dataset's
+// icon there and here are visually the "same genome," just zoomed out.
+function miniGenomeIconHash(str) {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) { h = (h * 31 + str.charCodeAt(i)) | 0; }
+  return Math.abs(h);
+}
+function miniGenomeIcon(projectId) {
+  const N = 10;
+  const seed = miniGenomeIconHash(projectId || '');
+  const cx = 9, cy = 9, r = 6.5, sw = 3.4;
+  let arcs = '';
+  for (let i = 0; i < N; i++) {
+    const a0 = (i / N) * 2 * Math.PI - Math.PI / 2;
+    const a1 = ((i + 0.86) / N) * 2 * Math.PI - Math.PI / 2;
+    const x0 = cx + r * Math.cos(a0), y0 = cy + r * Math.sin(a0);
+    const x1 = cx + r * Math.cos(a1), y1 = cy + r * Math.sin(a1);
+    const hue = ((i * 137.5) + (seed % 360)) % 360; // golden-angle spacing, seeded per dataset
+    arcs += '<path d="M' + x0.toFixed(2) + ',' + y0.toFixed(2) + ' A' + r + ',' + r + ' 0 0 1 ' + x1.toFixed(2) + ',' + y1.toFixed(2) + '" '
+      + 'stroke="hsl(' + hue.toFixed(0) + ',62%,54%)" stroke-width="' + sw + '" fill="none" stroke-linecap="round"/>';
+  }
+  return '<svg width="18" height="18" viewBox="0 0 18 18" style="vertical-align:middle;margin-right:0.4rem" aria-hidden="true">' + arcs + '</svg>';
+}
+
 function render() {
   const tbody = document.getElementById('project-tbody');
   const empty = document.getElementById('empty-state');
@@ -355,7 +389,7 @@ function render() {
     const badge = statusBadge(p);
 
     return '<tr onclick="openProject(\'' + esc(p.id) + '\')" data-id="' + esc(p.id) + '">'
-      + '<td title="' + escAttr(name) + '"><b>' + esc(name) + '</b></td>'
+      + '<td title="' + escAttr(name) + '">' + miniGenomeIcon(p.id) + '<b>' + esc(name) + '</b></td>'
       + '<td class="desc" title="' + escAttr(desc) + '">' + esc(desc) + '</td>'
       + '<td title="' + escAttr(String(loci)) + '">' + loci + '</td>'
       + '<td title="' + escAttr(String(snps)) + '">' + snps + '</td>'
@@ -371,6 +405,7 @@ function render() {
       + '<button class="btn btn-secondary" onclick="exportExcel(\'' + esc(p.id) + '\')" title="Export Excel">Excel</button>'
       + '<button class="btn btn-secondary" style="background:#d1fae5;color:#065f46" onclick="openProjectAnalysis(\'' + esc(p.id) + '\')" title="Build analysis base artifacts">Analyze</button>'
       + '<button class="btn btn-secondary" onclick="openGwasQc(\'' + esc(p.id) + '\')" title="Genomic inflation / confounding triage">QC</button>'
+      + '<button class="btn btn-secondary" onclick="openEvidence(\'' + esc(p.id) + '\')" title="Attach gene-level evidence data (PPI, expression, etc.)">Evidence</button>'
       + '<button class="btn btn-danger" style="padding:0.2rem 0.6rem;font-size:0.75rem" onclick="deleteProject(\'' + esc(p.id) + '\')" title="Delete project">Delete</button>'
       + '</td></tr>';
   }).join('');
@@ -729,7 +764,11 @@ function wizRenderParams(c) {
     + '</select></div>'
     + '<div class="wiz-field"><label>Ancestry / Population</label>'
     + '<input data-wiz-key="ancestry" value="' + escAttr(cfg['ancestry'] || cfg['ref.panel.population'] || '') + '">'
-    + '<div class="hint">E.g. EUR, EAS, AFR, AMR, SAS, Hispanic, etc.</div></div>';
+    + '<div class="hint">E.g. EUR, EAS, AFR, AMR, SAS, Hispanic, etc.</div></div>'
+    + '<div class="wiz-field"><label>Disease / Trait name</label>'
+    + '<input data-wiz-key="disease.name" value="' + escAttr(cfg['disease.name'] || '') + '" placeholder="e.g. Schizophrenia">'
+    + '<div class="hint">Used to tell "known for this exact disease" apart from "known for something else" '
+    + 'when checking each locus against the GWAS Catalog. Leave blank to just flag any prior report as "known".</div></div>';
 }
 
 function wizRenderPreview(c) {
@@ -752,7 +791,8 @@ function wizRenderPreview(c) {
     ['N controls', cfg['n.controls'] || '(not set)'],
     ['Trait type', cfg['trait.type'] || '(not set)'],
     ['Genome build', cfg['genome.build'] || 'GRCh37'],
-    ['Ancestry', cfg['ancestry'] || cfg['ref.panel.population'] || '(not set)']
+    ['Ancestry', cfg['ancestry'] || cfg['ref.panel.population'] || '(not set)'],
+    ['Disease / Trait', cfg['disease.name'] || '(not set — any prior report counts as "known")']
   ];
   c.innerHTML = '<table class="wiz-summary-table">'
     + rows.map(function(r) { return '<tr><td>' + esc(r[0]) + '</td><td>' + esc(String(r[1] || '')) + '</td></tr>'; }).join('')
@@ -768,7 +808,7 @@ async function wizSubmit() {
     'col.beta','col.or','col.se','col.n','col.maf','col.info','top.snp.file',
     'locus.padding','ld.enabled','ld.triangle.boundary','ld.r2.threshold',
     'ld.parallel.jobs','threads','max.snps.per.locus','split.ld.threshold','split.min.distance.bp',
-    'sample.n','n.cases','n.controls','trait.type','effect.type','genome.build','ancestry'];
+    'sample.n','n.cases','n.controls','trait.type','effect.type','genome.build','ancestry','disease.name'];
   keys.forEach(function(k) { if (cfg[k] !== undefined) configBody[k] = cfg[k]; });
 
   try {
@@ -1063,7 +1103,119 @@ async function loadResources() {
     var gc = await (await fetch(API + '/api/global-config')).json();
     renderSnpDatabases(gc.snp_databases || []);
     renderRefPanels(gc.reference_panels || []);
+    renderSharedStorage(gc.shared_storage || {mode:'none', folder_path:'', git_url:'', git_local_clone:''});
+    renderHpc(gc.hpc || {enabled:false, ssh_host:'', ssh_user:'', ssh_key_path:'', remote_work_dir:'',
+      poll_interval_min_minutes:5, poll_interval_max_minutes:20, module_names:{}});
   } catch(e) {}
+}
+
+// ── Shared Storage ──────────────────────────────────────────
+function renderSharedStorage(ss) {
+  var el = document.getElementById('sharedstorage-form');
+  var modeOpts = ['none', 'folder', 'git'].map(function(m) {
+    return '<option value="' + m + '"' + (ss.mode === m ? ' selected' : '') + '>' + m + '</option>';
+  }).join('');
+  el.innerHTML =
+    '<div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.4rem">'
+    + '<label>Mode:</label><select id="ss-mode" onchange="renderSharedStorage({mode:this.value,folder_path:document.getElementById(\'ss-folder\')?document.getElementById(\'ss-folder\').value:\'\',git_url:document.getElementById(\'ss-giturl\')?document.getElementById(\'ss-giturl\').value:\'\',git_local_clone:document.getElementById(\'ss-gitclone\')?document.getElementById(\'ss-gitclone\').value:\'\'})">' + modeOpts + '</select>'
+    + '</div>'
+    + (ss.mode === 'folder' ? '<div style="margin-bottom:0.4rem"><label>Folder path:</label><br><input id="ss-folder" type="text" style="width:100%" value="' + esc(ss.folder_path) + '"></div>' : '')
+    + (ss.mode === 'git' ? (
+        '<div style="margin-bottom:0.4rem"><label>Git URL:</label><br><input id="ss-giturl" type="text" style="width:100%" value="' + esc(ss.git_url) + '"></div>'
+        + '<div style="margin-bottom:0.4rem"><label>Local clone path:</label><br><input id="ss-gitclone" type="text" style="width:100%" value="' + esc(ss.git_local_clone) + '"></div>'
+      ) : '')
+    + '<div style="display:flex;gap:0.5rem">'
+    + '<button class="btn btn-secondary" onclick="saveSharedStorage()">Save</button>'
+    + '<button class="btn btn-secondary" onclick="testSharedStorage()">Test</button>'
+    + '</div>'
+    + '<div id="ss-test-result" style="margin-top:0.4rem;font-size:0.8rem"></div>';
+}
+
+async function saveSharedStorage() {
+  var gc = await (await fetch(API + '/api/global-config')).json();
+  var mode = document.getElementById('ss-mode').value;
+  gc.shared_storage = {
+    mode: mode,
+    folder_path: mode === 'folder' && document.getElementById('ss-folder') ? document.getElementById('ss-folder').value : (gc.shared_storage || {}).folder_path || '',
+    git_url: mode === 'git' && document.getElementById('ss-giturl') ? document.getElementById('ss-giturl').value : (gc.shared_storage || {}).git_url || '',
+    git_local_clone: mode === 'git' && document.getElementById('ss-gitclone') ? document.getElementById('ss-gitclone').value : (gc.shared_storage || {}).git_local_clone || ''
+  };
+  await fetch(API + '/api/global-config', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(gc) });
+  await loadResources();
+}
+
+async function testSharedStorage() {
+  // loadResources() (awaited above) re-renders #sharedstorage-form, so grabbing the element
+  // reference only after saveSharedStorage() fully resolves avoids writing into a DOM node that's
+  // already been replaced (which would silently discard the result).
+  await saveSharedStorage();
+  var el = document.getElementById('ss-test-result');
+  el.textContent = 'Testing...';
+  try {
+    var r = await (await fetch(API + '/api/shared-storage/test', { method: 'POST' })).json();
+    el.innerHTML = '<span style="color:' + (r.ok ? '#065f46' : '#dc2626') + '">' + esc(r.message) + '</span>';
+  } catch (e) {
+    el.innerHTML = '<span style="color:#dc2626">Request failed: ' + esc(e.message) + '</span>';
+  }
+}
+
+// ── HPC / Snakemake ──────────────────────────────────────────
+function renderHpc(hpc) {
+  var el = document.getElementById('hpc-form');
+  var modules = hpc.module_names || {};
+  var moduleRows = Object.keys(modules).map(function(tool) {
+    return '<tr><td>' + esc(tool) + '</td><td>' + esc(modules[tool]) + '</td>'
+      + '<td><button class="btn btn-secondary" style="padding:0.1rem 0.4rem;font-size:0.72rem" onclick="removeHpcModule(\'' + esc(tool) + '\')">Remove</button></td></tr>';
+  }).join('');
+  el.innerHTML =
+    '<div style="margin-bottom:0.4rem"><label><input id="hpc-enabled" type="checkbox"' + (hpc.enabled ? ' checked' : '') + '> Enable HPC execution</label></div>'
+    + '<div style="margin-bottom:0.4rem"><label>SSH host:</label> <input id="hpc-host" type="text" value="' + esc(hpc.ssh_host) + '"></div>'
+    + '<div style="margin-bottom:0.4rem"><label>SSH user:</label> <input id="hpc-user" type="text" value="' + esc(hpc.ssh_user) + '"></div>'
+    + '<div style="margin-bottom:0.4rem"><label>Private key path:</label> <input id="hpc-key" type="text" style="width:60%" value="' + esc(hpc.ssh_key_path) + '"> <span style="color:#888;font-size:0.75rem">(key-based auth only — no password is ever stored)</span></div>'
+    + '<div style="margin-bottom:0.4rem"><label>Remote work dir:</label> <input id="hpc-workdir" type="text" style="width:60%" value="' + esc(hpc.remote_work_dir) + '"></div>'
+    + '<div style="margin-bottom:0.4rem"><label>Poll interval (minutes):</label> '
+    + '<input id="hpc-poll-min" type="number" min="1" style="width:4em" value="' + hpc.poll_interval_min_minutes + '"> to '
+    + '<input id="hpc-poll-max" type="number" min="1" style="width:4em" value="' + hpc.poll_interval_max_minutes + '"></div>'
+    + '<div style="margin-bottom:0.3rem"><b>Module names</b> (tool &rarr; <code>module load</code> argument)</div>'
+    + '<table style="width:100%;font-size:0.8rem;border-collapse:collapse;margin-bottom:0.4rem">'
+    + '<tr style="border-bottom:1px solid #eee"><th style="text-align:left">Tool</th><th style="text-align:left">Module</th><th></th></tr>'
+    + moduleRows + '</table>'
+    + '<button class="btn btn-secondary" onclick="addHpcModule()" style="margin-bottom:0.5rem">+ Add module</button>'
+    + '<div><button class="btn btn-secondary" onclick="saveHpc()">Save</button></div>';
+}
+
+async function addHpcModule() {
+  var tool = prompt('Tool name (e.g. "plink", "r"):');
+  if (!tool) return;
+  var mod = prompt('Module load argument (e.g. "plink/1.9", "R/4.3.1"):');
+  if (!mod) return;
+  var gc = await (await fetch(API + '/api/global-config')).json();
+  if (!gc.hpc) gc.hpc = {};
+  if (!gc.hpc.module_names) gc.hpc.module_names = {};
+  gc.hpc.module_names[tool] = mod;
+  await fetch(API + '/api/global-config', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(gc) });
+  loadResources();
+}
+
+async function removeHpcModule(tool) {
+  var gc = await (await fetch(API + '/api/global-config')).json();
+  if (gc.hpc && gc.hpc.module_names) delete gc.hpc.module_names[tool];
+  await fetch(API + '/api/global-config', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(gc) });
+  loadResources();
+}
+
+async function saveHpc() {
+  var gc = await (await fetch(API + '/api/global-config')).json();
+  gc.hpc = gc.hpc || {};
+  gc.hpc.enabled = document.getElementById('hpc-enabled').checked;
+  gc.hpc.ssh_host = document.getElementById('hpc-host').value;
+  gc.hpc.ssh_user = document.getElementById('hpc-user').value;
+  gc.hpc.ssh_key_path = document.getElementById('hpc-key').value;
+  gc.hpc.remote_work_dir = document.getElementById('hpc-workdir').value;
+  gc.hpc.poll_interval_min_minutes = parseInt(document.getElementById('hpc-poll-min').value, 10) || 5;
+  gc.hpc.poll_interval_max_minutes = parseInt(document.getElementById('hpc-poll-max').value, 10) || 20;
+  await fetch(API + '/api/global-config', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(gc) });
+  await loadResources();
 }
 
 function renderSnpDatabases(dbs) {
@@ -1509,6 +1661,8 @@ async function saveMissingRsid(idx) {
 
 var locusMatrixSelected = {};
 var locusMatrixPollTimer = null;
+var gcWiz = { step: 0 }; // Gene Constellation setup wizard state (separate from the project-creation `wiz`)
+var GC_STEPS = ['Datasets', 'Reference panel & review'];
 
 async function openLocusMatrix() {
   var overlay = document.getElementById('locus-matrix-overlay');
@@ -1521,8 +1675,9 @@ async function openLocusMatrix() {
     document.body.appendChild(overlay);
   }
   locusMatrixSelected = {};
+  gcWiz = { step: 0, name: '', refPanelId: '' };
   if (locusMatrixPollTimer) { clearInterval(locusMatrixPollTimer); locusMatrixPollTimer = null; }
-  renderLocusMatrixForm();
+  await renderLocusMatrixForm();
   overlay.classList.add('open');
 }
 
@@ -1532,35 +1687,68 @@ function closeLocusMatrix() {
   if (locusMatrixPollTimer) { clearInterval(locusMatrixPollTimer); locusMatrixPollTimer = null; }
 }
 
+function gcStepsBarHtml() {
+  return '<div class="wizard-steps">' + GC_STEPS.map(function(_, i) {
+    var cls = i < gcWiz.step ? 'step done' : (i === gcWiz.step ? 'step active' : 'step');
+    return '<div class="' + cls + '"></div>';
+  }).join('') + '</div>'
+  + '<div style="font-size:0.78rem;color:#888;margin:-0.75rem 0 1rem">'
+  + 'Step ' + (gcWiz.step + 1) + ' of ' + GC_STEPS.length + ' — ' + esc(GC_STEPS[gcWiz.step]) + '</div>';
+}
+
 async function renderLocusMatrixForm() {
   var box = document.getElementById('locus-matrix-box');
-  box.innerHTML = '<h3>Locus Matrix</h3>'
-    + '<p style="color:#666;font-size:0.85rem;margin:0.5rem 0 1rem">'
-    + 'Pick two or more datasets to compare. Each SNP\'s best p-value across the selected '
-    + 'datasets is merged (filtered to p&le;5e-3), loci are identified against the reference '
-    + 'panel you choose, and the result is a dataset &times; locus significance grid.</p>'
-    + '<div style="font-size:0.85rem;font-weight:600;margin-bottom:0.4rem">Name (optional)</div>'
-    + '<input id="lm-name" type="text" placeholder="e.g. Hisp vs Wang" style="width:100%;padding:0.4rem;border:1px solid #cbd5e1;border-radius:6px;margin-bottom:1rem;box-sizing:border-box">'
-    + '<div style="font-size:0.85rem;font-weight:600;margin-bottom:0.4rem">Datasets</div>'
-    + '<div id="lm-dataset-list" style="max-height:220px;overflow-y:auto;border:1px solid #e5e7eb;border-radius:8px;padding:0.5rem;margin-bottom:1rem">Loading…</div>'
+  if (gcWiz.step === 0) {
+    box.innerHTML = '<h3>Gene Constellation — cross-dataset comparison</h3>'
+      + gcStepsBarHtml()
+      + '<p style="color:#666;font-size:0.85rem;margin:0.5rem 0 1rem">'
+      + 'Pick two or more datasets to compare. Each SNP\'s best p-value across the selected '
+      + 'datasets is merged (filtered to p&le;5e-3) and loci are identified against a reference '
+      + 'panel you\'ll choose on the next step.</p>'
+      + '<div style="font-size:0.85rem;font-weight:600;margin-bottom:0.4rem">Name (optional)</div>'
+      + '<input id="lm-name" type="text" placeholder="e.g. Hisp vs Wang" value="' + escAttr(gcWiz.name || '') + '" style="width:100%;padding:0.4rem;border:1px solid #cbd5e1;border-radius:6px;margin-bottom:1rem;box-sizing:border-box">'
+      + '<div style="font-size:0.85rem;font-weight:600;margin-bottom:0.4rem">Datasets</div>'
+      + '<div id="lm-dataset-list" style="max-height:260px;overflow-y:auto;border:1px solid #e5e7eb;border-radius:8px;padding:0.5rem;margin-bottom:1rem">Loading…</div>'
+      + '<div id="lm-error" style="color:#dc2626;font-size:0.82rem;margin-bottom:0.5rem"></div>'
+      + '<div style="display:flex;justify-content:flex-end;gap:0.5rem">'
+      + '<button class="btn btn-secondary" onclick="closeLocusMatrix()">Cancel</button>'
+      + '<button class="btn btn-primary" onclick="gcWizNext()">Next</button></div>';
+
+    var listEl = document.getElementById('lm-dataset-list');
+    if (!projects.length) {
+      listEl.innerHTML = '<span style="color:#888;font-size:0.82rem">No projects yet.</span>';
+    } else {
+      listEl.innerHTML = projects.map(function(p) {
+        var name = p.name || p.id;
+        var checked = locusMatrixSelected[p.id] ? ' checked' : '';
+        return '<label style="display:flex;align-items:center;gap:0.5rem;padding:0.25rem 0;font-size:0.85rem">'
+          + '<input type="checkbox" value="' + esc(p.id) + '"' + checked + ' onchange="locusMatrixSelected[\'' + esc(p.id) + '\'] = this.checked">'
+          + '<span>' + esc(name) + '</span></label>';
+      }).join('');
+    }
+    return;
+  }
+
+  // Step 1 (index 1): reference panel + review/confirm
+  var ids = Object.keys(locusMatrixSelected).filter(function(k) { return locusMatrixSelected[k]; });
+  var selectedNames = ids.map(function(id) {
+    var p = projects.find(function(x) { return x.id === id; });
+    return p ? (p.name || p.id) : id;
+  });
+  box.innerHTML = '<h3>Gene Constellation — cross-dataset comparison</h3>'
+    + gcStepsBarHtml()
+    + '<div style="font-size:0.85rem;font-weight:600;margin-bottom:0.4rem">Selected datasets (' + ids.length + ')</div>'
+    + '<div style="font-size:0.82rem;color:#475569;background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:0.5rem 0.75rem;margin-bottom:1rem">'
+    + (selectedNames.length ? selectedNames.map(esc).join(', ') : '<span style="color:#dc2626">None selected — go back</span>')
+    + '</div>'
     + '<div style="font-size:0.85rem;font-weight:600;margin-bottom:0.4rem">Reference panel</div>'
     + '<select id="lm-refpanel" style="width:100%;padding:0.4rem;border:1px solid #cbd5e1;border-radius:6px;margin-bottom:1rem"><option>Loading…</option></select>'
     + '<div id="lm-error" style="color:#dc2626;font-size:0.82rem;margin-bottom:0.5rem"></div>'
-    + '<div style="display:flex;justify-content:flex-end;gap:0.5rem">'
+    + '<div style="display:flex;justify-content:space-between;gap:0.5rem">'
+    + '<button class="btn btn-secondary" onclick="gcWizPrev()">Back</button>'
+    + '<div style="display:flex;gap:0.5rem">'
     + '<button class="btn btn-secondary" onclick="closeLocusMatrix()">Cancel</button>'
-    + '<button class="btn btn-primary" onclick="runLocusMatrix()">Run</button></div>';
-
-  var listEl = document.getElementById('lm-dataset-list');
-  if (!projects.length) {
-    listEl.innerHTML = '<span style="color:#888;font-size:0.82rem">No projects yet.</span>';
-  } else {
-    listEl.innerHTML = projects.map(function(p) {
-      var name = p.name || p.id;
-      return '<label style="display:flex;align-items:center;gap:0.5rem;padding:0.25rem 0;font-size:0.85rem">'
-        + '<input type="checkbox" value="' + esc(p.id) + '" onchange="locusMatrixSelected[\'' + esc(p.id) + '\'] = this.checked">'
-        + '<span>' + esc(name) + '</span></label>';
-    }).join('');
-  }
+    + '<button class="btn btn-primary" onclick="runLocusMatrix()">Run</button></div></div>';
 
   var sel = document.getElementById('lm-refpanel');
   try {
@@ -1570,7 +1758,8 @@ async function renderLocusMatrixForm() {
       sel.innerHTML = '<option value="">No valid reference panels configured</option>';
     } else {
       sel.innerHTML = panels.map(function(rp) {
-        return '<option value="' + esc(rp.id) + '">' + esc(rp.label) + ' (' + esc(rp.population) + ')</option>';
+        var selAttr = rp.id === gcWiz.refPanelId ? ' selected' : '';
+        return '<option value="' + esc(rp.id) + '"' + selAttr + '>' + esc(rp.label) + ' (' + esc(rp.population) + ')</option>';
       }).join('');
     }
   } catch (e) {
@@ -1578,17 +1767,42 @@ async function renderLocusMatrixForm() {
   }
 }
 
+function gcWizSaveFields() {
+  var nameEl = document.getElementById('lm-name');
+  if (nameEl) gcWiz.name = nameEl.value.trim();
+  var panelEl = document.getElementById('lm-refpanel');
+  if (panelEl) gcWiz.refPanelId = panelEl.value;
+}
+
+async function gcWizNext() {
+  gcWizSaveFields();
+  var errEl = document.getElementById('lm-error');
+  if (gcWiz.step === 0) {
+    var ids = Object.keys(locusMatrixSelected).filter(function(k) { return locusMatrixSelected[k]; });
+    if (ids.length < 1) { if (errEl) errEl.textContent = 'Select at least one dataset.'; return; }
+  }
+  gcWiz.step++;
+  await renderLocusMatrixForm();
+}
+
+async function gcWizPrev() {
+  gcWizSaveFields();
+  gcWiz.step--;
+  await renderLocusMatrixForm();
+}
+
 async function runLocusMatrix() {
+  gcWizSaveFields();
   var ids = Object.keys(locusMatrixSelected).filter(function(k) { return locusMatrixSelected[k]; });
   var errEl = document.getElementById('lm-error');
   errEl.textContent = '';
   if (ids.length < 1) { errEl.textContent = 'Select at least one dataset.'; return; }
-  var refPanelId = document.getElementById('lm-refpanel').value;
+  var refPanelId = gcWiz.refPanelId;
   if (!refPanelId) { errEl.textContent = 'Choose a reference panel.'; return; }
-  var name = document.getElementById('lm-name').value.trim();
+  var name = gcWiz.name || '';
 
   var box = document.getElementById('locus-matrix-box');
-  box.innerHTML = '<h3>Locus Matrix</h3>'
+  box.innerHTML = '<h3>Gene Constellation</h3>'
     + '<div id="lm-progress" style="margin:1rem 0;font-size:0.85rem;color:#475569">Starting…</div>'
     + '<div style="display:flex;justify-content:flex-end">'
     + '<button class="btn btn-secondary" onclick="closeLocusMatrix()">Close</button></div>';
@@ -1629,7 +1843,7 @@ function pollLocusMatrixProgress(jobId) {
         } else {
           el.innerHTML = '<div style="color:#065f46;margin-bottom:0.75rem">Done &mdash; ' + p.loci_found + ' loci found.</div>'
             + '<div style="display:flex;gap:0.5rem">'
-            + '<a class="btn btn-primary" href="locus_matrix.html?job=' + encodeURIComponent(jobId) + '" target="_blank">View Matrix &rarr;</a>'
+            + '<a class="btn btn-primary" href="gene_constellation.html?job=' + encodeURIComponent(jobId) + '" target="_blank">View Constellation &rarr;</a>'
             + '<a class="btn btn-secondary" href="' + API + '/api/locus-matrix-export?job=' + encodeURIComponent(jobId) + '">Export Excel</a>'
             + '</div>';
         }
@@ -1859,7 +2073,7 @@ async function renderGwasQc(projectId, ldscIntercept) {
     }
     var lambdaColor = d.lambda_flagged ? '#dc2626' : '#059669';
     var html = '<h3>GWAS QC</h3>'
-      + '<p style="color:#666;font-size:0.8rem;margin:0.5rem 0 1rem">Computed from all ' + d.n_snps.toLocaleString() + ' SNPs in this project\'s GWAS file (not LD-pruned — a quick triage signal, not a substitute for a real LDSC run).</p>'
+      + '<p style="color:#666;font-size:0.8rem;margin:0.5rem 0 1rem">Computed from ' + d.n_snps.toLocaleString() + ' distance-pruned SNPs (one per 250kb per chromosome, out of ' + d.n_snps_scanned.toLocaleString() + ' scanned) — an approximate, genotype-free independence filter, not real LD-based pruning, so this remains a quick triage signal rather than a substitute for a real LDSC run.</p>'
       + '<div style="display:flex;gap:1.5rem;margin-bottom:1rem">'
       + '<div><div style="font-size:0.75rem;color:#666">Genomic inflation (&lambda;<sub>GC</sub>)</div>'
       + '<div style="font-size:1.4rem;font-weight:700;color:' + lambdaColor + '">' + d.lambda_gc.toFixed(3) + '</div></div>'
@@ -1890,6 +2104,97 @@ function submitGwasQcIntercept(projectId) {
   renderGwasQc(projectId, val);
 }
 
+// ═══════════════════════════════════════════════════════════════
+// Evidence — attach per-gene PPI/expression/other data to a project
+// ═══════════════════════════════════════════════════════════════
+async function openEvidence(projectId) {
+  var overlay = document.getElementById('evidence-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'evidence-overlay';
+    overlay.className = 'wizard-overlay';
+    overlay.innerHTML = '<div class="wizard-box" style="max-width:560px;width:90vw" id="evidence-box"></div>';
+    overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.classList.remove('open'); });
+    document.body.appendChild(overlay);
+  }
+  overlay.classList.add('open');
+  await renderEvidenceBox(projectId);
+}
+
+async function renderEvidenceBox(projectId, message) {
+  var box = document.getElementById('evidence-box');
+  box.innerHTML = '<h3>Evidence — ' + esc(projectId) + '</h3><div style="margin:1rem 0;color:#666;font-size:0.85rem">Loading…</div>';
+  try {
+    var resp = await fetch(API + '/api/project/' + encodeURIComponent(projectId) + '/evidence');
+    var list = await resp.json();
+    var rows = (list || []).map(function(e) {
+      var cols = (e.columns || []).map(function(c) { return c.name + ' (' + c.type + ')'; }).join(', ');
+      return '<tr><td title="' + escAttr(cols) + '"><b>' + esc(e.name) + '</b></td><td>' + esc(e.kind) + '</td>'
+        + '<td>' + e.row_count + '</td>'
+        + '<td><button class="btn btn-danger" style="padding:0.15rem 0.5rem;font-size:0.72rem" onclick="deleteEvidence(\'' + esc(projectId) + '\',\'' + esc(e.name) + '\')">Delete</button></td></tr>';
+    }).join('');
+    var html = '<h3>Evidence — ' + esc(projectId) + '</h3>'
+      + '<p style="color:#666;font-size:0.8rem;margin:0.25rem 0 0.75rem">Per-gene data (PPI scores, expression, or any other numeric/categorical table keyed by gene symbol). Attached tables render as a track under the gene track in the locus viewer and can be tested for locus-based enrichment.</p>'
+      + (message ? '<div style="color:' + (message.ok ? '#059669' : '#dc2626') + ';font-size:0.8rem;margin-bottom:0.5rem">' + esc(message.text) + '</div>' : '')
+      + '<table style="width:100%;font-size:0.82rem;margin-bottom:1rem"><thead><tr><th style="text-align:left">Name</th><th>Kind</th><th># genes</th><th></th></tr></thead><tbody>'
+      + (rows || '<tr><td colspan="4" style="color:#94a3b8;padding:0.5rem 0">No evidence tables attached yet.</td></tr>')
+      + '</tbody></table>'
+      + '<div style="border-top:1px solid #e5e7eb;padding-top:0.75rem">'
+      + '<div style="font-weight:600;font-size:0.85rem;margin-bottom:0.5rem">Upload new evidence table (CSV or TSV, header row required)</div>'
+      + '<div style="display:flex;flex-direction:column;gap:0.5rem">'
+      + '<input type="file" id="evidence-file" accept=".csv,.tsv,.txt">'
+      + '<div style="display:flex;gap:0.5rem">'
+      + '<select id="evidence-kind" style="flex:1;padding:0.35rem"><option value="ppi">PPI</option><option value="expression">Expression</option><option value="other">Other</option></select>'
+      + '<input id="evidence-gene-col" type="text" placeholder="Gene-symbol column (if not auto-detected)" style="flex:1;padding:0.35rem">'
+      + '</div>'
+      + '<input id="evidence-name" type="text" placeholder="Display name (optional, defaults to file name)" style="padding:0.35rem">'
+      + '<div style="display:flex;justify-content:flex-end;gap:0.5rem">'
+      + '<button class="btn btn-secondary" onclick="document.getElementById(\'evidence-overlay\').classList.remove(\'open\')">Close</button>'
+      + '<button class="btn btn-primary" onclick="submitEvidenceUpload(\'' + esc(projectId) + '\')">Upload</button>'
+      + '</div></div></div>';
+    box.innerHTML = html;
+  } catch (e) {
+    box.innerHTML = '<h3>Evidence</h3><div style="color:#dc2626;margin:1rem 0;font-size:0.85rem">' + esc(e.message) + '</div>';
+  }
+}
+
+async function submitEvidenceUpload(projectId) {
+  var fileInput = document.getElementById('evidence-file');
+  var file = fileInput && fileInput.files[0];
+  if (!file) { alert('Choose a file first.'); return; }
+  var kind = document.getElementById('evidence-kind').value;
+  var geneCol = document.getElementById('evidence-gene-col').value.trim();
+  var name = document.getElementById('evidence-name').value.trim() || file.name.replace(/\.[^.]+$/, '');
+  try {
+    var text = await file.text();
+    var qs = '?name=' + encodeURIComponent(name) + '&kind=' + encodeURIComponent(kind)
+      + (geneCol ? '&gene_col=' + encodeURIComponent(geneCol) : '');
+    var resp = await fetch(API + '/api/project/' + encodeURIComponent(projectId) + '/evidence' + qs, {
+      method: 'POST',
+      headers: {'Content-Type': 'text/plain; charset=utf-8'},
+      body: text
+    });
+    var d = await resp.json();
+    if (!resp.ok) {
+      await renderEvidenceBox(projectId, {ok:false, text: d.error || 'Upload failed'});
+      return;
+    }
+    await renderEvidenceBox(projectId, {ok:true, text: 'Uploaded "' + name + '" (' + d.row_count + ' genes).'});
+  } catch (e) {
+    await renderEvidenceBox(projectId, {ok:false, text: e.message});
+  }
+}
+
+async function deleteEvidence(projectId, name) {
+  if (!confirm('Delete evidence table "' + name + '"?')) return;
+  try {
+    await fetch(API + '/api/project/' + encodeURIComponent(projectId) + '/evidence/' + encodeURIComponent(name), { method: 'DELETE' });
+    await renderEvidenceBox(projectId);
+  } catch (e) {
+    alert('Failed to delete: ' + e.message);
+  }
+}
+
 async function loadLocusMatrixJobs() {
   var tbody = document.getElementById('locus-matrix-tbody');
   var empty = document.getElementById('locus-matrix-empty');
@@ -1909,7 +2214,7 @@ async function loadLocusMatrixJobs() {
         ? '<span class="badge badge-error" title="' + escAttr(j.error || '') + '">Error</span>'
         : '<span class="badge badge-proc">Running…</span>';
       var actions = (j.status === 'done'
-        ? '<a class="btn btn-secondary" href="locus_matrix.html?job=' + encodeURIComponent(j.job_id) + '" target="_blank">View</a> '
+        ? '<a class="btn btn-secondary" href="gene_constellation.html?job=' + encodeURIComponent(j.job_id) + '" target="_blank">View</a> '
           + '<a class="btn btn-secondary" href="' + API + '/api/locus-matrix-export?job=' + encodeURIComponent(j.job_id) + '">Export</a> '
         : '')
         + '<button class="btn btn-danger" style="padding:0.2rem 0.6rem;font-size:0.75rem" onclick="deleteLocusMatrixJob(\'' + esc(j.job_id) + '\')">Delete</button>';

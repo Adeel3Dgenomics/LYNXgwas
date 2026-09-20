@@ -21,6 +21,12 @@ def copy_classes() -> None:
     reset(dest)
     src = ROOT / "bin"
     for item in src.rglob("*.class"):
+        # bin/ also holds this project's standalone tests/*Test.class (compiled there by
+        # run_tests.bat, since there's no separate build-tool output directory) — those have no
+        # business in the shipped runtime bundle, so skip anything named "*Test.class" or nested
+        # under a class named "*Test$..." (its inner classes).
+        if item.stem.split("$")[0].endswith("Test"):
+            continue
         rel = item.relative_to(src)
         target = dest / rel
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -39,6 +45,7 @@ def copy_web() -> None:
     reset(dest)
     shutil.copy2(ROOT / "index.html", dest / "index.html")
     shutil.copy2(ROOT / "viewer.html", dest / "viewer.html")
+    shutil.copy2(ROOT / "gene_constellation.html", dest / "gene_constellation.html")
     # README-only images (screenshots) don't belong in the runtime app bundle
     shutil.copytree(ROOT / "assets", dest / "assets", ignore=shutil.ignore_patterns("screenshots"))
     # index.html/viewer.html reference the logo/favicon at this exact relative path

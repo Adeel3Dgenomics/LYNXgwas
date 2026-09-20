@@ -107,10 +107,33 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   background:rgba(255,255,255,0.1);color:#e0e7ff;font-size:10px;font-weight:600;cursor:pointer}
 .lh-op-btn:hover{background:rgba(255,255,255,0.25);color:#fff}
 .lh-genes{flex:1;font-size:11px;color:#c4b5fd}
+.lh-l2g{color:#67e8f9;font-weight:600}
+.lh-l2g .lh-l2g-score{color:#a5f3fc;font-weight:400}
+.lh-enh-toggle{color:#a5f3fc;font-weight:400;font-style:italic;cursor:pointer;margin-left:4px;text-decoration:underline dotted}
+.lh-enh-toggle:hover{color:#fff}
 .lh-top{font-size:11px;text-align:right;white-space:nowrap}
 .lh-top strong{color:#fbbf24}
 .warning-banner{background:#fffbeb;color:#92400e;padding:4px 14px;
   font-size:11px;border-bottom:1px solid #fde68a}
+.novelty-badge{position:relative;display:inline-block;padding:2px 9px;border-radius:10px;
+  font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;
+  white-space:nowrap;cursor:default}
+.novelty-badge.novel{background:#059669;color:#fff}
+.novelty-badge.known-same{background:#dc2626;color:#fff;cursor:pointer}
+.novelty-badge.known-other{background:#2563eb;color:#fff;cursor:pointer}
+.novelty-badge.known-unspecified{background:#d97706;color:#fff;cursor:pointer}
+.novelty-badge.hidden{display:none}
+.novelty-tooltip{display:none;position:absolute;top:calc(100% + 6px);left:0;z-index:20;
+  min-width:240px;max-width:360px;background:#1e293b;color:#e2e8f0;border-radius:8px;
+  padding:8px 10px;font-size:11px;font-weight:400;text-transform:none;letter-spacing:normal;
+  white-space:normal;box-shadow:0 4px 16px rgba(0,0,0,.35)}
+.novelty-badge:hover .novelty-tooltip{display:block}
+.novelty-tooltip .nt-row{padding:3px 0;border-top:1px solid rgba(255,255,255,0.08)}
+.novelty-tooltip .nt-row:first-child{border-top:none}
+.novelty-tooltip .nt-trait{font-weight:600;color:#fff;display:block}
+.novelty-tooltip a{color:#93c5fd;text-decoration:none}
+.novelty-tooltip a:hover{text-decoration:underline}
+.novelty-tooltip .nt-more{color:#94a3b8;padding-top:4px}
 .empty-msg{padding:40px;text-align:center;color:#94a3b8;font-style:italic}
 .plot-loading{padding:32px;text-align:center;color:#94a3b8;font-size:12px}
 
@@ -515,6 +538,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   <button id="export-excel-btn" onclick="exportLocusExcel()" style="padding:5px 14px;background:#065f46;color:#fff;border:none;border-radius:14px;font-size:12px;cursor:pointer;margin-left:6px">Export Excel</button>
   <button id="reorder-loci-btn" onclick="reorderLoci()" title="Renumber loci to match genomic (chr:pos) order"
     style="padding:5px 14px;background:#374151;color:#fff;border:none;border-radius:14px;font-size:12px;cursor:pointer;margin-left:6px">Reorder Loci</button>
+  <a id="catalog-report-btn" href="#" title="Download a TSV of every locus's known/novel verdict and overlapping GWAS Catalog associations (trait, gene, p-value, study, PMID, URL)"
+    style="padding:5px 14px;background:#4338ca;color:#fff;border:none;border-radius:14px;font-size:12px;cursor:pointer;margin-left:6px;text-decoration:none;display:inline-block">Export Catalog Report</a>
 </div>
 
 <!-- Sidebar rail (visible when sidebar collapsed) -->
@@ -585,6 +610,12 @@ const OV_H      = 72;
 const OV_BINS   = 300;
 const LDT_CELL_PX_DEFAULT = 6;   // default triangle cell size in px
 const LDT_AXIS_H          = 44;  // height of x-axis below triangle
+const EVID_ROW            = 20;  // evidence-track row height (per evidence column) in px
+
+// Evidence tracks — fetched once per page load (see loadEvidenceTracks(), called from init()
+// before the first renderViewport), then reused across every locus panel / zoom redraw rather
+// than refetched per locus. Each entry: {name, kind, geneCol, columns:[{name,type}], rows:{GENE:{col:val}}}.
+let EVIDENCE_TRACKS = [];
 
 // LD color scheme per spec
 function ldColor(r2) {
@@ -716,6 +747,34 @@ function loadScript(src) {
   });
 }
 
+// Loads every evidence table attached to this project (Feature A). Fully backward-compatible:
+// if the project has none, EVIDENCE_TRACKS stays empty and no per-locus rendering path does
+// anything extra. Fetched once here (called from init(), before the first render) rather than
+// per-locus/per-zoom, per the "cache it" requirement.
+async function loadEvidenceTracks() {
+  EVIDENCE_TRACKS = [];
+  if (!PROJECT_API) return;
+  try {
+    const listResp = await fetchWithTimeout(`${PROJECT_API}/evidence`, 4000);
+    if (!listResp.ok) return;
+    const list = await listResp.json();
+    for (const meta of (list || [])) {
+      try {
+        const dataResp = await fetchWithTimeout(`${PROJECT_API}/evidence/${encodeURIComponent(meta.name)}`, 6000);
+        if (!dataResp.ok) continue;
+        const rows = await dataResp.json();
+        EVIDENCE_TRACKS.push({
+          name: meta.name, kind: meta.kind, geneCol: meta.gene_col,
+          columns: meta.columns || [], rows: rows || {}
+        });
+      } catch (e) { console.warn('[Evidence] failed to load "' + meta.name + '":', e.message); }
+    }
+  } catch (e) {
+    console.warn('[Evidence] failed to load evidence list:', e.message);
+    EVIDENCE_TRACKS = [];
+  }
+}
+
 async function loadManifest() {
   // Try HTTP server
   try {
@@ -822,6 +881,9 @@ async function init() {
     return;
   }
 
+  const catalogReportBtn = document.getElementById('catalog-report-btn');
+  if (catalogReportBtn) catalogReportBtn.href = PROJECT_API + '/catalog-report';
+
   let manifestOk = false;
   try { manifest = await loadManifest(); manifestOk = true; } catch(e) {}
 
@@ -871,6 +933,8 @@ async function init() {
     document.getElementById('nav-counter').textContent = 'Error';
     return;
   }
+
+  await loadEvidenceTracks();
 
   rebuildLociOrder();
   document.getElementById('cfg-total').textContent = lociOrder.length;
@@ -969,6 +1033,7 @@ function makePanelShell(entry) {
   d.innerHTML = `
     <div class="locus-header">
       <div class="lh-title">${entry.locus_name}  —  Chr${entry.chr}:${fmtN(entry.start)}–${fmtN(entry.end)}</div>
+      <span class="novelty-badge hidden" id="novelty-badge-${entry.index}"></span>
       <div class="lh-ops">
         <button class="lh-op-btn lh-analyze-btn" data-idx="${entry.index}" title="Run analysis on this locus" style="border-color:rgba(34,197,94,0.5);color:#86efac">Analyze</button>
         <button class="lh-op-btn lh-delete-btn" data-idx="${entry.index}" title="Delete this locus" style="border-color:rgba(239,68,68,0.5);color:#fca5a5">Delete</button>
@@ -992,18 +1057,188 @@ function makePanelShell(entry) {
   return d;
 }
 
+function noveltyRefHref(h) {
+  if (h.pubmed_id) return 'https://pubmed.ncbi.nlm.nih.gov/' + encodeURIComponent(h.pubmed_id) + '/';
+  if (h.link) return /^https?:\/\//i.test(h.link) ? h.link : 'https://' + h.link;
+  return null;
+}
+
+async function loadNoveltyBadge(locusIndex, panelEl) {
+  const badge = panelEl.querySelector('#novelty-badge-' + locusIndex);
+  if (!badge || !PROJECT_API) return;
+  try {
+    const r = await fetch(PROJECT_API + '/locus/' + locusIndex + '/novelty');
+    if (!r.ok) return;
+    const j = await r.json();
+    if (!j.ok || !j.verdict) return;
+    const isNovel = j.verdict === 'novel';
+    const VERDICT_LABEL = {
+      novel: 'Novel',
+      known_same_trait: 'Known (same trait)',
+      known_other_trait: 'Known (other trait)',
+      known_unspecified: 'Known'
+    };
+    const verdictClass = {
+      novel: 'novel', known_same_trait: 'known-same',
+      known_other_trait: 'known-other', known_unspecified: 'known-unspecified'
+    }[j.verdict] || 'known-unspecified';
+    badge.className = 'novelty-badge ' + verdictClass;
+    badge.textContent = VERDICT_LABEL[j.verdict] || j.verdict;
+
+    if (isNovel || !j.hits || j.hits.length === 0) return; // nothing to reference for a novel locus
+    const totalCount = j.total_count != null ? j.total_count : j.hits.length;
+
+    // Hover: quick peek at the first few hits, plus what disease/trait keyword (if any) was matched against.
+    const shown = j.hits.slice(0, 5);
+    const rowHtml = h => {
+      const href = noveltyRefHref(h);
+      const ref = href ? `<a href="${href}" target="_blank" rel="noopener">${h.pubmed_id ? 'PMID ' + escapeHtml(h.pubmed_id) : 'source'}</a>` : '';
+      return `<div class="nt-row"><span class="nt-trait">${escapeHtml(h.trait || h.mapped_trait || '(trait unavailable)')}</span>${ref}</div>`;
+    };
+    const tip = document.createElement('div');
+    tip.className = 'novelty-tooltip';
+    const matchNoteHtml = j.trait_used
+      ? `<div class="nt-more" style="padding-bottom:4px">Matched against your project's disease/trait: "${escapeHtml(j.trait_used)}"</div>`
+      : '';
+    tip.innerHTML = matchNoteHtml + shown.map(rowHtml).join('') +
+      (totalCount > shown.length ? `<div class="nt-more">Click for all ${totalCount} references</div>` : '');
+    badge.appendChild(tip);
+
+    // Click: open every reference (trait, gene, p-value, study, PMID/URL) in a new window.
+    badge.addEventListener('click', () => openNoveltyReferencesWindow(locusIndex, j.hits, totalCount));
+  } catch (e) { /* leave badge hidden */ }
+}
+
+function openNoveltyReferencesWindow(locusIndex, hits, totalCount) {
+  const rowHtml = h => {
+    const href = noveltyRefHref(h);
+    const link = href ? `<a href="${href}" target="_blank" rel="noopener">${href}</a>` : '—';
+    return `<tr>
+      <td>${escapeHtml(h.trait || h.mapped_trait || '(trait unavailable)')}</td>
+      <td>${escapeHtml(h.mapped_gene || '—')}</td>
+      <td>${escapeHtml(h.pvalue_display || fmtP(h.pvalue))}</td>
+      <td>${escapeHtml(h.study_accession || '—')}</td>
+      <td>${h.pubmed_id ? escapeHtml(h.pubmed_id) : '—'}</td>
+      <td>${link}</td>
+    </tr>`;
+  };
+  const html = `<!DOCTYPE html><html><head><title>Locus ${locusIndex} — Known associations</title>
+    <meta charset="UTF-8">
+    <style>
+      body{font-family:-apple-system,Segoe UI,sans-serif;margin:24px;color:#1e293b;background:#f8fafc}
+      h1{font-size:16px;margin:0 0 4px}
+      p.sub{color:#64748b;font-size:12px;margin:0 0 16px}
+      table{border-collapse:collapse;width:100%;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.08);border-radius:8px;overflow:hidden}
+      th,td{padding:8px 12px;text-align:left;font-size:12px;border-bottom:1px solid #e2e8f0}
+      th{background:#1e293b;color:#fff;font-weight:600;position:sticky;top:0}
+      tr:hover td{background:#f1f5f9}
+      a{color:#4f46e5;text-decoration:none}
+      a:hover{text-decoration:underline}
+    </style></head>
+    <body>
+      <h1>Locus ${locusIndex} — ${totalCount} known GWAS Catalog association${totalCount === 1 ? '' : 's'}</h1>
+      <p class="sub">${totalCount > hits.length
+        ? `Showing the ${hits.length} most significant of ${totalCount} total — this locus has too many reported associations to list them all.`
+        : `Every previously reported association overlapping this locus's region.`}</p>
+      <table>
+        <thead><tr><th>Trait</th><th>Gene</th><th>P-value</th><th>Study</th><th>PMID</th><th>URL</th></tr></thead>
+        <tbody>${hits.map(rowHtml).join('')}</tbody>
+      </table>
+    </body></html>`;
+  const win = window.open('', '_blank');
+  if (!win) { alert('Pop-up blocked — allow pop-ups for this page to view references.'); return; }
+  win.document.open();
+  win.document.write(html);
+  win.document.close();
+}
+
+async function loadL2GInfo(locusIndex, panelEl) {
+  const genesEl = panelEl.querySelector('.lh-genes');
+  if (!genesEl || !PROJECT_API) return;
+  try {
+    const r = await fetch(PROJECT_API + '/locus/' + locusIndex + '/l2g');
+    if (!r.ok) return;
+    const j = await r.json();
+    if (!j.ok || !j.genes || j.genes.length === 0) return; // no Open Targets data for this locus — say nothing
+
+    const top = j.genes[0];
+    const nearestText = genesEl.dataset.nearestText || '';
+    const l2gHtml = `<span class="lh-l2g" title="Open Targets locus-to-gene prediction, ${j.credible_set_count} prior stud${j.credible_set_count === 1 ? 'y' : 'ies'}">` +
+      `Likely causal: ${escapeHtml(top.gene)} <span class="lh-l2g-score">(${top.score.toFixed(2)})</span></span>`;
+
+    // Enhancer-to-gene evidence for that SAME top gene, if any — a click-through link, not shown
+    // inline, since it's a secondary detail (which tissue the regulatory link is active in) that most
+    // locus views don't need up front, and coverage is patchy enough (real, well-studied loci often
+    // have none) that showing it as an always-visible badge would just create empty-looking noise.
+    const enhMatch = (j.enhancer_genes || []).find(e => e.gene === top.gene);
+    let enhHtml = '';
+    if (enhMatch && enhMatch.evidence.length > 0) {
+      const n = enhMatch.evidence.length;
+      enhHtml = ` <span class="lh-enh-toggle">${n} tissue${n === 1 ? '' : 's'} (enhancer evidence) &#8599;</span>`;
+    }
+
+    genesEl.innerHTML = (nearestText ? escapeHtml(nearestText) + ' &nbsp;·&nbsp; ' : '') + l2gHtml + enhHtml;
+    const toggle = genesEl.querySelector('.lh-enh-toggle');
+    if (toggle) toggle.addEventListener('click', () => openEnhancerEvidenceWindow(locusIndex, enhMatch));
+  } catch (e) { /* say nothing on failure — this is a bonus annotation, not core data */ }
+}
+
+function openEnhancerEvidenceWindow(locusIndex, enhMatch) {
+  const rowHtml = ev => `<tr>
+      <td>${escapeHtml(ev.biosample || '—')}</td>
+      <td>${ev.score.toFixed(3)}</td>
+      <td>${ev.distance_to_tss != null ? fmtN(ev.distance_to_tss) + ' bp' : '—'}</td>
+      <td>${ev.pmid ? `<a href="https://pubmed.ncbi.nlm.nih.gov/${encodeURIComponent(ev.pmid)}/" target="_blank" rel="noopener">${escapeHtml(ev.pmid)}</a>` : '—'}</td>
+    </tr>`;
+  const html = `<!DOCTYPE html><html><head><title>Locus ${locusIndex} — Enhancer-to-gene evidence</title>
+    <meta charset="UTF-8">
+    <style>
+      body{font-family:-apple-system,Segoe UI,sans-serif;margin:24px;color:#1e293b;background:#f8fafc}
+      h1{font-size:16px;margin:0 0 4px}
+      p.sub{color:#64748b;font-size:12px;margin:0 0 16px}
+      table{border-collapse:collapse;width:100%;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.08);border-radius:8px;overflow:hidden}
+      th,td{padding:8px 12px;text-align:left;font-size:12px;border-bottom:1px solid #e2e8f0}
+      th{background:#0e7490;color:#fff;font-weight:600;position:sticky;top:0}
+      tr:hover td{background:#f1f5f9}
+      a{color:#0e7490;text-decoration:none}
+      a:hover{text-decoration:underline}
+    </style></head>
+    <body>
+      <h1>Locus ${locusIndex} — ${escapeHtml(enhMatch.gene)}: ${enhMatch.evidence.length} enhancer-to-gene evidence row${enhMatch.evidence.length === 1 ? '' : 's'}</h1>
+      <p class="sub">ENCODE E2G (ABC-model-based) regulatory evidence linking this gene to enhancer activity, by tissue/cell type.</p>
+      <table>
+        <thead><tr><th>Tissue / cell type</th><th>Score</th><th>Distance to TSS</th><th>PMID</th></tr></thead>
+        <tbody>${enhMatch.evidence.map(rowHtml).join('')}</tbody>
+      </table>
+    </body></html>`;
+  const win = window.open('', '_blank');
+  if (!win) { alert('Pop-up blocked — allow pop-ups for this page to view references.'); return; }
+  win.document.open();
+  win.document.write(html);
+  win.document.close();
+}
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  }[c]));
+}
+
 function fillPanel(data, panelEl) {
   panelEl.querySelector('.plot-loading')?.remove();
 
   // Update header
   const genes = (data.nearest_genes || []).join(', ');
   panelEl.querySelector('.lh-genes').textContent = genes ? `Nearest: ${genes}` : '';
+  panelEl.querySelector('.lh-genes').dataset.nearestText = genes ? `Nearest: ${genes}` : '';
   if (data.top_snp) {
     panelEl.querySelector('.lh-top').innerHTML =
       `Top SNP: <strong>${data.top_snp.id}</strong>&nbsp; p = ${fmtP(data.top_snp.pvalue)}`;
   } else {
     panelEl.querySelector('.lh-top').textContent = 'No SNPs';
   }
+  loadNoveltyBadge(data.locus_index, panelEl);
+  loadL2GInfo(data.locus_index, panelEl);
 
   // Annotation badges + mini-bars in locus header
   if (window.ANNOT && window.ANNOT.config) {
@@ -1134,7 +1369,22 @@ function fillPanel(data, panelEl) {
     const geneH    = nRows > 0 ? nRows * GENE_ROW + 16 : 0;
     const annotH   = (window.ANNOT && window.ANNOT.config && window.ANNOT.showAnnot)
       ? annotTracksHeight(window.ANNOT.config) : 0;
-    svgH = annotH + MARGIN.top + PLOT_H + MARGIN.bottom + geneH + 4;
+
+    // ── Evidence track sizing (Feature A) — one row per non-key evidence column, across every
+    // attached evidence table. Zero rows / zero height when the project has no evidence, so this
+    // is fully backward-compatible for every existing project (no extra height, no extra fetch —
+    // fetching already happened once at page load in loadEvidenceTracks()).
+    const evidenceRowDefs = [];
+    EVIDENCE_TRACKS.forEach(t => (t.columns || []).forEach(c => {
+      if (c.name === t.geneCol) return;
+      evidenceRowDefs.push({ track: t, col: c });
+    }));
+    const evidHasCategorical = evidenceRowDefs.some(rd => rd.col.type !== 'numeric');
+    const evidH = (visGenes.length > 0 && evidenceRowDefs.length > 0)
+      ? evidenceRowDefs.length * EVID_ROW + 20 + (evidHasCategorical ? 16 : 0)
+      : 0;
+
+    svgH = annotH + MARGIN.top + PLOT_H + MARGIN.bottom + geneH + evidH + 4;
 
     const svg = d3.select(plotWrap).append('svg')
       .attr('class', 'main-svg')
@@ -1175,7 +1425,17 @@ function fillPanel(data, panelEl) {
       curY += geneH;
     }
 
-    // Gene track + LD triangle remain below Manhattan
+    // ── Evidence track (Feature A, below the gene track, above the LD triangle) ──
+    const doEvidenceTrack = visGenes.length > 0 && evidenceRowDefs.length > 0;
+    if (doEvidenceTrack) {
+      const gEvid = svg.append('g')
+        .attr('class', 'evidence-group-root')
+        .attr('transform', `translate(0,${curY})`);
+      renderEvidenceTrack(gEvid, visGenes, xScale, evidenceRowDefs);
+      curY += evidH;
+    }
+
+    // Gene track + evidence track + LD triangle remain below Manhattan
 
     // ── Scroll-wheel zoom ──
     const xBase = d3.scaleLinear().domain([data.padded_start, data.padded_end]).range(xRange);
@@ -1186,7 +1446,8 @@ function fillPanel(data, panelEl) {
         xAxisG.call(d3.axisBottom(xScale).ticks(8).tickFormat(d => fmtBp(d)));
         xAxisG.select('.domain').remove();
         redrawOnZoom(svg, data, xScale, yScale, geneRows, visGenes,
-          visGenes.length > 0 && showGenes, hasLdData && showLd);
+          visGenes.length > 0 && showGenes, hasLdData && showLd,
+          evidenceRowDefs, doEvidenceTrack);
         if (window.ANNOT && window.ANNOT.showAnnot) redrawAnnotationTracks(svg, data, xScale);
         if (hasLdTri) {
           const scrollW = plotWrap.querySelector('.ldt-inner-scroll');
@@ -1718,6 +1979,93 @@ function drawIntron(g, x1, x2, y, color, strand) {
     g.append('path')
       .attr('d',`M${ax},${y-3} L${ax+4*dir},${y} L${ax},${y+3}`)
       .attr('fill','none').attr('stroke',color).attr('stroke-width',1).attr('opacity',.6);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Evidence track (Feature A) — one row per attached evidence column, under the gene track.
+// Numeric columns: a color/height-scaled bar per gene (sequential color scale over that
+// column's own min/max across ALL genes with a value, not just those visible in this locus, so
+// the color scale stays stable while panning/zooming). Categorical columns: a colored swatch per
+// category, plus a shared legend line under all rows for the categories in use.
+// ═══════════════════════════════════════════════════════════════
+function renderEvidenceTrack(g, genes, xScale, rowDefs) {
+  g.append('line').attr('x1',MARGIN.left).attr('x2',xScale.range()[1])
+    .attr('y1',0).attr('y2',0).attr('stroke','#e5e7eb').attr('stroke-width',1);
+  g.append('text').attr('x',8).attr('y',12).attr('font-size',9).attr('fill','#94a3b8')
+    .text('Evidence');
+
+  const tip = document.getElementById('tooltip');
+  const legendCats = []; // {label, color} across all categorical rows, for the shared legend line
+
+  rowDefs.forEach((rd, ri) => {
+    const y = 16 + ri * EVID_ROW;
+    const col = rd.col, track = rd.track;
+    const label = track.name + ': ' + col.name;
+    const labelText = label.length > 30 ? label.slice(0, 28) + '…' : label;
+    g.append('text').attr('x',8).attr('y', y + EVID_ROW / 2 + 3).attr('font-size',8.5)
+      .attr('fill','#64748b').text(labelText)
+      .append('title').text(label);
+
+    let colorFn;
+    if (col.type === 'numeric') {
+      const vals = Object.keys(track.rows).map(gn => parseFloat(track.rows[gn][col.name]))
+        .filter(v => isFinite(v));
+      const lo = vals.length ? Math.min(...vals) : 0;
+      const hi = vals.length ? Math.max(...vals) : 1;
+      const scale = d3.scaleLinear().domain([lo, hi === lo ? lo + 1 : hi]).range([0, 1]).clamp(true);
+      colorFn = v => d3.interpolateOrRd(0.12 + 0.78 * scale(v));
+    } else {
+      const cats = [...new Set(Object.keys(track.rows).map(gn => track.rows[gn][col.name])
+        .filter(v => v != null && v !== ''))].sort();
+      const scheme = (d3.schemeTableau10 || d3.schemeCategory10);
+      colorFn = v => {
+        const i = cats.indexOf(v);
+        return i >= 0 ? scheme[i % scheme.length] : '#e5e7eb';
+      };
+      cats.forEach(c => {
+        if (!legendCats.some(lc => lc.label === c && lc.color === colorFn(c))) {
+          legendCats.push({ label: c, color: colorFn(c) });
+        }
+      });
+    }
+
+    genes.forEach(gene => {
+      const geneRow = track.rows[gene.gene_name];
+      if (!geneRow) return;
+      const raw = geneRow[col.name];
+      if (raw === undefined || raw === null || raw === '') return;
+      const val = col.type === 'numeric' ? parseFloat(raw) : raw;
+      if (col.type === 'numeric' && !isFinite(val)) return;
+
+      const gx1 = xScale(gene.start), gx2 = xScale(gene.end);
+      const cx = (gx1 + gx2) / 2;
+      const w = Math.max(8, Math.min(gx2 - gx1, 30));
+      const rect = g.append('rect')
+        .attr('x', cx - w / 2).attr('y', y).attr('width', w).attr('height', EVID_ROW - 4)
+        .attr('rx', 2).attr('fill', colorFn(val)).attr('stroke', '#fff').attr('stroke-width', 0.5);
+      rect.on('mouseover', ev => {
+        tip.querySelector('.tt-id').textContent   = gene.gene_name;
+        tip.querySelector('.tt-pos').textContent  = label;
+        tip.querySelector('.tt-pval').textContent = String(raw);
+        tip.querySelector('.tt-r2').textContent   = '';
+        tip.style.display = 'block'; moveTip(tip, ev);
+      }).on('mousemove', ev => moveTip(tip, ev))
+        .on('mouseout', () => hideTip(tip));
+    });
+  });
+
+  // Shared legend line for every categorical column's categories, under all rows.
+  if (legendCats.length > 0) {
+    const legY = 16 + rowDefs.length * EVID_ROW + 10;
+    let lx = 8;
+    legendCats.forEach(lc => {
+      g.append('rect').attr('x', lx).attr('y', legY - 8).attr('width', 9).attr('height', 9)
+        .attr('rx', 2).attr('fill', lc.color);
+      const t = g.append('text').attr('x', lx + 13).attr('y', legY).attr('font-size', 8)
+        .attr('fill', '#64748b').text(lc.label);
+      lx += 13 + (String(lc.label).length * 5.2) + 10;
+    });
   }
 }
 
@@ -2404,7 +2752,8 @@ function resetConnectors(plotWrap) {
 // ═══════════════════════════════════════════════════════════════
 // Zoom redraw
 // ═══════════════════════════════════════════════════════════════
-function redrawOnZoom(svg, data, newX, yScale, geneRows, visGenes, doGenes, doLd) {
+function redrawOnZoom(svg, data, newX, yScale, geneRows, visGenes, doGenes, doLd,
+                       evidenceRowDefs, doEvidence) {
   const x1 = newX.range()[0], x2 = newX.range()[1];
 
   // SNP circles — x only (y scale unchanged)
@@ -2438,6 +2787,14 @@ function redrawOnZoom(svg, data, newX, yScale, geneRows, visGenes, doGenes, doLd
     const gGene = svg.select('.gene-group-root');
     gGene.selectAll('*').remove();
     renderGeneTrack(gGene, visGenes, geneRows, newX, geneRows.length * GENE_ROW + 16);
+  }
+
+  // Evidence track (Feature A) — clear and redraw with new x-scale, same as the gene track,
+  // so it doesn't visually desync from the rest of the plot on pan/zoom.
+  if (doEvidence) {
+    const gEvid = svg.select('.evidence-group-root');
+    gEvid.selectAll('*').remove();
+    renderEvidenceTrack(gEvid, visGenes, newX, evidenceRowDefs);
   }
 
   // LD bar track now handled by annotation system redraw (above)

@@ -50,7 +50,7 @@ def save_config(workspace: Path, cfg: dict) -> None:
 def ensure_workspace_assets(workspace: Path) -> None:
     workspace.mkdir(parents=True, exist_ok=True)
     web = bundled_path("web")
-    for name in ("index.html", "viewer.html"):
+    for name in ("index.html", "viewer.html", "gene_constellation.html"):
         dest = workspace / name
         if not dest.exists():
             shutil.copy2(web / name, dest)

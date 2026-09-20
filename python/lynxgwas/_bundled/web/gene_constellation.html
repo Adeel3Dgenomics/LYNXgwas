@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gene Constellation — LYNXgwas</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,wght@0,500;0,600;0,700;1,500&family=Work+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap">
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<style>
+  :root{
+    --bg:#F5F6F8;
+    --surface:#FFFFFF;
+    --surface-2:#FBFBFC;
+    --ink:#1B2430;
+    --ink-soft:#5B6472;
+    --ink-faint:#8B93A1;
+    --border:#DDE1E8;
+    --accent:#6B4E9E;
+    --accent-bg:#F1ECF9;
+    --danger:#B23A2E;
+    --shadow: 0 1px 2px rgba(27,36,48,.06), 0 10px 30px rgba(27,36,48,.08);
+    --font-display:'Newsreader', Georgia, 'Times New Roman', serif;
+    --font-body:'Work Sans', -apple-system, Segoe UI, sans-serif;
+    --font-mono:'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+    --canvas-bg-1:#11141c;
+    --canvas-bg-2:#1b2033;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#0F1116; --surface:#171A22; --surface-2:#1B1F29;
+      --ink:#ECEEF2; --ink-soft:#A3ACB9; --ink-faint:#727C8B; --border:#2B303C;
+      --accent:#B79CE6; --accent-bg:rgba(183,156,230,.14);
+      --danger:#E28E7C;
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-body)}
+  header{
+    display:flex; align-items:center; gap:1.1rem; flex-wrap:wrap;
+    padding:1rem 1.6rem; background:var(--surface); border-bottom:1px solid var(--border);
+  }
+  header h1{
+    font-family:var(--font-display); font-weight:600; font-size:1.35rem; margin:0; letter-spacing:-.01em;
+  }
+  header .meta{font-size:.82rem;color:var(--ink-soft)}
+  header .meta b{color:var(--ink); font-family:var(--font-mono); font-weight:600}
+  .btn{
+    display:inline-flex; align-items:center; gap:.35rem; padding:.45rem .95rem; border-radius:8px;
+    border:1px solid var(--border); background:var(--surface); color:var(--ink); text-decoration:none;
+    font-size:.82rem; font-weight:500; cursor:pointer; font-family:var(--font-body);
+  }
+  .btn-primary{background:var(--accent); border-color:var(--accent); color:#fff}
+  .top-actions{margin-left:auto; display:flex; gap:.5rem}
+
+  #wrap{display:flex; gap:0; align-items:flex-start}
+  #stage-outer{
+    flex:1 1 auto; padding:1.6rem; display:flex; justify-content:center;
+  }
+  #stage{
+    position:relative; border-radius:20px; overflow:hidden; box-shadow:var(--shadow);
+    background: radial-gradient(circle at 50% 42%, var(--canvas-bg-2), var(--canvas-bg-1) 72%);
+    border:1px solid var(--border);
+  }
+  #legend-panel{
+    width:250px; flex:none; padding:1.6rem 1.4rem 1.6rem 0; font-size:.78rem; color:var(--ink-soft);
+  }
+  .legend-card{
+    background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:1rem 1.1rem;
+    box-shadow:var(--shadow); margin-bottom:1rem;
+  }
+  .legend-card h3{
+    font-family:var(--font-display); font-weight:600; font-size:.95rem; margin:0 0 .6rem; color:var(--ink);
+  }
+  .legend-row{display:flex; align-items:flex-start; gap:.55rem; margin-bottom:.65rem}
+  .legend-row:last-child{margin-bottom:0}
+  .legend-swatch{flex:none; margin-top:.15rem}
+  .legend-row .txt b{color:var(--ink); display:block; font-size:.78rem; margin-bottom:.1rem}
+  .grad-bar{
+    width:100%; height:10px; border-radius:5px;
+    background:linear-gradient(90deg,#3B4CC0,#F7F7F7,#B40426);
+    margin:.35rem 0 .2rem;
+  }
+  .grad-labels{display:flex; justify-content:space-between; font-size:.68rem; color:var(--ink-faint)}
+  .radius-demo{display:flex; align-items:center; gap:6px}
+  .radius-demo .ring{border-radius:50%; border:2px solid var(--ink-faint)}
+
+  #loading, #error{padding:3rem; text-align:center; color:var(--ink-soft); font-size:.9rem}
+  #error{color:var(--danger); display:none}
+
+  #tooltip{
+    position:fixed; background:rgba(15,17,25,.94); color:#E7EAF0; padding:9px 13px; border-radius:10px;
+    font-size:12px; pointer-events:none; display:none; z-index:300; line-height:1.55;
+    box-shadow:0 8px 24px rgba(0,0,0,.45); font-family:var(--font-body); max-width:260px;
+  }
+  #tooltip .tt-gene{font-family:var(--font-display); font-weight:600; font-size:14px; color:#fff}
+  #tooltip .tt-sub{color:#9AA4B5; font-size:11px; margin-bottom:4px}
+
+  #detail-panel{
+    position:fixed; top:0; right:0; height:100vh; width:360px; max-width:92vw;
+    background:var(--surface); border-left:1px solid var(--border); box-shadow:-8px 0 30px rgba(0,0,0,.15);
+    transform:translateX(100%); transition:transform .22s ease; z-index:250; overflow-y:auto;
+  }
+  #detail-panel.open{transform:translateX(0)}
+  #detail-panel .dp-head{
+    padding:1.1rem 1.2rem .9rem; border-bottom:1px solid var(--border); position:sticky; top:0;
+    background:var(--surface); display:flex; align-items:flex-start; justify-content:space-between; gap:.5rem;
+  }
+  #detail-panel .dp-gene{font-family:var(--font-display); font-weight:700; font-size:1.3rem; color:var(--ink)}
+  #detail-panel .dp-loc{font-size:.78rem; color:var(--ink-soft); font-family:var(--font-mono); margin-top:.15rem}
+  #detail-panel .dp-close{
+    border:none; background:none; cursor:pointer; font-size:1.2rem; color:var(--ink-faint); line-height:1;
+    padding:.2rem .3rem;
+  }
+  #detail-panel .dp-body{padding:1rem 1.2rem 2rem}
+  #detail-panel h4{
+    font-family:var(--font-display); font-weight:600; font-size:.85rem; margin:1.1rem 0 .5rem; color:var(--ink);
+    text-transform:uppercase; letter-spacing:.04em; font-size:.7rem; color:var(--ink-faint);
+  }
+  .dp-stat-row{display:flex; justify-content:space-between; font-size:.82rem; padding:.25rem 0; color:var(--ink)}
+  .dp-stat-row span:last-child{font-family:var(--font-mono); font-weight:600}
+  table.dp-table{width:100%; border-collapse:collapse; font-size:.76rem}
+  table.dp-table th{
+    text-align:left; font-weight:600; color:var(--ink-faint); font-size:.68rem; text-transform:uppercase;
+    letter-spacing:.03em; padding:.3rem .3rem; border-bottom:1px solid var(--border);
+  }
+  table.dp-table td{padding:.32rem .3rem; border-bottom:1px solid var(--border); color:var(--ink)}
+  table.dp-table td.mono, table.dp-table th.mono{font-family:var(--font-mono)}
+  .disease-chip{
+    display:inline-block; padding:.05rem .45rem; border-radius:999px; font-size:.68rem; font-weight:600;
+    background:var(--accent-bg); color:var(--accent);
+  }
+  .anova-box{
+    background:var(--surface-2); border:1px solid var(--border); border-radius:10px; padding:.6rem .75rem;
+    margin-bottom:.5rem; font-size:.78rem;
+  }
+  .anova-box .al{color:var(--ink-soft); font-size:.7rem; text-transform:uppercase; letter-spacing:.03em; margin-bottom:.2rem}
+  .anova-box .av{font-family:var(--font-mono); color:var(--ink)}
+  .anova-none{color:var(--ink-faint); font-size:.76rem; font-style:italic}
+
+  .chr-label{fill:#C9D0DE; font-family:var(--font-mono); font-weight:600; font-size:12px}
+  .center-label{fill:#EDEFF5; font-family:var(--font-display); text-anchor:middle}
+  .center-label .n{font-size:34px; font-weight:700}
+  .center-label .l{font-size:11px; fill:#9AA4B5; font-family:var(--font-body); letter-spacing:.04em; text-transform:uppercase}
+  .gene-node{cursor:pointer}
+  .spoke{stroke:rgba(255,255,255,.06); stroke-width:1}
+</style>
+</head>
+<body>
+<header>
+  <h1>Gene Constellation</h1>
+  <div class="meta" id="hdr-meta">Loading…</div>
+  <div class="top-actions">
+    <a class="btn" id="export-link" href="#">Export Excel (gene-level)</a>
+    <a class="btn" id="export-link-locus" href="#" title="The original locus-level export (one row per locus)">Export Excel (locus-level)</a>
+  </div>
+</header>
+
+<div id="loading">Loading gene constellation…</div>
+<div id="error"></div>
+
+<div id="wrap" style="display:none">
+  <div id="stage-outer">
+    <div id="stage"></div>
+  </div>
+  <div id="legend-panel">
+    <div class="legend-card">
+      <h3>How to read this</h3>
+      <div class="legend-row">
+        <svg class="legend-swatch" width="26" height="26"><circle cx="13" cy="13" r="9" fill="none" stroke="#C9D0DE" stroke-width="1.5" stroke-dasharray="2,2"/><circle cx="13" cy="19" r="3.2" fill="#8B93A1"/></svg>
+        <div class="txt"><b>Radius (inward)</b>Genes replicated across more of the selected datasets sit closer to the center. Genes near the outer ring appear significant in only one dataset.</div>
+      </div>
+      <div class="legend-row">
+        <svg class="legend-swatch" width="26" height="26"><circle cx="8" cy="13" r="3" fill="#8B93A1"/><circle cx="19" cy="13" r="8" fill="#8B93A1"/></svg>
+        <div class="txt"><b>Node size</b>Aggregated significance — sqrt-scaled from &minus;log10(best p) across datasets, so area (not radius) is proportional to significance.</div>
+      </div>
+      <div class="legend-row">
+        <div class="txt" style="width:100%">
+          <b>Node color — direction of effect</b>
+          <div class="grad-bar"></div>
+          <div class="grad-labels"><span>protective</span><span>mixed</span><span>risk</span></div>
+        </div>
+      </div>
+      <div class="legend-row">
+        <svg class="legend-swatch" width="26" height="26">
+          <line x1="3" y1="21" x2="23" y2="5" stroke="#C9D0DE" stroke-width="1"/>
+          <line x1="3" y1="13" x2="23" y2="13" stroke="#C9D0DE" stroke-width="4"/>
+        </svg>
+        <div class="txt"><b>Links — co-significance</b>A line joins two genes for every dataset where <i>both</i> independently reach significance. Thicker = significant together more often. Not a claim of a biological relationship, just how often the two co-occur.</div>
+      </div>
+      <div class="legend-row" id="edge-toggle-row">
+        <label style="display:flex;align-items:center;gap:.4rem;cursor:pointer;font-size:.78rem;color:var(--ink)">
+          <input type="checkbox" id="edge-toggle" checked> Show co-significance links
+        </label>
+      </div>
+    </div>
+    <div class="legend-card">
+      <h3>Chromosomes</h3>
+      <div id="chr-legend" style="display:flex;flex-wrap:wrap;gap:4px"></div>
+    </div>
+    <div class="legend-card" id="stats-card">
+      <h3>Run summary</h3>
+      <div id="run-summary" style="font-size:.78rem;line-height:1.7;color:var(--ink-soft)"></div>
+    </div>
+  </div>
+</div>
+
+<div id="tooltip"></div>
+<div id="detail-panel">
+  <div class="dp-head">
+    <div>
+      <div class="dp-gene" id="dp-gene">—</div>
+      <div class="dp-loc" id="dp-loc">—</div>
+    </div>
+    <button class="dp-close" onclick="closeDetail()">&times;</button>
+  </div>
+  <div class="dp-body" id="dp-body"></div>
+</div>
+
+<script>
+// ────────────────────────────────────────────────────────────────────────
+// GRCh38 chromosome lengths (bp), same table/order as GenomeSkyline.java on
+// the backend (1-22, X — Y/MT excluded, matching this app's existing
+// chromosome-handling convention elsewhere, e.g. MultiLocusScanner).
+// ────────────────────────────────────────────────────────────────────────
+var CHR_ORDER = ["1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19","20","21","22","X"];
+var CHR_LENGTHS = [
+  248956422,242193529,198295559,190214555,181538259,
+  170805979,159345973,145138636,138394717,133797422,
+  135086622,133275309,114364328,107043718,101991189,
+   90338345, 83257441, 80373285, 58617616, 64444167,
+   46709983, 50818468,156040895
+];
+var CHR_OFFSETS = [];
+(function() { var c = 0; CHR_LENGTHS.forEach(function(l) { CHR_OFFSETS.push(c); c += l; }); })();
+var GENOME_LENGTH = CHR_OFFSETS[CHR_OFFSETS.length - 1] + CHR_LENGTHS[CHR_LENGTHS.length - 1];
+
+function chrIndex(chr) {
+  var c = String(chr || '').replace(/^chr/i, '').toUpperCase();
+  return CHR_ORDER.indexOf(c);
+}
+
+// 23-color categorical palette, evenly spaced around the HSL wheel so
+// adjacent chromosomes are always visually distinguishable (verified via
+// screenshot, not just by construction).
+var CHR_PALETTE = CHR_ORDER.map(function(c, i) {
+  var hue = (i * (360 / CHR_ORDER.length)) % 360;
+  return d3.hsl(hue, 0.62, 0.56).formatHsl();
+});
+
+var params = new URLSearchParams(location.search);
+var jobId = params.get('job');
+document.getElementById('export-link').href = '/api/gene-constellation-export?job=' + encodeURIComponent(jobId || '');
+document.getElementById('export-link-locus').href = '/api/locus-matrix-export?job=' + encodeURIComponent(jobId || '');
+
+var W = 860, H = 860, CX = W / 2, CY = H / 2;
+var RING_OUTER = 372, RING_INNER = 350;
+var NODE_R_MAX = RING_INNER - 16;   // radius (px) for a gene significant in 0 datasets — hugs the ring
+var NODE_R_MIN = 90;                // radius (px) floor — never collides with the center label
+
+function angleOf(chr, pos) {
+  var idx = chrIndex(chr);
+  if (idx < 0) return null;
+  var cum = CHR_OFFSETS[idx] + Math.max(0, pos);
+  return -Math.PI / 2 + (cum / GENOME_LENGTH) * 2 * Math.PI; // start at 12 o'clock, clockwise
+}
+
+function fmtP(p) {
+  if (p === null || p === undefined || isNaN(p)) return '—';
+  if (p === 0) return '0';
+  return p.toExponential(2);
+}
+function fmtNum(v, d) {
+  if (v === null || v === undefined || isNaN(v)) return '—';
+  return Number(v).toFixed(d === undefined ? 2 : d);
+}
+function esc(s) {
+  return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+async function load() {
+  if (!jobId) return showError('No job id in URL (?job=...)');
+  try {
+    var resp = await fetch('/api/gene-constellation?job=' + encodeURIComponent(jobId));
+    var data = await resp.json();
+    if (!resp.ok || data.error) throw new Error(data.error || 'Failed to load result');
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('wrap').style.display = 'flex';
+    render(data);
+  } catch (e) {
+    showError('Error: ' + e.message);
+  }
+}
+function showError(msg) {
+  document.getElementById('loading').style.display = 'none';
+  var el = document.getElementById('error');
+  el.style.display = 'block';
+  el.textContent = msg;
+}
+
+function render(data) {
+  var nDatasets = data.datasets.length;
+  var genes = data.genes.filter(function(g) { return chrIndex(g.chr) >= 0; });
+
+  document.getElementById('hdr-meta').innerHTML =
+    '<b>' + nDatasets + '</b> datasets &nbsp;·&nbsp; <b>' + genes.length + '</b> genes plotted' +
+    (data.unassigned_loci_count ? ' &nbsp;·&nbsp; <b>' + data.unassigned_loci_count + '</b> loci with no nearest gene (excluded)' : '') +
+    ' &nbsp;·&nbsp; threshold p&le;' + data.threshold +
+    ((data.edges || []).length ? ' &nbsp;·&nbsp; <b>' + data.edges.length + '</b> co-significance links' : '');
+
+  document.getElementById('run-summary').innerHTML =
+    '<div>Run: <b style="color:var(--ink);font-family:var(--font-mono)">' + esc(data.name) + '</b></div>' +
+    '<div>Ref panel: ' + esc(data.ref_panel_label) + '</div>' +
+    '<div>Datasets: ' + data.datasets.map(function(d){return esc(d.name);}).join(', ') + '</div>';
+
+  document.getElementById('chr-legend').innerHTML = CHR_ORDER.map(function(c, i) {
+    return '<span style="display:inline-flex;align-items:center;gap:3px;font-size:.68rem;color:var(--ink-soft)">' +
+      '<span style="width:9px;height:9px;border-radius:2px;background:' + CHR_PALETTE[i] + ';display:inline-block"></span>chr' + c + '</span>';
+  }).join('');
+
+  var svg = d3.select('#stage').html('').append('svg')
+    .attr('width', W).attr('height', H).attr('viewBox', '0 0 ' + W + ' ' + H);
+
+  var defs = svg.append('defs');
+
+  // Soft glow filter reused by every gene node (colored per-node via feFlood would be overkill;
+  // a neutral blur "halo" beneath the node reads as a glow against the dark canvas).
+  var glow = defs.append('filter').attr('id', 'glow').attr('x', '-100%').attr('y', '-100%').attr('width', '300%').attr('height', '300%');
+  glow.append('feGaussianBlur').attr('stdDeviation', 3.2).attr('result', 'blur');
+  var glowMerge = glow.append('feMerge');
+  glowMerge.append('feMergeNode').attr('in', 'blur');
+  glowMerge.append('feMergeNode').attr('in', 'SourceGraphic');
+
+  var ringShadow = defs.append('filter').attr('id', 'ringShadow').attr('x','-20%').attr('y','-20%').attr('width','140%').attr('height','140%');
+  ringShadow.append('feDropShadow').attr('dx',0).attr('dy',0).attr('stdDeviation',6).attr('flood-color','#000').attr('flood-opacity',0.45);
+
+  var g = svg.append('g').attr('transform', 'translate(' + CX + ',' + CY + ')');
+
+  // ── Chromosome ring: 23 arcs with a subtle radial gradient per arc for a glassy look ──
+  var arcGen = d3.arc().innerRadius(RING_INNER).outerRadius(RING_OUTER);
+  var chrAngles = [];
+  CHR_ORDER.forEach(function(c, i) {
+    var a0 = (CHR_OFFSETS[i] / GENOME_LENGTH) * 2 * Math.PI - Math.PI / 2;
+    var a1 = ((CHR_OFFSETS[i] + CHR_LENGTHS[i]) / GENOME_LENGTH) * 2 * Math.PI - Math.PI / 2;
+    chrAngles.push({ chr: c, a0: a0, a1: a1, color: CHR_PALETTE[i] });
+
+    var gradId = 'chrgrad' + i;
+    var grad = defs.append('linearGradient').attr('id', gradId).attr('gradientUnits', 'userSpaceOnUse')
+      .attr('x1', RING_INNER * Math.cos((a0 + a1) / 2)).attr('y1', RING_INNER * Math.sin((a0 + a1) / 2))
+      .attr('x2', RING_OUTER * Math.cos((a0 + a1) / 2)).attr('y2', RING_OUTER * Math.sin((a0 + a1) / 2));
+    grad.append('stop').attr('offset', '0%').attr('stop-color', d3.color(CHR_PALETTE[i]).brighter(0.3));
+    grad.append('stop').attr('offset', '100%').attr('stop-color', d3.color(CHR_PALETTE[i]).darker(0.6));
+
+    g.append('path')
+      .attr('d', arcGen({ startAngle: a0 + 0.01, endAngle: a1 - 0.01 }))
+      .attr('fill', 'url(#' + gradId + ')')
+      .attr('filter', 'url(#ringShadow)')
+      .on('mousemove', function(ev) { showTip(ev, '<div class="tt-gene">chr' + c + '</div><div class="tt-sub">' + CHR_LENGTHS[i].toLocaleString() + ' bp</div>'); })
+      .on('mouseleave', hideTip);
+
+    // faint spoke from ring inner edge toward the center at each chromosome boundary
+    g.append('line')
+      .attr('class', 'spoke')
+      .attr('x1', RING_INNER * Math.cos(a0)).attr('y1', RING_INNER * Math.sin(a0))
+      .attr('x2', NODE_R_MIN * 0.5 * Math.cos(a0)).attr('y2', NODE_R_MIN * 0.5 * Math.sin(a0));
+
+    // chromosome label just outside the ring, flipped upright on the bottom half
+    var mid = (a0 + a1) / 2;
+    var labelR = RING_OUTER + 16;
+    var flip = mid > Math.PI / 2 && mid < 3 * Math.PI / 2 ? 180 : 0;
+    var deg = mid * 180 / Math.PI;
+    g.append('text')
+      .attr('class', 'chr-label')
+      .attr('transform',
+        'translate(' + (labelR * Math.cos(mid)) + ',' + (labelR * Math.sin(mid)) + ') rotate(' + (deg + 90 + flip) + ')')
+      .attr('text-anchor', 'middle')
+      .text(c);
+  });
+
+  // ── Center summary badge ──
+  var center = g.append('g').attr('class', 'center-label');
+  center.append('text').attr('class', 'n').attr('y', -4).attr('text-anchor', 'middle').text(genes.length);
+  center.append('text').attr('class', 'l').attr('y', 16).attr('text-anchor', 'middle').text('genes');
+
+  // ── Gene nodes ──
+  var maxNegLogP = d3.max(genes, function(g) { return isFinite(g.agg_neglog10_p) ? g.agg_neglog10_p : null; }) || 1;
+  var sizeScale = d3.scaleSqrt().domain([0, maxNegLogP]).range([3, 15]).clamp(true);
+  // Radius (distance pulled in from the ring) is directly proportional to how many of the
+  // selected datasets carry this gene as a significant locus: radius = NODE_R_MAX - k * nSig,
+  // clamped to [NODE_R_MIN, NODE_R_MAX], where k = (NODE_R_MAX - NODE_R_MIN) / nDatasets so a
+  // gene significant in *every* dataset lands exactly at the innermost radius.
+  var k = (NODE_R_MAX - NODE_R_MIN) / Math.max(1, nDatasets);
+  function radiusOf(gGene) {
+    var r = NODE_R_MAX - k * gGene.n_datasets_significant;
+    return Math.max(NODE_R_MIN, Math.min(NODE_R_MAX, r));
+  }
+  function colorOf(gGene) {
+    if (isNaN(gGene.direction_fraction_risk)) return '#8B93A1';
+    return d3.interpolateRdBu(1 - gGene.direction_fraction_risk); // 0=protective(blue) 1=risk(red)
+  }
+
+  var placed = genes.map(function(gg) {
+    var ang = angleOf(gg.chr, gg.pos);
+    if (ang === null) return null;
+    var r = radiusOf(gg);
+    return {
+      g: gg, angle: ang, r: r,
+      x: r * Math.cos(ang), y: r * Math.sin(ang),
+      vis: isFinite(gg.agg_neglog10_p) ? sizeScale(gg.agg_neglog10_p) : sizeScale(0),
+      color: colorOf(gg)
+    };
+  }).filter(Boolean);
+
+  var byGeneName = new Map();
+  placed.forEach(function(p) { byGeneName.set(p.g.gene, p); });
+
+  // ── Co-significance links, drawn first so they sit behind the gene nodes ──
+  var edges = (data.edges || []).map(function(e) {
+    var a = byGeneName.get(e.gene_a), b = byGeneName.get(e.gene_b);
+    if (!a || !b) return null; // one endpoint had no plottable chr/pos — skip rather than guess a position
+    return { a: a, b: b, count: e.count };
+  }).filter(Boolean);
+
+  var edgeGroup = g.append('g').attr('class', 'edge-group');
+  if (edges.length) {
+    var counts = edges.map(function(e) { return e.count; });
+    var minC = d3.min(counts), maxC = d3.max(counts);
+    var widthScale = d3.scaleLinear().domain([minC, maxC]).range([0.4, 3.2]).clamp(true);
+    // Opacity uses sqrt scaling so the handful of genuinely high-count pairs stand out clearly
+    // against a faint background of lower-count ones, rather than every edge reading as similar.
+    var opacityScale = d3.scalePow().exponent(2).domain([minC, maxC]).range([0.05, 0.5]).clamp(true);
+
+    // sorted so high-count (most important) edges draw last, on top of the faint low-count haze
+    var edgesSorted = edges.slice().sort(function(a, b) { return a.count - b.count; });
+
+    edgeGroup.selectAll('.gene-edge').data(edgesSorted).enter().append('path')
+      .attr('class', 'gene-edge')
+      .attr('d', function(e) {
+        // Quadratic Bezier pulled gently toward the center (15% of the way) for a soft Circos-style
+        // arc that hugs the inside of the ring — a straight chord or a strong center-pull both read
+        // as a "hairball" once there are 100+ edges; a gentle arc keeps the ring's own layout legible.
+        var mx = (e.a.x + e.b.x) / 2 * 0.85, my = (e.a.y + e.b.y) / 2 * 0.85;
+        return 'M' + e.a.x + ',' + e.a.y + ' Q' + mx + ',' + my + ' ' + e.b.x + ',' + e.b.y;
+      })
+      .attr('fill', 'none')
+      .attr('stroke', '#E8ECF5')
+      .attr('stroke-width', function(e) { return widthScale(e.count); })
+      .attr('stroke-opacity', function(e) { return opacityScale(e.count); })
+      .attr('stroke-linecap', 'round')
+      .on('mousemove', function(ev, e) {
+        showTip(ev, '<div class="tt-gene">' + esc(e.a.g.gene) + ' — ' + esc(e.b.g.gene) + '</div>' +
+          '<div class="tt-sub">significant together in ' + e.count + ' dataset' + (e.count === 1 ? '' : 's') + '</div>');
+      })
+      .on('mouseleave', hideTip);
+  }
+  document.getElementById('edge-toggle-row').style.display = edges.length ? '' : 'none';
+  var edgeToggle = document.getElementById('edge-toggle');
+  edgeToggle.checked = true;
+  edgeToggle.onchange = function() { edgeGroup.style('display', edgeToggle.checked ? null : 'none'); };
+
+  var nodeG = g.selectAll('.gene-node').data(placed).enter().append('g').attr('class', 'gene-node')
+    .attr('transform', function(d) { return 'translate(' + d.x + ',' + d.y + ')'; });
+
+  nodeG.append('circle')
+    .attr('r', function(d) { return d.vis; })
+    .attr('fill', function(d) { return d.color; })
+    .attr('stroke', function(d) { var idx = chrIndex(d.g.chr); return idx >= 0 ? CHR_PALETTE[idx] : '#fff'; })
+    .attr('stroke-width', 1.1)
+    .attr('stroke-opacity', 0.85)
+    .attr('filter', 'url(#glow)')
+    .on('mousemove', function(ev, d) { showTip(ev, tipHtml(d.g)); })
+    .on('mouseleave', hideTip)
+    .on('click', function(ev, d) { openDetail(d.g); });
+
+  function tipHtml(gg) {
+    return '<div class="tt-gene">' + esc(gg.gene) + '</div>' +
+      '<div class="tt-sub">chr' + esc(gg.chr) + ':' + gg.pos.toLocaleString() + '</div>' +
+      gg.n_datasets_significant + ' / ' + gg.n_datasets_total + ' datasets significant<br>' +
+      'best p &asymp; ' + fmtP(isFinite(gg.agg_neglog10_p) ? Math.pow(10, -gg.agg_neglog10_p) : NaN) +
+      '<br><i style="color:#9AA4B5">click for details</i>';
+  }
+}
+
+function showTip(ev, html) {
+  var tt = document.getElementById('tooltip');
+  tt.innerHTML = html;
+  tt.style.display = 'block';
+  tt.style.left = (ev.clientX + 16) + 'px';
+  tt.style.top = (ev.clientY + 16) + 'px';
+}
+function hideTip() { document.getElementById('tooltip').style.display = 'none'; }
+
+function anovaHtml(a, label) {
+  if (!a) return '<div class="anova-none">' + label + ': not enough groups to compute.</div>';
+  return '<div class="anova-box"><div class="al">' + label + '</div>' +
+    '<div class="av">F(' + a.df_between + ',' + a.df_within + ') = ' + fmtNum(a.f_stat, 2) +
+    ' &nbsp; p = ' + fmtP(a.p_value) + '</div></div>';
+}
+
+function openDetail(gg) {
+  document.getElementById('dp-gene').textContent = gg.gene;
+  document.getElementById('dp-loc').textContent = 'chr' + gg.chr + ':' + gg.pos.toLocaleString();
+
+  var html = '';
+  html += '<div class="dp-stat-row"><span>Replicated in</span><span>' + gg.n_datasets_significant + ' / ' + gg.n_datasets_total + ' datasets</span></div>';
+  html += '<div class="dp-stat-row"><span>Aggregated &minus;log10(p)</span><span>' + fmtNum(gg.agg_neglog10_p, 2) + '</span></div>';
+  html += '<div class="dp-stat-row"><span>Direction (fraction risk)</span><span>' +
+    (isNaN(gg.direction_fraction_risk) ? '—' : fmtNum(gg.direction_fraction_risk * 100, 0) + '% risk') + '</span></div>';
+
+  html += '<h4>Between-disease ANOVA</h4>';
+  html += anovaHtml(gg.between_disease_anova, 'across disease groups');
+
+  html += '<h4>Within-disease ANOVA</h4>';
+  var diseases = Object.keys(gg.within_disease_anova || {});
+  if (!diseases.length) {
+    html += '<div class="anova-none">No disease grouping available.</div>';
+  } else {
+    diseases.forEach(function(d) {
+      html += anovaHtml(gg.within_disease_anova[d], 'within ' + d);
+    });
+  }
+
+  html += '<h4>Per-dataset breakdown</h4>';
+  html += '<table class="dp-table"><thead><tr><th>Dataset</th><th>Disease</th><th class="mono">p</th><th class="mono">&beta; / OR</th></tr></thead><tbody>';
+  (gg.per_dataset || []).slice().sort(function(a, b) { return (a.best_p||1) - (b.best_p||1); }).forEach(function(pd) {
+    var effect = !isNaN(pd.beta) ? fmtNum(pd.beta, 3) : (!isNaN(pd.or) ? fmtNum(pd.or, 3) + 'x' : '—');
+    html += '<tr><td>' + esc(pd.name) + '</td><td><span class="disease-chip">' + esc(pd.disease) + '</span></td>' +
+      '<td class="mono">' + fmtP(pd.best_p) + '</td><td class="mono">' + effect + '</td></tr>';
+  });
+  html += '</tbody></table>';
+
+  document.getElementById('dp-body').innerHTML = html;
+  document.getElementById('detail-panel').classList.add('open');
+}
+function closeDetail() { document.getElementById('detail-panel').classList.remove('open'); }
+
+load();
+</script>
+</body>
+</html>
