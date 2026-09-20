@@ -73,23 +73,30 @@ the storage-saving design target from section 2 (narrowPeak instead of bigWig, o
 tissue instead of per project) up front, before any feature code exists to consume them.
 Citation for the manuscript: Roadmap Epigenomics Consortium et al. (2015), *Nature* 518:317–330.
 
-### 3.1 Backend: regulatory peak ingestion + interval index [ ]
-New ingestion for BED/narrowPeak-format evidence (chrom, start, end, name, score, strand,
-signalValue, pValue, qValue, peak) — a genuinely different shape from the existing gene-symbol-keyed
-evidence tables (3.8 in Phase 2), so this is new code, not a reuse of `EnrichmentAnalyzer`'s existing
-per-gene path. Peaks resolved per-project by the project's disease (derived the same
-best-effort way `GeneConstellationBuilder.diseaseGroupOf` already does) against the shared
-`regulatory_data/<EID>/` location, not re-uploaded per project.
+### 3.1 Backend: regulatory peak ingestion + interval index [x] — done, verified
+`src/analysis/RegulatoryPeakIndex.java`: lazy per-(EID,mark) in-memory interval index over the
+narrowPeak files, same normalizeChr+binary-search convention as `GwasParser`/`MultiLocusScanner`;
+holds the disease→EID and EID→tissue-name tables; handles missing/corrupt files gracefully (logs,
+returns empty rather than throwing). `LocalServer.java` exposes it via
+`GET /api/project/{id}/locus/{n}/regulatory`. Covered by `tests/RegulatoryPeakIndexTest.java`
+(overlap-boundary, missing-file, unknown-EID/mark, corrupt-gzip cases) — confirmed fail-before-fix
+(broke the overlap boundary check `p.end > start` vs `>=`) / pass-after-fix.
 
-### 3.2 Frontend: Option C stacked multi-mark tracks in viewer.html [ ]
-One labeled row per mark (H3K27ac / H3K4me1 / H3K4me3), stacked under the gene track, matching the
-design canvas's Option C mockup, restricted to whatever peaks overlap the current locus's window.
+### 3.2 Frontend: Option C stacked multi-mark tracks in viewer.html [x] — done, verified
+`viewer.html`: one labeled row per mark (H3K27ac / H3K4me1 / H3K4me3), stacked directly under the
+gene track above the evidence track, matching the design canvas's Option C mockup; renders as
+`{marks:{}}` (i.e. nothing) for any project whose disease has no mapped tissue, fully
+backward-compatible with every pre-Phase-3 project. Fetched once per locus load via the new
+`/locus/{n}/regulatory` endpoint with a 4s timeout guard.
 
-### 3.3 Real locus-based regulatory enrichment test [ ]
-For each dataset: of its genome-wide-significant SNPs (foreground) vs. a background SNP set from the
-same GWAS file, what fraction overlaps a peak of each mark, and is that enrichment significant
-(Fisher's exact, reusing `EnrichmentAnalyzer`'s existing exact hypergeometric implementation with a
-new interval-overlap classifier in place of its existing per-gene-value lookup)?
+### 3.3 Real locus-based regulatory enrichment test [x] — done, verified
+`src/analysis/RegulatoryEnrichmentAnalyzer.java`: real interval-overlap Fisher's exact test —
+reuses `EnrichmentAnalyzer.fisherExactTwoSided(a,b,c,d)` directly (confirmed via `grep`, not
+reimplemented), adding only the interval-overlap classification step and an odds ratio with
+Haldane-Anscombe correction for zero cells. Exposed via
+`GET /api/project/{id}/regulatory-enrichment?threshold=5e-8`. Covered by
+`tests/RegulatoryEnrichmentAnalyzerTest.java` — confirmed fail-before-fix (broke the odds-ratio
+formula `a*c/(b*d)` vs. the correct `a*d/(b*c)`) / pass-after-fix.
 
 ### 3.4 Real 30-dataset run [x] — done, verified
 Ran the real `/api/project/{id}/regulatory-enrichment` endpoint against all 30 real, already-fully-
@@ -125,10 +132,22 @@ numbers (not illustrative). Visually confirmed: every bar clears the OR=1 refere
 significant, tells the "consistent across independent diseases" story the real numbers actually
 support — chosen after seeing the numbers, not decided in advance.
 
-### 3.6 Manuscript update [ ]
-New Methods subsection (regulatory data source, tissue mapping table, enrichment test), new Results
-subsection with the real 3.4 numbers, the 3.5 figure, and a Limitations addition for the
-reference-epigenome-as-proxy caveat from section 1.
+### 3.6 Manuscript update [x] — done, verified
+`LYNXgwas-paper/main.tex`: new Methods §2.9 "Regulatory and functional genomics integration"
+(data source, storage-saving rationale, `tab:tissuemap` disease→EID→tissue table, Option C viewer
+description, enrichment-test methodology explicitly noting reuse of `EnrichmentAnalyzer`'s existing
+Fisher's-exact function); new Results §3.4.2 "Regulatory-element enrichment across all six diseases"
+with the real pooled per-disease/overall numbers from 3.4 and the `regulatory_enrichment_6disease.png`
+figure from 3.5; a new Limitations bullet covering the reference-epigenome-as-proxy caveat and the
+pre-stated small-N exclusion threshold; Abstract, Conclusion, and Acknowledgments updated to reference
+the new capability and headline result. `references.bib` gained the Roadmap Epigenomics citation
+(verified via WebSearch: Nature 518(7539):317–330, 2015, DOI 10.1038/nature14248). Full
+`pdflatex`+`bibtex`+`pdflatex`×2 compile cycle run clean (no undefined references/citations); visual
+QA performed by rendering the title/author page, the Methods §2.9 page, both new Results pages
+(Gene Constellation figure + regulatory-enrichment figure), and the Limitations/Conclusion pages to
+PNG and inspecting them directly — all cross-references, the new table, and both figures render
+correctly. Committed as `f848216` in `LYNXgwas-paper` (not pushed — no push instruction given for
+this phase).
 
 ## 4. Hard boundaries (carried over, unchanged)
 
@@ -137,3 +156,16 @@ No push without explicit instruction beyond what's already been authorized; no w
 report independently verified before being trusted; the real production server (currently PID —
 recheck at execution time) is never restarted without asking first, exactly as established in
 Phase 2's search-feature rollout.
+
+## 5. Closing status
+
+All five items in the original scope of request (section 0) are done and independently verified:
+Option C is a real, working feature (not a mockup); the real 30-dataset/6-disease corpus was analyzed
+end-to-end using real downloaded Roadmap Epigenomics data; the enrichment analysis and its headline
+result are written up in the manuscript as concrete evidence of what this capability adds; storage was
+minimized at every layer (narrowPeak not bigWig, one shared copy per tissue not per project, gzipped
+on disk, intermediate per-dataset artifacts deleted after the final summary/figure were extracted); and
+the most-important-result plot is generated and embedded in the manuscript. A clean-room rebuild
+(`rm -rf bin && build.bat`) and the full existing test suite (including both new Phase-3 suites) were
+re-run and confirmed passing immediately before closing this phase. LYNXgwas and LYNXgwas-paper commits
+for this phase are local only — neither repo was pushed, matching every hard boundary above.
