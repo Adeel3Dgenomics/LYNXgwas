@@ -595,6 +595,9 @@ const SERVER    = 'http://localhost:8765';
 // ── Project-aware routing ────────────────────────────────
 const PROJECT_ID = new URLSearchParams(window.location.search).get('project');
 const PROJECT_API = PROJECT_ID ? SERVER + '/api/project/' + encodeURIComponent(PROJECT_ID) : '';
+// Deep-link: ?locus=<manifestIndex> (1-based, matches manifest.json's own "index" field) — set
+// in init() below, once lociOrder is known, to land directly on that locus instead of locus 1.
+const LOCUS_PARAM = new URLSearchParams(window.location.search).get('locus');
 const DATA_DIR  = 'data';
 const VISIBLE   = 1;
 const MARGIN    = {top:10, right:20, bottom:28, left:52};
@@ -939,6 +942,13 @@ async function init() {
   rebuildLociOrder();
   document.getElementById('cfg-total').textContent = lociOrder.length;
   document.getElementById('range-to').value = lociOrder.length;
+
+  // Deep-link: land on the requested locus (by manifest index, 1-based) instead of locus 1.
+  if (LOCUS_PARAM !== null) {
+    const wantIdx = parseInt(LOCUS_PARAM, 10);
+    const pos = lociOrder.indexOf(wantIdx);
+    if (pos >= 0) currentStart = pos;
+  }
 
   setupSearch();
   setupToggles();

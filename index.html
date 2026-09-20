@@ -79,6 +79,49 @@ td.actions button { margin-right: 0.3rem; }
 .badge-stale     { background: #fef3c7; color: #92400e; }
 .badge-proc      { background: #dbeafe; color: #1e40af; }
 .badge-error     { background: #fee2e2; color: #991b1b; }
+.badge-contains  { background: #ede9fe; color: #5b21b6; }
+.badge-nearest   { background: #e0f2fe; color: #075985; }
+
+/* ── Global search (Search button) ─────────────────── */
+.gsearch-field-row { display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: flex-end; margin-bottom: 1rem; }
+.gsearch-field-row .wiz-field { flex: 1; min-width: 140px; margin-bottom: 0; }
+.gsearch-summary {
+  font-size: 0.78rem; color: #64748b; background: #f8fafc; border: 1px solid #e5e7eb;
+  border-radius: 8px; padding: 0.5rem 0.75rem; margin-bottom: 0.75rem; display: flex;
+  justify-content: space-between; align-items: center; gap: 0.75rem; flex-wrap: wrap;
+}
+.gsearch-summary a { color: #0F6E56; font-weight: 600; text-decoration: none; cursor: pointer; }
+.gsearch-summary a:hover { text-decoration: underline; }
+.gsearch-table-wrap {
+  max-height: 55vh; overflow: auto; border: 1px solid #e5e7eb; border-radius: 10px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+}
+table.gsearch-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 0.8rem; }
+table.gsearch-table thead th {
+  position: sticky; top: 0; z-index: 1; text-align: left; padding: 0.55rem 0.7rem;
+  background: #0F6E56; color: #eafff6; font-weight: 600; font-size: 0.68rem;
+  text-transform: uppercase; letter-spacing: 0.4px; white-space: nowrap;
+}
+table.gsearch-table tbody tr { transition: background 0.1s; }
+table.gsearch-table tbody tr:nth-child(even) { background: #fafbfc; }
+table.gsearch-table tbody tr:hover { background: #eefaf5; }
+table.gsearch-table td {
+  padding: 0.5rem 0.7rem; border-bottom: 1px solid #f0f2f4; vertical-align: middle;
+}
+table.gsearch-table td.mono { font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace; font-size: 0.78rem; color: #334155; }
+table.gsearch-table td.pval { font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace; font-weight: 600; color: #b91c1c; }
+table.gsearch-table td .gsearch-gene-cell { display: flex; align-items: center; gap: 0.4rem; }
+table.gsearch-table a.gsearch-open {
+  display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.25rem 0.6rem;
+  background: #0F6E56; color: #fff; border-radius: 6px; font-size: 0.75rem; font-weight: 600;
+  text-decoration: none; white-space: nowrap;
+}
+table.gsearch-table a.gsearch-open:hover { background: #0b5a46; }
+.gsearch-not-compared {
+  margin-top: 0.75rem; font-size: 0.78rem; color: #92400e; background: #fffbeb;
+  border: 1px solid #fde68a; border-radius: 8px; padding: 0.5rem 0.75rem;
+}
+.gsearch-empty { padding: 2rem; text-align: center; color: #888; font-size: 0.85rem; }
 
 /* ── Empty state ─────────────────────────────────── */
 .empty {
@@ -189,6 +232,9 @@ td.actions button { margin-right: 0.3rem; }
     </button>
     <button class="btn btn-secondary" onclick="openSusiex()">
       SuSiEx
+    </button>
+    <button class="btn btn-secondary" onclick="openGlobalSearch()">
+      Search
     </button>
     <button class="btn btn-secondary" onclick="exportProjectsInfo()">
       Info
@@ -1653,6 +1699,224 @@ async function saveMissingRsid(idx) {
     alert('Failed to save: ' + e.message);
     btn.disabled = false; btn.textContent = prevLabel;
   }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Global search — cross-project gene/SNP/position lookup
+// ═══════════════════════════════════════════════════════════════
+var gsearchState = { type: 'gene', lastSummary: null };
+
+function openGlobalSearch() {
+  var overlay = document.getElementById('gsearch-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'gsearch-overlay';
+    overlay.className = 'wizard-overlay';
+    overlay.innerHTML = '<div class="wizard-box" style="max-width:980px;width:94vw" id="gsearch-box"></div>';
+    overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.classList.remove('open'); });
+    document.body.appendChild(overlay);
+  }
+  renderGlobalSearchForm();
+  overlay.classList.add('open');
+}
+
+function gsearchClose() {
+  var overlay = document.getElementById('gsearch-overlay');
+  if (overlay) overlay.classList.remove('open');
+}
+
+function renderGlobalSearchForm() {
+  var box = document.getElementById('gsearch-box');
+  var type = gsearchState.type;
+  box.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center">'
+    + '<h3>Gene / SNP Lookup</h3>'
+    + '<button class="btn btn-secondary" onclick="gsearchClose()" style="padding:0.3rem 0.7rem">&times;</button>'
+    + '</div>'
+    + '<p style="color:#666;font-size:0.85rem;margin:0.35rem 0 1rem">'
+    + 'Find every project with a significant hit at a gene, SNP, or genomic position — without opening each project one at a time.</p>'
+    + '<div class="gsearch-field-row">'
+    +   '<div class="wiz-field" style="max-width:180px">'
+    +     '<label>Search by</label>'
+    +     '<select id="gs-type" onchange="gsearchTypeChanged()">'
+    +       '<option value="gene"' + (type === 'gene' ? ' selected' : '') + '>Gene name</option>'
+    +       '<option value="snp"' + (type === 'snp' ? ' selected' : '') + '>SNP rsID</option>'
+    +       '<option value="position"' + (type === 'position' ? ' selected' : '') + '>Position</option>'
+    +     '</select>'
+    +   '</div>'
+    +   '<div id="gs-query-fields" style="display:flex;gap:0.75rem;flex:1;flex-wrap:wrap"></div>'
+    +   '<div class="wiz-field" style="max-width:150px">'
+    +     '<label>Significance threshold</label>'
+    +     '<input id="gs-threshold" type="text" value="5e-8">'
+    +   '</div>'
+    +   '<div class="wiz-field" style="max-width:120px;flex:none">'
+    +     '<button class="btn btn-primary" style="width:100%" onclick="runGlobalSearch()">Search</button>'
+    +   '</div>'
+    + '</div>'
+    + '<div class="gsearch-summary" id="gs-summary" style="display:none"></div>'
+    + '<div id="gs-results"></div>';
+  renderGsearchQueryFields();
+
+  // Enter key triggers search from any query field
+  box.querySelectorAll('#gs-query-fields input, #gs-threshold').forEach(function(el) {
+    el.addEventListener('keydown', function(e) { if (e.key === 'Enter') runGlobalSearch(); });
+  });
+
+  if (gsearchState.lastSummary) renderGsearchSummary(gsearchState.lastSummary);
+  else fetchGsearchSummaryQuietly();
+}
+
+function gsearchTypeChanged() {
+  gsearchState.type = document.getElementById('gs-type').value;
+  renderGsearchQueryFields();
+}
+
+function renderGsearchQueryFields() {
+  var el = document.getElementById('gs-query-fields');
+  var type = gsearchState.type;
+  if (type === 'position') {
+    el.innerHTML =
+        '<div class="wiz-field" style="max-width:110px"><label>Chr</label><input id="gs-chr" type="text" placeholder="e.g. 1"></div>'
+      + '<div class="wiz-field" style="max-width:160px"><label>Position</label><input id="gs-pos" type="text" placeholder="e.g. 8371171"></div>'
+      + '<div class="wiz-field" style="max-width:140px"><label>Build</label>'
+      +   '<select id="gs-build"><option value="GRCh37">GRCh37</option><option value="GRCh38">GRCh38</option></select>'
+      + '</div>';
+  } else {
+    var placeholder = type === 'gene' ? 'e.g. TNFSF4' : 'e.g. rs10399665';
+    el.innerHTML = '<div class="wiz-field" style="flex:1;min-width:200px"><label>' + (type === 'gene' ? 'Gene name' : 'SNP rsID') + '</label>'
+      + '<input id="gs-q" type="text" placeholder="' + placeholder + '"></div>';
+  }
+  var box = document.getElementById('gsearch-box');
+  box.querySelectorAll('#gs-query-fields input').forEach(function(elm) {
+    elm.addEventListener('keydown', function(e) { if (e.key === 'Enter') runGlobalSearch(); });
+  });
+}
+
+async function fetchGsearchSummaryQuietly() {
+  // Silent best-effort peek so the panel shows index stats even before the user searches —
+  // a zero-hit search with type=gene&q= is enough to trigger a lazy build without side effects.
+  try {
+    var resp = await fetch(API + '/api/search?type=gene&q=');
+    var d = await resp.json();
+    if (d.index_summary) { gsearchState.lastSummary = d.index_summary; renderGsearchSummary(d.index_summary); }
+  } catch (e) { /* silent — the form still works without this */ }
+}
+
+function renderGsearchSummary(summary) {
+  var el = document.getElementById('gs-summary');
+  if (!el) return;
+  el.style.display = 'flex';
+  el.innerHTML = '<span>Index: <b>' + summary.project_count + '</b> project(s), <b>' + summary.loci_count + '</b> loci, '
+    + '<b>' + summary.snp_count + '</b> significant SNP(s) at p&le;' + summary.threshold + ' &mdash; built in ' + summary.build_ms + 'ms</span>'
+    + '<a onclick="rebuildGlobalSearchIndex()">Rebuild index</a>';
+}
+
+async function rebuildGlobalSearchIndex() {
+  var el = document.getElementById('gs-summary');
+  if (el) el.innerHTML = '<span>Rebuilding…</span>';
+  try {
+    var thresholdEl = document.getElementById('gs-threshold');
+    var threshold = thresholdEl && thresholdEl.value.trim() ? thresholdEl.value.trim() : '5e-8';
+    var resp = await fetch(API + '/api/search/rebuild-index?threshold=' + encodeURIComponent(threshold), { method: 'POST' });
+    var summary = await resp.json();
+    gsearchState.lastSummary = summary;
+    renderGsearchSummary(summary);
+  } catch (e) {
+    if (el) el.innerHTML = '<span style="color:#dc2626">Rebuild failed: ' + esc(e.message) + '</span>';
+  }
+}
+
+async function runGlobalSearch() {
+  var type = gsearchState.type;
+  var threshold = document.getElementById('gs-threshold').value.trim() || '5e-8';
+  var resultsEl = document.getElementById('gs-results');
+  var params = new URLSearchParams();
+  params.set('type', type);
+  params.set('threshold', threshold);
+
+  if (type === 'position') {
+    var chr = document.getElementById('gs-chr').value.trim();
+    var pos = document.getElementById('gs-pos').value.trim();
+    var build = document.getElementById('gs-build').value;
+    if (!chr || !pos) { resultsEl.innerHTML = '<div class="gsearch-empty">Enter both chromosome and position.</div>'; return; }
+    params.set('chr', chr); params.set('pos', pos); params.set('build', build);
+  } else {
+    var q = document.getElementById('gs-q').value.trim();
+    if (!q) { resultsEl.innerHTML = '<div class="gsearch-empty">Enter a search term.</div>'; return; }
+    params.set('q', q);
+  }
+
+  resultsEl.innerHTML = '<div class="gsearch-empty">Searching…</div>';
+  try {
+    var resp = await fetch(API + '/api/search?' + params.toString());
+    var data = await resp.json();
+    if (!resp.ok || data.error) {
+      resultsEl.innerHTML = '<div class="gsearch-empty" style="color:#dc2626">' + esc(data.error || 'Search failed') + '</div>';
+      return;
+    }
+    if (data.index_summary) { gsearchState.lastSummary = data.index_summary; renderGsearchSummary(data.index_summary); }
+    renderGsearchResults(data);
+  } catch (e) {
+    resultsEl.innerHTML = '<div class="gsearch-empty" style="color:#dc2626">Search failed: ' + esc(e.message) + '</div>';
+  }
+}
+
+function renderGsearchResults(data) {
+  var resultsEl = document.getElementById('gs-results');
+  var hits = data.hits || [];
+  var notCompared = data.not_compared || [];
+
+  var notComparedHtml = '';
+  if (notCompared.length > 0) {
+    notComparedHtml = '<div class="gsearch-not-compared">' + notCompared.length + ' project(s) could not be honestly compared: '
+      + notCompared.map(function(nc) { return esc(nc.project_name) + ' (' + esc(nc.reason) + ')'; }).join(', ')
+      + '</div>';
+  }
+
+  if (hits.length === 0) {
+    resultsEl.innerHTML = '<div class="gsearch-empty">No significant hits found' + (data.q ? ' for &ldquo;' + esc(data.q) + '&rdquo;' : '') + '.</div>' + notComparedHtml;
+    return;
+  }
+
+  var rows = hits.map(function(h) {
+    var geneCell = '&mdash;';
+    if (h.gene_name) {
+      var badge = h.match_type === 'contains' ? '<span class="badge badge-contains" title="SNP position falls inside this gene\'s own boundaries">contains</span>'
+        : h.match_type === 'nearest' ? '<span class="badge badge-nearest" title="No gene in this locus contains the SNP; nearest reported gene shown">nearest</span>' : '';
+      geneCell = '<div class="gsearch-gene-cell"><b>' + esc(h.gene_name) + '</b>' + badge + '</div>';
+    }
+    var effectLabel = h.effect_type ? h.effect_type : 'Effect';
+    var effectVal = (h.effect_value === null || h.effect_value === undefined) ? '&mdash;' : fmtGsearchNum(h.effect_value);
+    var pvalStr = fmtGsearchP(h.pvalue);
+    var openUrl = 'viewer.html?project=' + encodeURIComponent(h.project_id) + '&locus=' + encodeURIComponent(h.locus_index);
+    return '<tr>'
+      + '<td>' + esc(h.project_name) + '</td>'
+      + '<td>' + esc(h.locus_name) + '</td>'
+      + '<td>' + geneCell + '</td>'
+      + '<td class="mono">' + esc(h.snp_id || '&mdash;') + '</td>'
+      + '<td class="mono">' + esc(h.chr) + ':' + h.pos.toLocaleString() + '</td>'
+      + '<td class="pval">' + pvalStr + '</td>'
+      + '<td class="mono" title="' + esc(effectLabel) + '">' + effectVal + '</td>'
+      + '<td><a class="gsearch-open" href="' + openUrl + '" target="_blank" rel="noopener">Open &rarr;</a></td>'
+      + '</tr>';
+  }).join('');
+
+  resultsEl.innerHTML = '<div style="font-size:0.85rem;margin-bottom:0.5rem;color:#475569"><b>' + hits.length + '</b> hit(s)</div>'
+    + '<div class="gsearch-table-wrap"><table class="gsearch-table">'
+    + '<thead><tr><th>Project</th><th>Locus</th><th>Gene</th><th>SNP</th><th>Chr:Pos</th><th>P-value</th><th>Effect</th><th></th></tr></thead>'
+    + '<tbody>' + rows + '</tbody></table></div>'
+    + notComparedHtml;
+}
+
+function fmtGsearchP(p) {
+  if (p === null || p === undefined || isNaN(p)) return 'NA';
+  if (p === 0) return '0';
+  var s = Number(p).toExponential(2);
+  return s.replace(/e([+-])0*(\d)/, 'e$1$2');
+}
+
+function fmtGsearchNum(v) {
+  if (v === null || v === undefined || isNaN(v)) return '&mdash;';
+  return (Math.round(v * 1000) / 1000).toString();
 }
 
 // ═══════════════════════════════════════════════════════════════

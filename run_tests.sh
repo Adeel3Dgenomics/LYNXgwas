@@ -27,7 +27,8 @@ javac -encoding UTF-8 -d bin -cp "bin$LIBCP" \
   tests/ColocAdapterTest.java \
   tests/GwamaAdapterTest.java \
   tests/EnrichmentAnalyzerTest.java \
-  tests/GeneConstellationBuilderTest.java
+  tests/GeneConstellationBuilderTest.java \
+  tests/GlobalSearchIndexTest.java
 
 FAILED=0
 
@@ -94,6 +95,10 @@ java -cp "bin$LIBCP" EnrichmentAnalyzerTest || FAILED=1
 echo
 echo "--- GeneConstellationBuilderTest ---"
 java -cp "bin$LIBCP" GeneConstellationBuilderTest || FAILED=1
+
+echo
+echo "--- GlobalSearchIndexTest ---"
+java -cp "bin$LIBCP" GlobalSearchIndexTest || FAILED=1
 
 echo
 if [ "$FAILED" -eq 0 ]; then

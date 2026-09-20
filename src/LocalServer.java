@@ -230,6 +230,8 @@ public class LocalServer {
         http.createContext("/api/susiex-run",        this::susiexRun);
         http.createContext("/api/susiex-progress",   this::susiexProgress);
         http.createContext("/api/susiex-result",     this::susiexResult);
+        http.createContext("/api/search/rebuild-index", this::searchRebuildIndex);
+        http.createContext("/api/search",            this::globalSearch);
         http.createContext("/pick-folder-native",    this::pickFolder);
 
         // ── Legacy endpoints (kept for backward compatibility) ───────────
@@ -2618,6 +2620,98 @@ public class LocalServer {
         } catch (Exception e) {
             respond(ex, 500, "application/json", ("{\"error\":\"" + escJ(e.getMessage()) + "\"}").getBytes());
         }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    //  CROSS-PROJECT GENE/SNP/POSITION SEARCH
+    // ══════════════════════════════════════════════════════════════════════
+
+    // GET /api/search?type=gene|snp|position&q=<term>&chr=<c>&pos=<p>&build=GRCh37|GRCh38&threshold=<p>
+    private void globalSearch(HttpExchange ex) throws IOException {
+        cors(ex); if (preflight(ex)) return;
+        String type = queryParam(ex, "type");
+        if (type == null || type.isEmpty()) {
+            respond(ex, 400, "application/json", "{\"error\":\"type is required (gene|snp|position)\"}".getBytes());
+            return;
+        }
+        double threshold = GlobalSearchIndex.DEFAULT_THRESHOLD;
+        String thresholdParam = queryParam(ex, "threshold");
+        if (thresholdParam != null && !thresholdParam.isEmpty()) {
+            try { threshold = Double.parseDouble(thresholdParam); } catch (NumberFormatException ignored) {}
+        }
+
+        GlobalSearchIndex idx = GlobalSearchIndex.getOrBuild(new File("projects"), threshold);
+        GlobalSearchIndex.Result result;
+        String q = queryParam(ex, "q");
+
+        switch (type) {
+            case "gene":
+                result = idx.searchGene(q);
+                break;
+            case "snp":
+                result = idx.searchSnp(q);
+                break;
+            case "position": {
+                String chr = queryParam(ex, "chr");
+                String posParam = queryParam(ex, "pos");
+                String build = queryParam(ex, "build");
+                long pos;
+                try {
+                    pos = Long.parseLong(posParam);
+                } catch (Exception e) {
+                    respond(ex, 400, "application/json", "{\"error\":\"pos must be an integer\"}".getBytes());
+                    return;
+                }
+                if (chr == null || chr.isEmpty()) {
+                    respond(ex, 400, "application/json", "{\"error\":\"chr is required for position search\"}".getBytes());
+                    return;
+                }
+                result = idx.searchPosition(chr, pos, build);
+                break;
+            }
+            default:
+                respond(ex, 400, "application/json", ("{\"error\":\"unknown type: " + escJ(type) + "\"}").getBytes());
+                return;
+        }
+
+        StringBuilder j = new StringBuilder();
+        j.append('{');
+        j.append("\"type\":\"").append(escJ(type)).append("\",");
+        j.append("\"q\":\"").append(escJ(q == null ? "" : q)).append("\",");
+        j.append("\"threshold\":").append(threshold).append(',');
+        j.append("\"count\":").append(result.hits.size()).append(',');
+        j.append("\"hits\":[");
+        for (int i = 0; i < result.hits.size(); i++) {
+            if (i > 0) j.append(',');
+            j.append(result.hits.get(i).toJson());
+        }
+        j.append("],");
+        j.append("\"not_compared\":[");
+        for (int i = 0; i < result.notCompared.size(); i++) {
+            if (i > 0) j.append(',');
+            j.append(result.notCompared.get(i).toJson());
+        }
+        j.append("],");
+        j.append("\"index_summary\":").append(idx.summaryJson());
+        j.append('}');
+        respond(ex, 200, "application/json", j.toString().getBytes("UTF-8"));
+    }
+
+    // POST /api/search/rebuild-index — forces a fresh build, returns the same summary stats logged
+    // to stdout during the build (project/loci/SNP counts, build time).
+    private void searchRebuildIndex(HttpExchange ex) throws IOException {
+        cors(ex); if (preflight(ex)) return;
+        if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) {
+            respond(ex, 405, "application/json", "{\"error\":\"POST required\"}".getBytes());
+            return;
+        }
+        double threshold = GlobalSearchIndex.DEFAULT_THRESHOLD;
+        String thresholdParam = queryParam(ex, "threshold");
+        if (thresholdParam != null && !thresholdParam.isEmpty()) {
+            try { threshold = Double.parseDouble(thresholdParam); } catch (NumberFormatException ignored) {}
+        }
+        GlobalSearchIndex idx = GlobalSearchIndex.forceRebuild(new File("projects"), threshold);
+        respond(ex, 200, "application/json", idx.summaryJson().getBytes("UTF-8"));
     }
 
     // ══════════════════════════════════════════════════════════════════════

@@ -23,7 +23,8 @@ javac -encoding UTF-8 -d bin -cp "bin%LIBCP%" ^
   tests\ColocAdapterTest.java ^
   tests\GwamaAdapterTest.java ^
   tests\EnrichmentAnalyzerTest.java ^
-  tests\GeneConstellationBuilderTest.java
+  tests\GeneConstellationBuilderTest.java ^
+  tests\GlobalSearchIndexTest.java
 if %ERRORLEVEL% neq 0 (
     echo [FAIL] Test compilation failed.
     exit /b 1
@@ -109,6 +110,11 @@ if %ERRORLEVEL% neq 0 set FAILED=1
 echo.
 echo --- GeneConstellationBuilderTest ---
 java -cp "bin%LIBCP%" GeneConstellationBuilderTest
+if %ERRORLEVEL% neq 0 set FAILED=1
+
+echo.
+echo --- GlobalSearchIndexTest ---
+java -cp "bin%LIBCP%" GlobalSearchIndexTest
 if %ERRORLEVEL% neq 0 set FAILED=1
 
 echo.
