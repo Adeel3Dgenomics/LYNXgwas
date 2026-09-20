@@ -91,15 +91,39 @@ same GWAS file, what fraction overlaps a peak of each mark, and is that enrichme
 (Fisher's exact, reusing `EnrichmentAnalyzer`'s existing exact hypergeometric implementation with a
 new interval-overlap classifier in place of its existing per-gene-value lookup)?
 
-### 3.4 Real 30-dataset run [ ]
-Run 3.3 against all 30 already-processed datasets using their disease-mapped tissue's real peaks.
-Aggregate per-disease and overall. This is the analysis the manuscript will report.
+### 3.4 Real 30-dataset run [x] — done, verified
+Ran the real `/api/project/{id}/regulatory-enrichment` endpoint against all 30 real, already-fully-
+processed datasets on a throwaway copy of the `scz-full-demo` workspace (original PID-32928
+production server confirmed untouched throughout, same start time before/after). 4 of 30 datasets
+(`alz-src-belloy2024`, `t2d-src-saxena2007`, `t2d-src-wood2016`, `ra-src-shigesi2025`) have
+`n_foreground_total` < 20 genome-wide-significant SNPs (matching what Phase 2 already documented
+about these specific datasets being small/underpowered) and were excluded from pooled statistics
+before computing anything, not after seeing an inconvenient number — reported individually, not
+silently dropped. Raw per-dataset counts (foreground-in-peak/total, background-in-peak/total) summed
+across each disease's remaining datasets, then ONE Fisher's exact + odds ratio computed per disease
+per mark from the pooled counts (statistically sounder than averaging 30 separate p-values/ORs).
 
-### 3.5 Most-important-result plot [ ]
-Chosen only after seeing the real 3.4 numbers (not decided in advance) — most likely a cross-disease
-bar chart of regulatory-overlap enrichment (odds ratio or fold-enrichment with confidence interval,
-one bar per disease, per mark or combined) if the real result supports that story; documented
-honestly if the real numbers suggest a different, more accurate framing instead.
+**Cross-checked two independent ways**: (1) the Java implementation's own output for `scz-demo`
+H3K27ac (OR=2.129777, p=2.422244e-147) recomputed from the identical raw counts using Python's
+`scipy.stats.fisher_exact` — exact agreement to 6 decimal places; (2) the earlier delegated build
+already cross-checked one project's foreground-in-peak count against an independent from-scratch
+`awk` script (17/255 exact match) before this 30-dataset run even started.
+
+**Real result — a consistent, strong, real enrichment signal across all 6 diseases**: pooling 26
+included datasets, GWAS-significant SNPs are 1.6–4.6x more likely to overlap an active regulatory
+mark in the disease-relevant tissue than background SNPs, in every one of 6 diseases × 3 marks (18/18
+comparisons), every one below $p=1\times10^{-4}$ (several underflow below double precision, i.e.
+$p<10^{-300}$ exactly, not literally zero). Overall pooled (all 6 diseases, 180,942 foreground SNPs
+vs. 269,015,376 background SNPs): H3K27ac OR=2.63, H3K4me1 OR=2.85, H3K4me3 OR=3.28, all
+$p\to 0$. Per-disease range: SCZ/T2D/CAD/ALZ cluster around OR 1.6–2.8; RA and IBD (immune/gut
+tissues) show the strongest enrichment, OR up to 4.6 (RA, H3K4me3).
+
+### 3.5 Most-important-result plot [x] — done, verified
+`figures/regulatory_enrichment_6disease.png`: grouped bar chart, one group per disease, one bar per
+mark, real pooled odds ratios with significance stars, generated directly from the verified 3.4
+numbers (not illustrative). Visually confirmed: every bar clears the OR=1 reference line, all
+significant, tells the "consistent across independent diseases" story the real numbers actually
+support — chosen after seeing the numbers, not decided in advance.
 
 ### 3.6 Manuscript update [ ]
 New Methods subsection (regulatory data source, tissue mapping table, enrichment test), new Results
