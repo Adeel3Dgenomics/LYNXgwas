@@ -8,6 +8,8 @@ import java.util.concurrent.*;
 import rsid.*;
 import loci.*;
 import export.*;
+import catalog.*;
+import opentargets.*;
 
 public class LocalServer {
 
@@ -32,6 +34,42 @@ public class LocalServer {
     private final Map<String, ProjectState> projectStates = new ConcurrentHashMap<>();
     // Projects currently being processed (prevent double-processing)
     private final Set<String> processing = ConcurrentHashMap.newKeySet();
+
+    // GWAS Catalog cross-phenotype lookup — one shared local snapshot for all projects, not
+    // per-project config (mirrors config/global.json's reference-panel/SNP-database registry;
+    // TODO: move this path into global.json once the snapshot location needs to be user-configurable).
+    private static final String GWAS_CATALOG_TSV = "gwascatalog_data/gwas-catalog-download-associations-alt-full.tsv";
+    private static final String GWAS_CATALOG_IDX_DIR = "gwascatalog_data";
+    private static volatile GwasCatalogLocalIndex gwasCatalogIndex;
+    private static volatile String gwasCatalogInitError;
+
+    /** Lazily builds/loads the local GWAS Catalog index on first request. Returns null if unavailable. */
+    private static GwasCatalogLocalIndex getGwasCatalogIndex() {
+        if (gwasCatalogIndex != null || gwasCatalogInitError != null) return gwasCatalogIndex;
+        synchronized (LocalServer.class) {
+            if (gwasCatalogIndex != null || gwasCatalogInitError != null) return gwasCatalogIndex;
+            if (!new File(GWAS_CATALOG_TSV).isFile()) {
+                gwasCatalogInitError = "GWAS Catalog snapshot not found at " + GWAS_CATALOG_TSV +
+                    " — download gwas-catalog-associations_ontology-annotated-full.zip from " +
+                    "ftp.ebi.ac.uk/pub/databases/gwas/releases/latest/ and unzip it there.";
+                System.err.println("[LocalServer] " + gwasCatalogInitError);
+                return null;
+            }
+            try {
+                GwasCatalogLocalIndex idx = new GwasCatalogLocalIndex(GWAS_CATALOG_TSV, GWAS_CATALOG_IDX_DIR);
+                if (!new File(GWAS_CATALOG_IDX_DIR, "rsid_index.tsv").isFile() ||
+                    !new File(GWAS_CATALOG_IDX_DIR, "region_index.tsv").isFile()) {
+                    idx.buildIndex();
+                }
+                idx.loadIndex();
+                gwasCatalogIndex = idx;
+            } catch (IOException e) {
+                gwasCatalogInitError = "Failed to load GWAS Catalog index: " + e.getMessage();
+                System.err.println("[LocalServer] " + gwasCatalogInitError);
+            }
+        }
+        return gwasCatalogIndex;
+    }
 
     static class ProjectState {
         Config config;
@@ -424,6 +462,19 @@ public class LocalServer {
             serveJson(ex, dataDir + "/manifest.json");
         } else if (action.equals("genome-skyline")) {
             serveJson(ex, dataDir + "/genome_skyline.json");
+        } else if (action.matches("locus/\\d+/catalog")) {
+            String n = action.replaceAll("\\D+", "");
+            projectLocusCatalog(ex, dataDir, n);
+        } else if (action.matches("locus/\\d+/novelty")) {
+            String n = action.replaceAll("\\D+", "");
+            projectLocusNovelty(ex, dataDir, projectDir, n);
+        } else if (action.equals("catalog-report")) {
+            projectCatalogReport(ex, dataDir, projectDir);
+        } else if (action.matches("locus/\\d+/l2g")) {
+            // NOT replaceAll("\\D+","") like the catalog/novelty routes above — "l2g" itself contains
+            // a digit, so stripping all non-digits from e.g. "locus/2/l2g" corrupts "2" into "22".
+            String n = action.replaceFirst("locus/(\\d+)/l2g", "$1");
+            projectLocusL2G(ex, dataDir, projectDir, n);
         } else if (action.startsWith("locus/")) {
             String n = action.substring("locus/".length()).replaceAll("\\D", "");
             serveJson(ex, dataDir + "/locus_" + n + ".json");
@@ -603,6 +654,315 @@ public class LocalServer {
         } catch (IOException ignored) {}
 
         respond(ex, r.ok ? 200 : 400, "application/json", json.toString().getBytes("UTF-8"));
+    }
+
+    // GET /api/project/{id}/locus/{n}/catalog — cross-phenotype lookup for this locus's top SNP
+    // against a local GWAS Catalog snapshot (see GwasCatalogLocalIndex). No network call at request
+    // time — the snapshot + rsID index are built once, offline, ahead of server start.
+    private void projectLocusCatalog(HttpExchange ex, String dataDir, String locusIndex) throws IOException {
+        File locusFile = new File(dataDir, "locus_" + locusIndex + ".json");
+        if (!locusFile.exists()) {
+            respond(ex, 404, "application/json", "{\"error\":\"Locus not found\"}".getBytes());
+            return;
+        }
+        String locusJson = new String(Files.readAllBytes(locusFile.toPath()), "UTF-8");
+        int topSnpIdx = locusJson.indexOf("\"top_snp\":");
+        String rsid = topSnpIdx >= 0 ? extractNestedStr(locusJson, topSnpIdx, "id") : null;
+        if (rsid == null || rsid.isEmpty() || !rsid.startsWith("rs")) {
+            respond(ex, 200, "application/json",
+                "{\"ok\":false,\"error\":\"Locus has no rsID-form top SNP to look up\"}".getBytes());
+            return;
+        }
+
+        GwasCatalogLocalIndex idx = getGwasCatalogIndex();
+        if (idx == null) {
+            respond(ex, 503, "application/json",
+                ("{\"ok\":false,\"error\":\"" + escJ(gwasCatalogInitError) + "\"}").getBytes());
+            return;
+        }
+
+        List<GwasCatalogLocalIndex.Hit> hits;
+        try {
+            hits = idx.lookup(rsid);
+        } catch (IOException e) {
+            respond(ex, 500, "application/json",
+                ("{\"ok\":false,\"error\":\"" + escJ(e.getMessage()) + "\"}").getBytes());
+            return;
+        }
+
+        StringBuilder json = new StringBuilder();
+        json.append("{\"ok\":true,\"rsid\":\"").append(escJ(rsid)).append("\",\"hits\":[");
+        for (int i = 0; i < hits.size(); i++) {
+            if (i > 0) json.append(',');
+            json.append(hitToJson(hits.get(i)));
+        }
+        json.append("]}");
+        respond(ex, 200, "application/json", json.toString().getBytes("UTF-8"));
+    }
+
+    // GET /api/project/{id}/locus/{n}/l2g — most likely causal GENE for this locus's top SNP, via
+    // Open Targets' Locus-to-Gene model (live API — L2G is only published as Parquet in bulk, which
+    // would need a real Parquet-decoding dependency this codebase doesn't have; the live query is a
+    // single round trip per locus, cached to disk, so it never repeats the GWAS-Catalog-REST N+1 problem).
+    // Returns an empty gene list (ok:true) rather than an error for any locus Open Targets hasn't seen,
+    // including every genuinely novel locus by construction.
+    private void projectLocusL2G(HttpExchange ex, String dataDir, String projectDir, String locusIndex) throws IOException {
+        File locusFile = new File(dataDir, "locus_" + locusIndex + ".json");
+        if (!locusFile.exists()) {
+            respond(ex, 404, "application/json", "{\"error\":\"Locus not found\"}".getBytes());
+            return;
+        }
+        String locusJson = new String(Files.readAllBytes(locusFile.toPath()), "UTF-8");
+        int topSnpIdx = locusJson.indexOf("\"top_snp\":");
+        String rsid = topSnpIdx >= 0 ? extractNestedStr(locusJson, topSnpIdx, "id") : null;
+        if (rsid == null || rsid.isEmpty() || !rsid.startsWith("rs")) {
+            respond(ex, 200, "application/json",
+                "{\"ok\":false,\"error\":\"Locus has no rsID-form top SNP to look up\"}".getBytes());
+            return;
+        }
+
+        OpenTargetsL2GClient client = new OpenTargetsL2GClient(projectDir);
+        OpenTargetsL2GClient.Result r;
+        try {
+            r = client.lookup(rsid);
+        } catch (IOException | InterruptedException e) {
+            respond(ex, 502, "application/json",
+                ("{\"ok\":false,\"error\":\"Open Targets lookup failed: " + escJ(e.getMessage()) + "\"}").getBytes());
+            return;
+        }
+
+        StringBuilder json = new StringBuilder();
+        json.append("{\"ok\":true,\"rsid\":\"").append(escJ(r.rsid)).append('"');
+        json.append(",\"variant_id\":").append(r.variantId == null ? "null" : "\"" + escJ(r.variantId) + "\"");
+        json.append(",\"credible_set_count\":").append(r.credibleSetCount);
+        json.append(",\"genes\":[");
+        for (int i = 0; i < r.genes.size(); i++) {
+            if (i > 0) json.append(',');
+            OpenTargetsL2GClient.GenePrediction gp = r.genes.get(i);
+            json.append("{\"gene\":\"").append(escJ(gp.gene)).append('"');
+            json.append(",\"score\":").append(gp.maxScore);
+            json.append(",\"supporting_studies\":").append(gp.supportingStudies);
+            json.append('}');
+        }
+        json.append(']');
+        json.append(",\"enhancer_genes\":[");
+        for (int i = 0; i < r.enhancerGenes.size(); i++) {
+            if (i > 0) json.append(',');
+            OpenTargetsL2GClient.EnhancerGenePrediction egp = r.enhancerGenes.get(i);
+            json.append("{\"gene\":\"").append(escJ(egp.gene)).append('"');
+            json.append(",\"score\":").append(egp.maxScore);
+            json.append(",\"evidence\":[");
+            for (int k = 0; k < egp.evidence.size(); k++) {
+                if (k > 0) json.append(',');
+                OpenTargetsL2GClient.EnhancerEvidence ev = egp.evidence.get(k);
+                json.append("{\"biosample\":\"").append(escJ(ev.biosample)).append('"');
+                json.append(",\"score\":").append(ev.score);
+                json.append(",\"distance_to_tss\":").append(ev.distanceToTss);
+                json.append(",\"pmid\":").append(ev.pmid == null ? "null" : "\"" + escJ(ev.pmid) + "\"");
+                json.append('}');
+            }
+            json.append(']');
+            json.append('}');
+        }
+        json.append("]}");
+        respond(ex, 200, "application/json", json.toString().getBytes("UTF-8"));
+    }
+
+    private static String hitToJson(GwasCatalogLocalIndex.Hit h) {
+        StringBuilder j = new StringBuilder();
+        j.append("{\"trait\":\"").append(escJ(h.trait)).append('"');
+        j.append(",\"mapped_trait\":\"").append(escJ(h.mappedTrait)).append('"');
+        j.append(",\"mapped_gene\":\"").append(escJ(h.mappedGene)).append('"');
+        j.append(",\"pvalue\":").append(Double.isFinite(h.pvalue) ? h.pvalue : 0);
+        j.append(",\"pvalue_display\":\"").append(escJ(h.pvalueDisplay())).append('"');
+        j.append(",\"study_accession\":\"").append(escJ(h.studyAccession)).append('"');
+        j.append(",\"pubmed_id\":\"").append(escJ(h.pubmedId)).append('"');
+        j.append(",\"initial_sample_size\":\"").append(escJ(h.initialSampleSize)).append('"');
+        j.append(",\"link\":\"").append(escJ(h.link)).append('"');
+        j.append(",\"chr\":\"").append(escJ(h.chr)).append('"');
+        j.append(",\"pos\":").append(h.pos);
+        j.append('}');
+        return j.toString();
+    }
+
+    // GET /api/project/{id}/locus/{n}/novelty?trait=... — known-vs-novel verdict for this locus's
+    // genomic region (not just its top SNP): does ANY previously reported association overlap this
+    // locus's window at all, and if so, is it for the same trait (via a simple substring match against
+    // the optional ?trait= keyword) or a different one. See GwasCatalogLocalIndex#classify.
+    private void projectLocusNovelty(HttpExchange ex, String dataDir, String projectDir, String locusIndex) throws IOException {
+        File locusFile = new File(dataDir, "locus_" + locusIndex + ".json");
+        if (!locusFile.exists()) {
+            respond(ex, 404, "application/json", "{\"error\":\"Locus not found\"}".getBytes());
+            return;
+        }
+        String locusJson = new String(Files.readAllBytes(locusFile.toPath()), "UTF-8");
+        String chr = extractStr(locusJson, "chr");
+        String startStr = extractStr(locusJson, "start");
+        String endStr = extractStr(locusJson, "end");
+        if (chr == null || startStr == null || endStr == null) {
+            respond(ex, 200, "application/json",
+                "{\"ok\":false,\"error\":\"Locus JSON missing chr/start/end\"}".getBytes());
+            return;
+        }
+
+        // ?trait= overrides the project's own configured disease name; neither given means "any trait counts".
+        String trait = queryParam(ex, "trait");
+        Config cfg = loadConfigQuiet(projectDir);
+        if (trait == null || trait.trim().isEmpty())
+            trait = (cfg != null && cfg.diseaseName != null && !cfg.diseaseName.trim().isEmpty()) ? cfg.diseaseName.trim() : null;
+
+        // The GWAS Catalog index is GRCh38-only. A GRCh37 project's locus coordinates need converting
+        // before comparing against it, or every check would silently compare mismatched coordinate
+        // systems — see GenomeLiftover's class comment for how that was verified.
+        long queryStart, queryEnd;
+        String queryChr = chr;
+        boolean lifted = false;
+        if (cfg != null && GenomeLiftover.needsLiftover(cfg.genomeBuild)) {
+            GenomeLiftover.Result lo = GenomeLiftover.toGRCh38(chr, Long.parseLong(startStr), Long.parseLong(endStr));
+            if (!lo.ok) {
+                respond(ex, 200, "application/json",
+                    ("{\"ok\":false,\"error\":\"GRCh37->GRCh38 liftover failed: " + escJ(lo.error) + "\"}").getBytes());
+                return;
+            }
+            queryChr = lo.chr;
+            queryStart = lo.start;
+            queryEnd = lo.end;
+            lifted = true;
+        } else {
+            queryStart = Long.parseLong(startStr);
+            queryEnd = Long.parseLong(endStr);
+        }
+
+        GwasCatalogLocalIndex idx = getGwasCatalogIndex();
+        if (idx == null) {
+            respond(ex, 503, "application/json",
+                ("{\"ok\":false,\"error\":\"" + escJ(gwasCatalogInitError) + "\"}").getBytes());
+            return;
+        }
+
+        GwasCatalogLocalIndex.RegionResult r;
+        try {
+            r = idx.classify(queryChr, queryStart, queryEnd, trait);
+        } catch (Exception e) {
+            respond(ex, 500, "application/json", ("{\"ok\":false,\"error\":\"" + escJ(e.getMessage()) + "\"}").getBytes());
+            return;
+        }
+
+        StringBuilder json = new StringBuilder();
+        json.append("{\"ok\":true,\"verdict\":\"").append(r.verdict.name().toLowerCase(java.util.Locale.ROOT)).append('"');
+        json.append(",\"total_count\":").append(r.totalCount);
+        json.append(",\"trait_used\":").append(trait == null ? "null" : "\"" + escJ(trait) + "\"");
+        json.append(",\"lifted_to_grch38\":").append(lifted);
+        if (lifted) json.append(",\"grch38_region\":\"").append(escJ(queryChr)).append(':').append(queryStart).append('-').append(queryEnd).append('"');
+        json.append(",\"hits\":[");
+        for (int i = 0; i < r.hits.size(); i++) {
+            if (i > 0) json.append(',');
+            json.append(hitToJson(r.hits.get(i)));
+        }
+        json.append("]}");
+        respond(ex, 200, "application/json", json.toString().getBytes("UTF-8"));
+    }
+
+    /** Loads a project's Config, or null if that fails — used where a missing/unreadable config
+     *  should just mean "no extra context available" rather than failing the whole request. */
+    private static Config loadConfigQuiet(String projectDir) {
+        try { return Config.loadFromProject(projectDir); }
+        catch (Exception e) { return null; }
+    }
+
+    // GET /api/project/{id}/catalog-report?trait=... — genome-wide TSV export: one row per (locus,
+    // overlapping Catalog hit), plus a verdict column per locus, for every locus in the project.
+    private void projectCatalogReport(HttpExchange ex, String dataDir, String projectDir) throws IOException {
+        File manifestFile = new File(dataDir, "manifest.json");
+        if (!manifestFile.exists()) {
+            respond(ex, 404, "application/json", "{\"error\":\"No manifest — process the project first\"}".getBytes());
+            return;
+        }
+        GwasCatalogLocalIndex idx = getGwasCatalogIndex();
+        if (idx == null) {
+            respond(ex, 503, "application/json", ("{\"error\":\"" + escJ(gwasCatalogInitError) + "\"}").getBytes());
+            return;
+        }
+        Config cfg = loadConfigQuiet(projectDir);
+        String trait = queryParam(ex, "trait");
+        if (trait == null || trait.trim().isEmpty())
+            trait = (cfg != null && cfg.diseaseName != null && !cfg.diseaseName.trim().isEmpty()) ? cfg.diseaseName.trim() : null;
+        boolean needsLift = cfg != null && GenomeLiftover.needsLiftover(cfg.genomeBuild);
+
+        String manifestJson = new String(Files.readAllBytes(manifestFile.toPath()), "UTF-8");
+        List<Integer> locusIndices = extractLocusIndices(manifestJson);
+
+        StringBuilder tsv = new StringBuilder();
+        tsv.append("locus_index\tchr\tstart\tend\tverdict_region_grch38\ttop_snp\tverdict\ttotal_known_hits\thit_trait\thit_mapped_trait\thit_gene\thit_pvalue\thit_study\thit_pmid\thit_url\n");
+        for (int locusIndex : locusIndices) {
+            File locusFile = new File(dataDir, "locus_" + locusIndex + ".json");
+            if (!locusFile.exists()) continue;
+            String locusJson = new String(Files.readAllBytes(locusFile.toPath()), "UTF-8");
+            String chr = extractStr(locusJson, "chr");
+            String startStr = extractStr(locusJson, "start");
+            String endStr = extractStr(locusJson, "end");
+            int topSnpIdx = locusJson.indexOf("\"top_snp\":");
+            String topSnp = topSnpIdx >= 0 ? extractNestedStr(locusJson, topSnpIdx, "id") : "";
+            if (chr == null || startStr == null || endStr == null) continue;
+
+            long qStart, qEnd;
+            String qChr = chr, liftedNote = "";
+            if (needsLift) {
+                GenomeLiftover.Result lo = GenomeLiftover.toGRCh38(chr, Long.parseLong(startStr), Long.parseLong(endStr));
+                if (!lo.ok) {
+                    tsv.append(locusIndex).append('\t').append(chr).append('\t').append(startStr).append('\t')
+                       .append(endStr).append("\tLIFTOVER_FAILED\t").append(nz(topSnp)).append("\terror\t0\t\t\t\t\t\t\t\n");
+                    continue;
+                }
+                qChr = lo.chr; qStart = lo.start; qEnd = lo.end;
+                liftedNote = qChr + ":" + qStart + "-" + qEnd;
+            } else {
+                qStart = Long.parseLong(startStr); qEnd = Long.parseLong(endStr);
+            }
+
+            GwasCatalogLocalIndex.RegionResult r;
+            try {
+                r = idx.classify(qChr, qStart, qEnd, trait);
+            } catch (Exception e) { continue; }
+
+            if (r.hits.isEmpty()) {
+                tsv.append(locusIndex).append('\t').append(chr).append('\t').append(startStr).append('\t')
+                   .append(endStr).append('\t').append(nz(liftedNote)).append('\t').append(nz(topSnp)).append('\t')
+                   .append(r.verdict.name().toLowerCase(Locale.ROOT))
+                   .append('\t').append(r.totalCount).append("\t\t\t\t\t\t\t\n");
+            } else {
+                // r.hits is capped at GwasCatalogLocalIndex.MAX_OVERLAP_HITS (a handful of loci — APOE,
+                // the MHC region — have tens of thousands of associations; total_known_hits is still the
+                // exact uncapped count, so nothing here is silently lying, just not exhaustively listed.
+                for (GwasCatalogLocalIndex.Hit h : r.hits) {
+                    tsv.append(locusIndex).append('\t').append(chr).append('\t').append(startStr).append('\t')
+                       .append(endStr).append('\t').append(nz(liftedNote)).append('\t').append(nz(topSnp)).append('\t')
+                       .append(r.verdict.name().toLowerCase(Locale.ROOT)).append('\t')
+                       .append(r.totalCount).append('\t')
+                       .append(tsvEsc(h.trait)).append('\t').append(tsvEsc(h.mappedTrait)).append('\t')
+                       .append(tsvEsc(h.mappedGene)).append('\t').append(Double.isFinite(h.pvalue) ? h.pvalue : "").append('\t')
+                       .append(tsvEsc(h.studyAccession)).append('\t').append(tsvEsc(h.pubmedId)).append('\t')
+                       .append(tsvEsc(h.link)).append('\n');
+                }
+            }
+        }
+
+        ex.getResponseHeaders().set("Content-Disposition", "attachment; filename=\"catalog_report.tsv\"");
+        respond(ex, 200, "text/tab-separated-values", tsv.toString().getBytes("UTF-8"));
+    }
+
+    private static String nz(String s) { return s == null ? "" : s; }
+    private static String tsvEsc(String s) { return s == null ? "" : s.replace("\t", " ").replace("\n", " "); }
+
+    private static List<Integer> extractLocusIndices(String manifestJson) {
+        List<Integer> out = new ArrayList<>();
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("\"locusIndex\"\\s*:\\s*(\\d+)").matcher(manifestJson);
+        while (m.find()) out.add(Integer.parseInt(m.group(1)));
+        if (out.isEmpty()) {
+            m = java.util.regex.Pattern.compile("\"index\"\\s*:\\s*(\\d+)").matcher(manifestJson);
+            while (m.find()) out.add(Integer.parseInt(m.group(1)));
+        }
+        return out;
     }
 
     // GET /api/peek-file-header?path=...

@@ -27,6 +27,9 @@ javac -encoding UTF-8 -d bin -cp "bin$LIBCP" \
   src/rsid/CrossFileLookup.java \
   src/rsid/RsidPipeline.java \
   src/rsid/SharedStorageResolver.java \
+  src/catalog/GwasCatalogClient.java \
+  src/catalog/GwasCatalogLocalIndex.java \
+  src/opentargets/OpenTargetsL2GClient.java \
   src/loci/LociIdentifier.java \
   src/loci/LociProgress.java \
   src/analysis/ContentHasher.java \
@@ -89,6 +92,7 @@ javac -encoding UTF-8 -d bin -cp "bin$LIBCP" \
   src/LdCalculator.java \
   src/SnpAnnotator.java \
   src/GenomeSkyline.java \
+  src/GenomeLiftover.java \
   src/ProjectMetadata.java \
   src/JsonExporter.java \
   src/LocusUpdater.java \
