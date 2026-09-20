@@ -8,6 +8,8 @@ javac -encoding UTF-8 -d bin -cp "bin%LIBCP%" ^
   src\analysis\StatsUtil.java ^
   src\analysis\AnovaUtil.java ^
   src\analysis\EnrichmentAnalyzer.java ^
+  src\analysis\RegulatoryPeakIndex.java ^
+  src\analysis\RegulatoryEnrichmentAnalyzer.java ^
   tests\MultiLocusScannerTest.java ^
   tests\LdCalculatorTest.java ^
   tests\GwasQcTest.java ^
@@ -24,7 +26,9 @@ javac -encoding UTF-8 -d bin -cp "bin%LIBCP%" ^
   tests\GwamaAdapterTest.java ^
   tests\EnrichmentAnalyzerTest.java ^
   tests\GeneConstellationBuilderTest.java ^
-  tests\GlobalSearchIndexTest.java
+  tests\GlobalSearchIndexTest.java ^
+  tests\RegulatoryPeakIndexTest.java ^
+  tests\RegulatoryEnrichmentAnalyzerTest.java
 if %ERRORLEVEL% neq 0 (
     echo [FAIL] Test compilation failed.
     exit /b 1
@@ -115,6 +119,16 @@ if %ERRORLEVEL% neq 0 set FAILED=1
 echo.
 echo --- GlobalSearchIndexTest ---
 java -cp "bin%LIBCP%" GlobalSearchIndexTest
+if %ERRORLEVEL% neq 0 set FAILED=1
+
+echo.
+echo --- RegulatoryPeakIndexTest ---
+java -cp "bin%LIBCP%" RegulatoryPeakIndexTest
+if %ERRORLEVEL% neq 0 set FAILED=1
+
+echo.
+echo --- RegulatoryEnrichmentAnalyzerTest ---
+java -cp "bin%LIBCP%" RegulatoryEnrichmentAnalyzerTest
 if %ERRORLEVEL% neq 0 set FAILED=1
 
 echo.

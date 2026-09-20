@@ -12,6 +12,8 @@ javac -encoding UTF-8 -d bin -cp "bin$LIBCP" \
   src/analysis/StatsUtil.java \
   src/analysis/AnovaUtil.java \
   src/analysis/EnrichmentAnalyzer.java \
+  src/analysis/RegulatoryPeakIndex.java \
+  src/analysis/RegulatoryEnrichmentAnalyzer.java \
   tests/MultiLocusScannerTest.java \
   tests/LdCalculatorTest.java \
   tests/GwasQcTest.java \
@@ -28,7 +30,9 @@ javac -encoding UTF-8 -d bin -cp "bin$LIBCP" \
   tests/GwamaAdapterTest.java \
   tests/EnrichmentAnalyzerTest.java \
   tests/GeneConstellationBuilderTest.java \
-  tests/GlobalSearchIndexTest.java
+  tests/GlobalSearchIndexTest.java \
+  tests/RegulatoryPeakIndexTest.java \
+  tests/RegulatoryEnrichmentAnalyzerTest.java
 
 FAILED=0
 
@@ -99,6 +103,14 @@ java -cp "bin$LIBCP" GeneConstellationBuilderTest || FAILED=1
 echo
 echo "--- GlobalSearchIndexTest ---"
 java -cp "bin$LIBCP" GlobalSearchIndexTest || FAILED=1
+
+echo
+echo "--- RegulatoryPeakIndexTest ---"
+java -cp "bin$LIBCP" RegulatoryPeakIndexTest || FAILED=1
+
+echo
+echo "--- RegulatoryEnrichmentAnalyzerTest ---"
+java -cp "bin$LIBCP" RegulatoryEnrichmentAnalyzerTest || FAILED=1
 
 echo
 if [ "$FAILED" -eq 0 ]; then

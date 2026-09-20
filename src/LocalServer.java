@@ -477,6 +477,9 @@ public class LocalServer {
             // a digit, so stripping all non-digits from e.g. "locus/2/l2g" corrupts "2" into "22".
             String n = action.replaceFirst("locus/(\\d+)/l2g", "$1");
             projectLocusL2G(ex, dataDir, projectDir, n);
+        } else if (action.matches("locus/\\d+/regulatory")) {
+            String n = action.replaceAll("\\D+", "");
+            projectLocusRegulatory(ex, dataDir, projectId, n);
         } else if (action.startsWith("locus/")) {
             String n = action.substring("locus/".length()).replaceAll("\\D", "");
             serveJson(ex, dataDir + "/locus_" + n + ".json");
@@ -548,6 +551,8 @@ public class LocalServer {
             }
         } else if (action.equals("enrichment")) {
             projectEnrichment(ex, projectId, projectDir);
+        } else if (action.equals("regulatory-enrichment")) {
+            projectRegulatoryEnrichment(ex, projectId, projectDir);
         } else {
             respond(ex, 404, "application/json",
                 ("{\"error\":\"Unknown action: " + escJ(action) + "\"}").getBytes());
@@ -768,6 +773,130 @@ public class LocalServer {
         }
         json.append("]}");
         respond(ex, 200, "application/json", json.toString().getBytes("UTF-8"));
+    }
+
+    // GET /api/project/{id}/locus/{n}/regulatory — Option C stacked regulatory tracks (Phase 3):
+    // real histone ChIP-seq peaks (H3K27ac, H3K4me1, H3K4me3) from the disease-mapped reference
+    // epigenome (RegulatoryPeakIndex), restricted to this locus's own already-computed padded
+    // window — the SAME window the gene track already uses (padded_start/padded_end straight from
+    // locus_N.json, not a newly invented padding value). Empty "marks" (still 200, ok, not an
+    // error) for a project whose disease doesn't map to anything in DECISIONS_PHASE3.md's table.
+    private void projectLocusRegulatory(HttpExchange ex, String dataDir, String projectId, String locusIndex) throws IOException {
+        File locusFile = new File(dataDir, "locus_" + locusIndex + ".json");
+        if (!locusFile.exists()) {
+            respond(ex, 404, "application/json", "{\"error\":\"Locus not found\"}".getBytes());
+            return;
+        }
+        String locusJson = new String(Files.readAllBytes(locusFile.toPath()), "UTF-8");
+        String chr = extractStr(locusJson, "chr");
+        String paddedStartStr = extractStr(locusJson, "padded_start");
+        String paddedEndStr = extractStr(locusJson, "padded_end");
+
+        String eid = RegulatoryPeakIndex.resolveEid(projectId);
+        String tissue = eid == null ? null : RegulatoryPeakIndex.EID_TO_TISSUE.get(eid);
+
+        StringBuilder json = new StringBuilder("{");
+        json.append("\"eid\":").append(eid == null ? "null" : "\"" + escJ(eid) + "\"").append(",");
+        json.append("\"tissue\":").append(tissue == null ? "null" : "\"" + escJ(tissue) + "\"").append(",");
+        json.append("\"marks\":{");
+
+        long start = -1, end = -1;
+        if (paddedStartStr != null && paddedEndStr != null) {
+            try {
+                start = Long.parseLong(paddedStartStr);
+                end = Long.parseLong(paddedEndStr);
+            } catch (NumberFormatException nfe) { start = -1; end = -1; }
+        }
+
+        if (eid != null && chr != null && start >= 0 && end >= start) {
+            RegulatoryPeakIndex idx = RegulatoryPeakIndex.instance();
+            for (int mi = 0; mi < RegulatoryPeakIndex.MARKS.length; mi++) {
+                String mark = RegulatoryPeakIndex.MARKS[mi];
+                if (mi > 0) json.append(",");
+                json.append("\"").append(mark).append("\":[");
+                List<RegulatoryPeakIndex.Peak> peaks = idx.peaksOverlapping(eid, mark, chr, start, end);
+                for (int pi = 0; pi < peaks.size(); pi++) {
+                    if (pi > 0) json.append(",");
+                    RegulatoryPeakIndex.Peak p = peaks.get(pi);
+                    json.append("{\"start\":").append(p.start)
+                        .append(",\"end\":").append(p.end)
+                        .append(",\"signal\":").append(p.signalValue)
+                        .append("}");
+                }
+                json.append("]");
+            }
+        }
+        json.append("}}");
+        respond(ex, 200, "application/json", json.toString().getBytes("UTF-8"));
+    }
+
+    // GET /api/project/{id}/regulatory-enrichment?threshold=5e-8 — real interval-overlap enrichment
+    // (DECISIONS_PHASE3.md section 3.3/3.4): the project's own genome-wide-significant SNPs
+    // (foreground) vs. its own below-significance SNPs (background), read from its own GWAS file
+    // the same way GwasQc/MultiLocusScanner already do (BufferedReader + GwasParser.colIdx/splitTab,
+    // MultiLocusScanner.normalizeChr), against the disease-mapped reference epigenome's real peaks.
+    private void projectRegulatoryEnrichment(HttpExchange ex, String projectId, String projectDir) throws IOException {
+        String thresholdParam = queryParam(ex, "threshold");
+        double threshold = GeneConstellationBuilder.DEFAULT_THRESHOLD;
+        if (thresholdParam != null && !thresholdParam.trim().isEmpty()) {
+            try { threshold = Double.parseDouble(thresholdParam.trim()); } catch (NumberFormatException ignored) {}
+        }
+
+        Config cfg;
+        try {
+            cfg = Config.loadFromProject(projectDir);
+        } catch (Exception e) {
+            respond(ex, 404, "application/json",
+                ("{\"error\":\"Project config not found: " + escJ(e.getMessage()) + "\"}").getBytes());
+            return;
+        }
+
+        String eid = RegulatoryPeakIndex.resolveEid(projectId);
+        String tissue = eid == null ? null : RegulatoryPeakIndex.EID_TO_TISSUE.get(eid);
+
+        List<RegulatoryEnrichmentAnalyzer.SnpPos> foreground = new ArrayList<>();
+        List<RegulatoryEnrichmentAnalyzer.SnpPos> background = new ArrayList<>();
+
+        if (eid != null) {
+            File gwasFile = new File(cfg.gwasFile);
+            if (!gwasFile.isFile()) {
+                respond(ex, 404, "application/json",
+                    ("{\"error\":\"GWAS file not found: " + escJ(cfg.gwasFile) + "\"}").getBytes());
+                return;
+            }
+            double sigThreshold = threshold;
+            try (BufferedReader br = new BufferedReader(new FileReader(gwasFile), 1 << 20)) {
+                String header = br.readLine();
+                if (header != null) {
+                    String[] cols = header.trim().split("\t");
+                    int iChr = GwasParser.colIdx(cols, cfg.colChr);
+                    int iPos = GwasParser.colIdx(cols, cfg.colPos);
+                    int iP   = GwasParser.colIdx(cols, cfg.colPvalue);
+                    if (iChr >= 0 && iPos >= 0 && iP >= 0) {
+                        String line;
+                        while ((line = br.readLine()) != null) {
+                            if (line.isEmpty()) continue;
+                            String[] f = GwasParser.splitTab(line);
+                            if (f.length <= Math.max(iChr, Math.max(iPos, iP))) continue;
+                            String chr = f[iChr].trim();
+                            long pos; double p;
+                            try {
+                                pos = Long.parseLong(f[iPos].trim());
+                                p   = Double.parseDouble(f[iP].trim());
+                            } catch (NumberFormatException nfe) { continue; }
+                            if (!(p > 0 && p < 1)) continue;
+                            RegulatoryEnrichmentAnalyzer.SnpPos snp =
+                                new RegulatoryEnrichmentAnalyzer.SnpPos(chr, pos);
+                            if (p <= sigThreshold) foreground.add(snp); else background.add(snp);
+                        }
+                    }
+                }
+            }
+        }
+
+        RegulatoryEnrichmentAnalyzer.Result result = RegulatoryEnrichmentAnalyzer.run(
+            eid, tissue, threshold, foreground, background, RegulatoryPeakIndex.instance());
+        respond(ex, 200, "application/json", result.toJson().getBytes("UTF-8"));
     }
 
     private static String hitToJson(GwasCatalogLocalIndex.Hit h) {

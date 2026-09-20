@@ -58,6 +58,8 @@ javac -encoding UTF-8 -d bin -cp "bin%LIBCP%" ^
   src\analysis\AnalysisColumnProvider.java ^
   src\analysis\BaseStepPipeline.java ^
   src\analysis\EnrichmentAnalyzer.java ^
+  src\analysis\RegulatoryPeakIndex.java ^
+  src\analysis\RegulatoryEnrichmentAnalyzer.java ^
   src\export\ColumnSpec.java ^
   src\export\GwasSchema.java ^
   src\export\SnpContext.java ^

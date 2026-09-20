@@ -614,6 +614,11 @@ const OV_BINS   = 300;
 const LDT_CELL_PX_DEFAULT = 6;   // default triangle cell size in px
 const LDT_AXIS_H          = 44;  // height of x-axis below triangle
 const EVID_ROW            = 20;  // evidence-track row height (per evidence column) in px
+const REG_ROW             = 18;  // regulatory-track row height (per histone mark) in px
+// Option C stacked regulatory tracks (Phase 3): one row per mark, colors from the approved design
+// canvas palette. Order also drives the stacking order (top to bottom).
+const REG_MARKS_ORDER = ['H3K27ac', 'H3K4me1', 'H3K4me3'];
+const REG_COLORS = { H3K27ac: '#F2994A', H3K4me1: '#F2C94C', H3K4me3: '#2E86AB' };
 
 // Evidence tracks — fetched once per page load (see loadEvidenceTracks(), called from init()
 // before the first renderViewport), then reused across every locus panel / zoom redraw rather
@@ -846,6 +851,18 @@ async function loadLocus(idx) {
         if (tri.matrix[r] && tri.matrix[r].length !== N)
           console.error(`[LD] Locus ${idx}: row ${r} has ${tri.matrix[r].length} cols, expected ${N}`);
       }
+    }
+    // Option C stacked regulatory tracks (Phase 3) — fetched once per locus load, right alongside
+    // the locus JSON itself, and cached as part of the same locusCache entry (so a re-render/zoom
+    // never re-fetches it). Missing/failed fetch or an unmapped-disease project both degrade to
+    // {marks:{}} rather than throwing, so every existing project without regulatory data renders
+    // exactly as before.
+    data.regulatory = { eid: null, tissue: null, marks: {} };
+    if (PROJECT_API) {
+      try {
+        const regResp = await fetchWithTimeout(`${PROJECT_API}/locus/${idx}/regulatory`, 4000);
+        if (regResp.ok) data.regulatory = await regResp.json();
+      } catch (e) { console.warn('[Regulatory] failed to load locus ' + idx + ':', e.message); }
     }
     locusCache.set(idx, data);
   }
@@ -1394,7 +1411,17 @@ function fillPanel(data, panelEl) {
       ? evidenceRowDefs.length * EVID_ROW + 20 + (evidHasCategorical ? 16 : 0)
       : 0;
 
-    svgH = annotH + MARGIN.top + PLOT_H + MARGIN.bottom + geneH + evidH + 4;
+    // ── Regulatory track sizing (Option C, Phase 3) — one row per histone mark, stacked under the
+    // gene track. Zero rows / zero height for a project whose disease doesn't map to a reference
+    // epigenome (data.regulatory.marks is {} in that case), so this is fully backward-compatible —
+    // no extra height, no extra visual clutter for every project outside the 6-disease corpus.
+    const regMarks = (data.regulatory && data.regulatory.marks)
+      ? REG_MARKS_ORDER.filter(m => Object.prototype.hasOwnProperty.call(data.regulatory.marks, m))
+      : [];
+    const doRegTrack = regMarks.length > 0;
+    const regH = doRegTrack ? (regMarks.length * REG_ROW + 20 + 16) : 0; // header + rows + legend
+
+    svgH = annotH + MARGIN.top + PLOT_H + MARGIN.bottom + geneH + regH + evidH + 4;
 
     const svg = d3.select(plotWrap).append('svg')
       .attr('class', 'main-svg')
@@ -1435,6 +1462,16 @@ function fillPanel(data, panelEl) {
       curY += geneH;
     }
 
+    // ── Regulatory tracks (Option C, Phase 3) — one labeled row per histone mark (H3K27ac,
+    // H3K4me1, H3K4me3), stacked directly under the gene track and above the evidence track. ──
+    if (doRegTrack) {
+      const gReg = svg.append('g')
+        .attr('class', 'regulatory-group-root')
+        .attr('transform', `translate(0,${curY})`);
+      renderRegulatoryTrack(gReg, data.regulatory, regMarks, xScale);
+      curY += regH;
+    }
+
     // ── Evidence track (Feature A, below the gene track, above the LD triangle) ──
     const doEvidenceTrack = visGenes.length > 0 && evidenceRowDefs.length > 0;
     if (doEvidenceTrack) {
@@ -1457,7 +1494,7 @@ function fillPanel(data, panelEl) {
         xAxisG.select('.domain').remove();
         redrawOnZoom(svg, data, xScale, yScale, geneRows, visGenes,
           visGenes.length > 0 && showGenes, hasLdData && showLd,
-          evidenceRowDefs, doEvidenceTrack);
+          evidenceRowDefs, doEvidenceTrack, regMarks, doRegTrack);
         if (window.ANNOT && window.ANNOT.showAnnot) redrawAnnotationTracks(svg, data, xScale);
         if (hasLdTri) {
           const scrollW = plotWrap.querySelector('.ldt-inner-scroll');
@@ -1990,6 +2027,60 @@ function drawIntron(g, x1, x2, y, color, strand) {
       .attr('d',`M${ax},${y-3} L${ax+4*dir},${y} L${ax},${y+3}`)
       .attr('fill','none').attr('stroke',color).attr('stroke-width',1).attr('opacity',.6);
   }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Regulatory tracks (Option C, Phase 3) — one labeled row per histone mark, stacked directly
+// under the gene track. Peak blocks are colored per mark (approved design-canvas palette) and
+// sized by genomic span (not a fixed-size dot), with a hover tooltip showing mark/span/signal. A
+// shared legend line lists the marks present, under all rows — same layout convention the
+// evidence track (just below) uses for its own shared legend line.
+// ═══════════════════════════════════════════════════════════════
+function renderRegulatoryTrack(g, regulatory, regMarks, xScale) {
+  g.append('line').attr('x1',MARGIN.left).attr('x2',xScale.range()[1])
+    .attr('y1',0).attr('y2',0).attr('stroke','#e5e7eb').attr('stroke-width',1);
+  const tissueLabel = regulatory && regulatory.tissue ? ` (${regulatory.tissue})` : '';
+  g.append('text').attr('x',8).attr('y',12).attr('font-size',9).attr('fill','#94a3b8')
+    .text('Regulatory' + tissueLabel);
+
+  const tip = document.getElementById('tooltip');
+
+  regMarks.forEach((mark, ri) => {
+    const y = 16 + ri * REG_ROW;
+    const color = REG_COLORS[mark] || '#999999';
+    g.append('text').attr('x',8).attr('y', y + REG_ROW / 2 + 3).attr('font-size',8.5)
+      .attr('fill','#64748b').text(mark);
+
+    const peaks = (regulatory && regulatory.marks && regulatory.marks[mark]) || [];
+    peaks.forEach(p => {
+      const x1 = xScale(p.start), x2 = xScale(p.end);
+      const w = Math.max(2, x2 - x1);
+      const rect = g.append('rect')
+        .attr('x', Math.min(x1, x2)).attr('y', y).attr('width', w).attr('height', REG_ROW - 4)
+        .attr('rx', 1).attr('fill', color).attr('opacity', 0.85)
+        .attr('stroke', '#fff').attr('stroke-width', 0.5);
+      rect.on('mouseover', ev => {
+        if (!tip) return;
+        tip.querySelector('.tt-id').textContent   = mark;
+        tip.querySelector('.tt-pos').textContent  = fmtBp(p.start) + '–' + fmtBp(p.end);
+        tip.querySelector('.tt-pval').textContent = 'signal ' + p.signal;
+        tip.querySelector('.tt-r2').textContent   = '';
+        tip.style.display = 'block'; moveTip(tip, ev);
+      }).on('mousemove', ev => { if (tip) moveTip(tip, ev); })
+        .on('mouseout', () => { if (tip) hideTip(tip); });
+    });
+  });
+
+  // Shared legend line for the marks actually present in this track.
+  const legendY = 16 + regMarks.length * REG_ROW + 12;
+  let lx = 8;
+  regMarks.forEach(mark => {
+    g.append('rect').attr('x', lx).attr('y', legendY - 8).attr('width', 10).attr('height', 10)
+      .attr('rx', 2).attr('fill', REG_COLORS[mark] || '#999999');
+    g.append('text').attr('x', lx + 14).attr('y', legendY).attr('font-size', 8.5)
+      .attr('fill', '#64748b').text(mark);
+    lx += 14 + (mark.length * 6) + 14;
+  });
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -2763,7 +2854,7 @@ function resetConnectors(plotWrap) {
 // Zoom redraw
 // ═══════════════════════════════════════════════════════════════
 function redrawOnZoom(svg, data, newX, yScale, geneRows, visGenes, doGenes, doLd,
-                       evidenceRowDefs, doEvidence) {
+                       evidenceRowDefs, doEvidence, regMarks, doRegTrack) {
   const x1 = newX.range()[0], x2 = newX.range()[1];
 
   // SNP circles — x only (y scale unchanged)
@@ -2805,6 +2896,14 @@ function redrawOnZoom(svg, data, newX, yScale, geneRows, visGenes, doGenes, doLd
     const gEvid = svg.select('.evidence-group-root');
     gEvid.selectAll('*').remove();
     renderEvidenceTrack(gEvid, visGenes, newX, evidenceRowDefs);
+  }
+
+  // Regulatory tracks (Option C, Phase 3) — clear and redraw with new x-scale, same pattern as
+  // the gene/evidence tracks, so peak blocks stay aligned with the Manhattan plot on pan/zoom.
+  if (doRegTrack) {
+    const gReg = svg.select('.regulatory-group-root');
+    gReg.selectAll('*').remove();
+    renderRegulatoryTrack(gReg, data.regulatory, regMarks, newX);
   }
 
   // LD bar track now handled by annotation system redraw (above)
