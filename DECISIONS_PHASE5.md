@@ -144,8 +144,13 @@ the article server against `scz-demo`+`t2d-demo`: real `genes` (238) and `edges`
 as expected, but `regions` came back empty — because that server process predates this phase's compiled
 code (same restart-required situation as every other backend-code change this session; not a bug in the
 new code, confirmed by reading the response and recognizing the stale-process pattern rather than
-assuming success). **Not yet re-verified against a real job on a restarted server** — pending the same
-user go-ahead to restart as every other backend deployment this session.
+assuming success). **Re-verified after restart**: both the production server and the article-data
+server were restarted (user go-ahead obtained first, as always). Re-ran the identical real job
+(`scz-demo`+`t2d-demo`) on the restarted article server: `regions: 311` exactly matches the job's own
+`loci_found: 311` (every pooled locus now produces a region node, none dropped, as designed), with
+correct real field values (e.g. `nearest_gene: "PLCH2"`, a genuine known schizophrenia locus) and
+correct per-region disease grouping (`"disease":"scz"`, id-prefix fallback since these particular demo
+projects never set an explicit `disease.name`).
 
 ## 4. Hard boundaries (carried over, unchanged)
 
@@ -165,8 +170,6 @@ existing suite all pass together after a clean-room rebuild. A real structural f
 ANOVA is impossible at region granularity by construction, not just sometimes null — was caught by a
 test's own wrong assumption during development and fixed in the implementation, not papered over.
 
-**Deployment status, honestly reported, not implied complete**: like every prior phase's backend
-changes, this is compiled Java code the already-running production and article servers have not loaded
-yet (confirmed directly: a real job on the still-running article server returns real genes/edges but
-empty regions). The frontend toggle/re-theme are static-file changes and are already live on both
-servers. Restarting the backend on each is the user's call, not automatically done here.
+**Deployment status**: both the production server and the article-data server were restarted (with the
+user's explicit go-ahead) and are confirmed live with this phase's code. A real post-restart job
+(section 3.6) confirmed `regions` populates correctly end-to-end, not just in unit tests/fixtures.
