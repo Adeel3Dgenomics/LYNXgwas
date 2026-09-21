@@ -13,7 +13,21 @@
 A local GWAS visualization and fine-mapping platform. Point it at your GWAS summary statistics
 and it identifies loci, recovers rsIDs, computes LD, runs a full fine-mapping suite, and gives you
 an interactive Manhattan/LD/gene-track viewer per locus — all in your browser, entirely on your
-own machine. No data ever leaves your computer, and no cloud account or upload step is involved.
+own machine, with no cloud account or upload step involved. It also includes a built-in AI Agent
+that can drive the same actions through natural language, running against a fully local model by
+default — see [How it works](#how-it-works) below for exactly what stays local and what doesn't.
+
+## How it works
+
+![LYNXgwas architecture: local-first pipeline with an opt-in AI Agent](https://raw.githubusercontent.com/AlsammanAlsamman/LYNXgwas/main/docs/images/architecture_overview.png)
+
+Everything — the pipeline, all six analysis modules, and the AI Agent itself when run against a
+local model (e.g. [Ollama](https://ollama.com), one click away in the Agent settings panel) — runs
+inside your own machine. The **only** way anything leaves it is if you explicitly configure the AI
+Agent with a cloud API key, in which case your prompts and whatever project data the agent looks up
+on your behalf (gene names, p-values, etc.) go to that provider, same as pasting them yourself. This
+is a real trade-off, stated plainly rather than glossed over: use a local model if you don't want any
+project data ever leaving your machine, full stop.
 
 ## Why LYNXgwas
 
@@ -82,10 +96,27 @@ your own GWAS summary statistics and walk through the setup wizard.
 - **coloc** — colocalization against a second trait's summary stats (PP.H0–H4)
 - **GWAMA** — meta-analysis pass-through
 - **SuSiEx** — cross-ancestry joint fine-mapping across multiple LYNXgwas projects at once
-- **Locus Matrix** — compare the same locus region across many GWAS datasets side by side
+- **MAGMA** — gene-based and gene-set association
+- **GCTA-GREML** — SNP-heritability estimation from per-individual genotypes
+
+**Cross-dataset & regulatory**
+- **Gene/Region Constellation** — compare the same gene or genomic region across many GWAS datasets
+  and disease groups at once, with a one-way ANOVA on both significance and effect size, and
+  co-significance links between genes reaching significance together
+- **Regulatory-element integration** — stacked H3K27ac/H3K4me1/H3K4me3 ChIP-seq tracks per locus from
+  public reference epigenomes, plus a real interval-overlap enrichment test against your project's
+  own significant SNPs
+
+**AI Agent**
+- A built-in, tool-calling agent panel drives project creation, pipeline runs, and analysis tools
+  through natural language, using either a local model (Ollama/LM Studio, with one-click small-model
+  downloads) or a cloud API key you supply — see [How it works](#how-it-works) above for what each
+  mode does and doesn't send off your machine
+- Every action the agent takes is logged and shown as a visible step; it has no capability a human
+  couldn't already trigger by clicking through the UI, and no delete/destructive actions at all
 
 **Viewer & output**
-- Interactive Manhattan plot, gene track, and LD triangle, all zooming together
+- Interactive Manhattan plot, gene track, LD triangle, and regulatory tracks, all zooming together
 - Live locus editing: resize, split, create, and reorder loci without re-running the whole pipeline
 - Per-locus and whole-genome PDF export; full Excel export of all annotated SNPs
 - Multi-project management from a single home page, with per-project staleness tracking
