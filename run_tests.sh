@@ -14,6 +14,12 @@ javac -encoding UTF-8 -d bin -cp "bin$LIBCP" \
   src/analysis/EnrichmentAnalyzer.java \
   src/analysis/RegulatoryPeakIndex.java \
   src/analysis/RegulatoryEnrichmentAnalyzer.java \
+  src/analysis/MiniJson.java \
+  src/analysis/LlmClient.java \
+  src/analysis/AgentToolRegistry.java \
+  src/analysis/AgentConfig.java \
+  src/analysis/AgentOrchestrator.java \
+  src/analysis/OllamaPuller.java \
   tests/MultiLocusScannerTest.java \
   tests/LdCalculatorTest.java \
   tests/GwasQcTest.java \
@@ -32,7 +38,10 @@ javac -encoding UTF-8 -d bin -cp "bin$LIBCP" \
   tests/GeneConstellationBuilderTest.java \
   tests/GlobalSearchIndexTest.java \
   tests/RegulatoryPeakIndexTest.java \
-  tests/RegulatoryEnrichmentAnalyzerTest.java
+  tests/RegulatoryEnrichmentAnalyzerTest.java \
+  tests/MiniJsonTest.java \
+  tests/AgentToolRegistryTest.java \
+  tests/OllamaPullerTest.java
 
 FAILED=0
 
@@ -111,6 +120,18 @@ java -cp "bin$LIBCP" RegulatoryPeakIndexTest || FAILED=1
 echo
 echo "--- RegulatoryEnrichmentAnalyzerTest ---"
 java -cp "bin$LIBCP" RegulatoryEnrichmentAnalyzerTest || FAILED=1
+
+echo
+echo "--- MiniJsonTest ---"
+java -cp "bin$LIBCP" MiniJsonTest || FAILED=1
+
+echo
+echo "--- AgentToolRegistryTest ---"
+java -cp "bin$LIBCP" AgentToolRegistryTest || FAILED=1
+
+echo
+echo "--- OllamaPullerTest ---"
+java -cp "bin$LIBCP" OllamaPullerTest || FAILED=1
 
 echo
 if [ "$FAILED" -eq 0 ]; then

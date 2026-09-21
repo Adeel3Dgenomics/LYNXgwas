@@ -234,6 +234,13 @@ public class LocalServer {
         http.createContext("/api/search",            this::globalSearch);
         http.createContext("/pick-folder-native",    this::pickFolder);
 
+        // ── AI Agent panel (Phase 4) ──────────────────────────────────────
+        http.createContext("/api/agent/chat",          this::agentChat);
+        http.createContext("/api/agent/config",        this::agentConfigEndpoint);
+        http.createContext("/api/agent/detect-local",  this::agentDetectLocal);
+        http.createContext("/api/agent/pull-model",    this::agentPullModel);
+        http.createContext("/api/agent/pull-progress", this::agentPullProgress);
+
         // ── Legacy endpoints (kept for backward compatibility) ───────────
         http.createContext("/manifest",                    this::manifest);
         http.createContext("/locus/",                      this::locus);
@@ -1950,6 +1957,169 @@ public class LocalServer {
             gc.validateAll();
             respond(ex, 200, "application/json", gc.toJson().getBytes("UTF-8"));
         }
+    }
+
+    // GET /api/agent/config — current agent LLM settings (mode/base_url/api_key/model).
+    // POST /api/agent/config — replace them (DECISIONS_PHASE4.md section 1).
+    private void agentConfigEndpoint(HttpExchange ex) throws IOException {
+        cors(ex); if (preflight(ex)) return;
+        if ("POST".equalsIgnoreCase(ex.getRequestMethod())) {
+            String body = new String(readAll(ex.getRequestBody()), "UTF-8");
+            try {
+                AgentConfig cfg = new AgentConfig();
+                cfg.applyJson(body);
+                cfg.save();
+                respond(ex, 200, "application/json", "{\"ok\":true}".getBytes());
+            } catch (Exception e) {
+                respond(ex, 500, "application/json",
+                    ("{\"error\":\"" + escJ(e.getMessage()) + "\"}").getBytes());
+            }
+        } else {
+            respond(ex, 200, "application/json", AgentConfig.load().toJson().getBytes("UTF-8"));
+        }
+    }
+
+    // POST /api/agent/pull-model — { "model": "llama3.2" } — proxies to Ollama's own POST /api/pull
+    // (a real, stable, documented endpoint) so the settings panel can offer a plain "Download" button
+    // instead of asking the user to open a terminal. Does not, and cannot, install Ollama itself — see
+    // OllamaPuller's javadoc. Only one pull tracked at a time (a settings-panel affordance, not a queue).
+    private void agentPullModel(HttpExchange ex) throws IOException {
+        cors(ex); if (preflight(ex)) return;
+        if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) {
+            respond(ex, 405, "application/json", "{\"error\":\"POST required\"}".getBytes()); return;
+        }
+        String body = new String(readAll(ex.getRequestBody()), "UTF-8");
+        String model = extractStr(body, "model");
+        if (model == null || model.isEmpty()) {
+            respond(ex, 400, "application/json", "{\"error\":\"model is required\"}".getBytes()); return;
+        }
+        OllamaPuller.startPull("http://localhost:11434", model);
+        respond(ex, 200, "application/json", "{\"started\":true}".getBytes());
+    }
+
+    // GET /api/agent/pull-progress — current status of the most recently started model download.
+    private void agentPullProgress(HttpExchange ex) throws IOException {
+        cors(ex); if (preflight(ex)) return;
+        OllamaPuller.PullStatus s = OllamaPuller.current();
+        long pct = s.total > 0 ? (100 * s.completed / s.total) : 0;
+        String json = "{"
+            + "\"status\":" + jsonStrStatic(s.status) + ","
+            + "\"completed\":" + s.completed + ","
+            + "\"total\":" + s.total + ","
+            + "\"pct\":" + pct + ","
+            + "\"done\":" + s.done + ","
+            + "\"error\":" + (s.error == null ? "null" : jsonStrStatic(s.error))
+            + "}";
+        respond(ex, 200, "application/json", json.getBytes("UTF-8"));
+    }
+
+    // GET /api/agent/detect-local — probes common local LLM runtime ports (Ollama 11434, LM Studio
+    // 1234) with a short timeout so the agent settings UI can offer a live model dropdown instead of
+    // asking the user to type a model name blind. Absence of either is normal, not an error.
+    private void agentDetectLocal(HttpExchange ex) throws IOException {
+        cors(ex); if (preflight(ex)) return;
+        StringBuilder json = new StringBuilder("{");
+        json.append("\"ollama\":").append(detectOllama()).append(",");
+        json.append("\"lmstudio\":").append(detectLmStudio());
+        json.append("}");
+        respond(ex, 200, "application/json", json.toString().getBytes("UTF-8"));
+    }
+
+    @SuppressWarnings("unchecked")
+    private String detectOllama() {
+        try {
+            String body = shortGet("http://localhost:11434/api/tags");
+            Map<String, Object> obj = MiniJson.asObject(MiniJson.parse(body));
+            List<Object> models = MiniJson.asArray(obj.getOrDefault("models", new ArrayList<>()));
+            List<String> names = new ArrayList<>();
+            for (Object m : models) names.add(MiniJson.getStr(MiniJson.asObject(m), "name", ""));
+            return "{\"available\":true,\"base_url\":\"http://localhost:11434/v1\",\"models\":"
+                + MiniJson.encode(names) + "}";
+        } catch (Exception e) {
+            return "{\"available\":false}";
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private String detectLmStudio() {
+        try {
+            String body = shortGet("http://localhost:1234/v1/models");
+            Map<String, Object> obj = MiniJson.asObject(MiniJson.parse(body));
+            List<Object> data = MiniJson.asArray(obj.getOrDefault("data", new ArrayList<>()));
+            List<String> ids = new ArrayList<>();
+            for (Object m : data) ids.add(MiniJson.getStr(MiniJson.asObject(m), "id", ""));
+            return "{\"available\":true,\"base_url\":\"http://localhost:1234/v1\",\"models\":"
+                + MiniJson.encode(ids) + "}";
+        } catch (Exception e) {
+            return "{\"available\":false}";
+        }
+    }
+
+    private String shortGet(String url) throws IOException, InterruptedException {
+        java.net.http.HttpClient client = java.net.http.HttpClient.newBuilder()
+            .connectTimeout(java.time.Duration.ofMillis(700)).build();
+        java.net.http.HttpRequest req = java.net.http.HttpRequest.newBuilder(URI.create(url))
+            .timeout(java.time.Duration.ofMillis(1200)).GET().build();
+        java.net.http.HttpResponse<String> resp = client.send(req,
+            java.net.http.HttpResponse.BodyHandlers.ofString(java.nio.charset.StandardCharsets.UTF_8));
+        if (resp.statusCode() / 100 != 2) throw new IOException("HTTP " + resp.statusCode());
+        return resp.body();
+    }
+
+    // POST /api/agent/chat — { "message": "...", "history": [...] } -> { "reply", "steps", "history" }
+    // Runs the tool-calling loop (AgentOrchestrator) against whichever LLM endpoint is configured via
+    // /api/agent/config. Stateless server-side by design — see AgentOrchestrator's own javadoc.
+    @SuppressWarnings("unchecked")
+    private void agentChat(HttpExchange ex) throws IOException {
+        cors(ex); if (preflight(ex)) return;
+        if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) {
+            respond(ex, 405, "application/json", "{\"error\":\"POST required\"}".getBytes()); return;
+        }
+        String body = new String(readAll(ex.getRequestBody()), "UTF-8");
+        try {
+            Map<String, Object> req = MiniJson.asObject(MiniJson.parse(body));
+            String message = MiniJson.getStr(req, "message", "");
+            if (message.isEmpty()) {
+                respond(ex, 400, "application/json", "{\"error\":\"message is required\"}".getBytes());
+                return;
+            }
+            List<Map<String, Object>> history = new ArrayList<>();
+            Object rawHistory = req.get("history");
+            if (rawHistory != null) {
+                for (Object m : MiniJson.asArray(rawHistory)) history.add(MiniJson.asObject(m));
+            }
+
+            AgentConfig cfg = AgentConfig.load();
+            if (cfg.model == null || cfg.model.isEmpty()) {
+                respond(ex, 400, "application/json",
+                    "{\"error\":\"No model configured yet — open Agent Settings and pick a local or cloud model first.\"}".getBytes());
+                return;
+            }
+
+            AgentOrchestrator.ChatOutcome outcome = AgentOrchestrator.chat(history, message, cfg, PORT);
+
+            List<Object> stepsJson = new ArrayList<>();
+            for (AgentOrchestrator.Step s : outcome.steps) {
+                Map<String, Object> sj = new LinkedHashMap<>();
+                sj.put("tool", s.tool);
+                sj.put("arguments", s.argumentsJson);
+                sj.put("summary", s.summary);
+                sj.put("ok", s.ok);
+                stepsJson.add(sj);
+            }
+            Map<String, Object> respObj = new LinkedHashMap<>();
+            respObj.put("reply", outcome.reply);
+            respObj.put("steps", stepsJson);
+            respObj.put("history", outcome.messages);
+            respond(ex, 200, "application/json", MiniJson.encode(respObj).getBytes("UTF-8"));
+        } catch (Exception e) {
+            String msg = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+            respond(ex, 500, "application/json", ("{\"error\":" + jsonStrStatic(msg) + "}").getBytes());
+        }
+    }
+
+    private static String jsonStrStatic(String s) {
+        return MiniJson.encode(s);
     }
 
     // POST /api/shared-storage/test — validates the currently-saved shared-storage config (folder

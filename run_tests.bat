@@ -10,6 +10,12 @@ javac -encoding UTF-8 -d bin -cp "bin%LIBCP%" ^
   src\analysis\EnrichmentAnalyzer.java ^
   src\analysis\RegulatoryPeakIndex.java ^
   src\analysis\RegulatoryEnrichmentAnalyzer.java ^
+  src\analysis\MiniJson.java ^
+  src\analysis\LlmClient.java ^
+  src\analysis\AgentToolRegistry.java ^
+  src\analysis\AgentConfig.java ^
+  src\analysis\AgentOrchestrator.java ^
+  src\analysis\OllamaPuller.java ^
   tests\MultiLocusScannerTest.java ^
   tests\LdCalculatorTest.java ^
   tests\GwasQcTest.java ^
@@ -28,7 +34,10 @@ javac -encoding UTF-8 -d bin -cp "bin%LIBCP%" ^
   tests\GeneConstellationBuilderTest.java ^
   tests\GlobalSearchIndexTest.java ^
   tests\RegulatoryPeakIndexTest.java ^
-  tests\RegulatoryEnrichmentAnalyzerTest.java
+  tests\RegulatoryEnrichmentAnalyzerTest.java ^
+  tests\MiniJsonTest.java ^
+  tests\AgentToolRegistryTest.java ^
+  tests\OllamaPullerTest.java
 if %ERRORLEVEL% neq 0 (
     echo [FAIL] Test compilation failed.
     exit /b 1
@@ -129,6 +138,21 @@ if %ERRORLEVEL% neq 0 set FAILED=1
 echo.
 echo --- RegulatoryEnrichmentAnalyzerTest ---
 java -cp "bin%LIBCP%" RegulatoryEnrichmentAnalyzerTest
+if %ERRORLEVEL% neq 0 set FAILED=1
+
+echo.
+echo --- MiniJsonTest ---
+java -cp "bin%LIBCP%" MiniJsonTest
+if %ERRORLEVEL% neq 0 set FAILED=1
+
+echo.
+echo --- AgentToolRegistryTest ---
+java -cp "bin%LIBCP%" AgentToolRegistryTest
+if %ERRORLEVEL% neq 0 set FAILED=1
+
+echo.
+echo --- OllamaPullerTest ---
+java -cp "bin%LIBCP%" OllamaPullerTest
 if %ERRORLEVEL% neq 0 set FAILED=1
 
 echo.

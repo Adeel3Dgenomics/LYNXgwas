@@ -60,6 +60,12 @@ javac -encoding UTF-8 -d bin -cp "bin%LIBCP%" ^
   src\analysis\EnrichmentAnalyzer.java ^
   src\analysis\RegulatoryPeakIndex.java ^
   src\analysis\RegulatoryEnrichmentAnalyzer.java ^
+  src\analysis\MiniJson.java ^
+  src\analysis\LlmClient.java ^
+  src\analysis\AgentToolRegistry.java ^
+  src\analysis\AgentConfig.java ^
+  src\analysis\AgentOrchestrator.java ^
+  src\analysis\OllamaPuller.java ^
   src\export\ColumnSpec.java ^
   src\export\GwasSchema.java ^
   src\export\SnpContext.java ^

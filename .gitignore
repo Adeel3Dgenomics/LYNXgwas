@@ -1,3 +1,6 @@
+# AI Agent settings (may contain a real cloud API key — never committed, per-machine local state)
+.agent_config.json
+
 # Large input data (GWAS files, loci definitions, spreadsheets)
 input/
 
