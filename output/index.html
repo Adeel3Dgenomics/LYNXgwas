@@ -203,7 +203,7 @@ table.gsearch-table a.gsearch-open:hover { background: #0b5a46; }
 
 /* ── AI Agent panel (Phase 4) ──────────────────────── */
 #agent-launcher {
-  position: fixed; right: 1.5rem; bottom: 1.5rem; z-index: 500;
+  position: fixed; right: 1.5rem; bottom: 1.5rem; z-index: 2000;
   width: 56px; height: 56px; border-radius: 50%; border: none;
   background: linear-gradient(135deg, #0F6E56 0%, #1a3a4a 100%);
   color: #fff; font-size: 1.6rem; cursor: pointer;
@@ -212,7 +212,7 @@ table.gsearch-table a.gsearch-open:hover { background: #0b5a46; }
 }
 #agent-launcher:hover { filter: brightness(1.1); }
 #agent-panel {
-  position: fixed; left: 0; right: 0; bottom: 0; z-index: 600;
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 2000;
   height: 440px; max-height: 78vh;
   background: #fff; border-top: 1px solid #d8dbe0;
   box-shadow: 0 -4px 24px rgba(0,0,0,0.18);
@@ -226,10 +226,13 @@ table.gsearch-table a.gsearch-open:hover { background: #0b5a46; }
 }
 #agent-panel .agent-hd b { flex: 1; font-size: 0.95rem; }
 #agent-panel .agent-hd button {
-  background: transparent; border: none; color: #cfd6dc; cursor: pointer; font-size: 0.95rem;
-  padding: 0.2rem 0.5rem;
+  background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.25); border-radius: 6px;
+  color: #fff; cursor: pointer; font-size: 0.85rem; font-weight: 500;
+  padding: 0.35rem 0.7rem; display: inline-flex; align-items: center; gap: 0.3rem;
 }
-#agent-panel .agent-hd button:hover { color: #fff; }
+#agent-panel .agent-hd button:hover { background: rgba(255,255,255,0.22); }
+#agent-panel .agent-hd .agent-settings-btn { font-size: 1.05rem; }
+#agent-panel .agent-hd .agent-close-btn { font-size: 1.1rem; padding: 0.35rem 0.6rem; }
 #agent-body { flex: 1; display: flex; min-height: 0; }
 #agent-settings {
   width: 280px; flex-shrink: 0; border-right: 1px solid #eee; padding: 0.75rem;
@@ -286,8 +289,8 @@ table.gsearch-table a.gsearch-open:hover { background: #0b5a46; }
   <div class="agent-hd">
     <span>&#129302;</span>
     <b>LYNXgwas Agent</b>
-    <button onclick="agentToggleSettings()" title="Model settings">&#9881;</button>
-    <button onclick="agentToggle()" title="Close">&times;</button>
+    <button class="agent-settings-btn" onclick="agentToggleSettings()" title="Model settings">&#9881; Settings</button>
+    <button class="agent-close-btn" onclick="agentToggle()" title="Close">&times;</button>
   </div>
   <div id="agent-body">
     <div id="agent-settings">
@@ -3031,13 +3034,24 @@ async function agentLoadConfig() {
   } catch (e) { /* settings endpoint not reachable yet — leave defaults */ }
 }
 
-// Curated, small, tool-calling-capable models (per Ollama's own library listings) for the one-click
-// "download a model" affordance — a deliberately short list, not the full Ollama catalog, so a
-// first-time user isn't asked to choose among hundreds of options.
-var AGENT_RECOMMENDED_MODELS = [
-  { name: 'llama3.2',   label: 'Llama 3.2 (3B)', size: '~2 GB',   note: 'fast, good default' },
-  { name: 'qwen2.5:7b', label: 'Qwen 2.5 (7B)',  size: '~4.7 GB', note: 'slower, stronger reasoning' }
+// Curated, tool-calling-capable models (per Ollama's own library listings) for the one-click
+// "download a model" affordance — deliberately short lists, not the full Ollama catalog, so a
+// first-time user isn't asked to choose among hundreds of options. Small models are shown by
+// default since this feature is mainly about automating the analysis pipeline (running tools with
+// clear, structured calls), not open-ended chat — a small model is usually enough and starts/responds
+// much faster. Larger models are one click away for anyone who wants stronger reasoning and doesn't
+// mind the extra download size and slower responses.
+var AGENT_SMALL_MODELS = [
+  { name: 'llama3.2:1b', label: 'Llama 3.2 (1B)', size: '~1.3 GB', note: 'smallest, fastest — good for simple automation' },
+  { name: 'llama3.2:3b', label: 'Llama 3.2 (3B)',  size: '~2 GB',   note: 'small, good default balance' },
+  { name: 'qwen2.5:3b',  label: 'Qwen 2.5 (3B)',   size: '~2 GB',   note: 'small, strong tool-calling for its size' }
 ];
+var AGENT_LARGE_MODELS = [
+  { name: 'qwen2.5:7b',  label: 'Qwen 2.5 (7B)',  size: '~4.7 GB', note: 'stronger reasoning, slower' },
+  { name: 'llama3.1:8b', label: 'Llama 3.1 (8B)', size: '~4.7 GB', note: 'stronger reasoning, slower' },
+  { name: 'qwen2.5:14b', label: 'Qwen 2.5 (14B)', size: '~9 GB',   note: 'most capable of this list, needs more RAM/disk' }
+];
+var agentShowLargeModels = false;
 
 async function agentDetectLocal() {
   var sel = document.getElementById('agent-local-model');
@@ -3072,14 +3086,23 @@ function agentRenderQuickPull(ollamaAvailable) {
     list.innerHTML = '<div class="agent-hint">Install Ollama first (link above), then these one-click downloads appear here.</div>';
     return;
   }
-  list.innerHTML = AGENT_RECOMMENDED_MODELS.map(function(m, i) {
-    return '<div style="display:flex;align-items:center;gap:0.4rem;margin-top:0.3rem">'
-      + '<div style="flex:1;font-size:0.75rem"><b>' + esc(m.label) + '</b> ' + esc(m.size)
-      + '<br><span style="color:#888">' + esc(m.note) + '</span></div>'
-      + '<button class="btn btn-secondary" style="font-size:0.72rem;padding:0.3rem 0.5rem" '
-      + 'id="agent-pull-btn-' + i + '" onclick="agentPullModel(' + JSON.stringify(m.name) + ', ' + i + ')">Download</button>'
-      + '</div>';
-  }).join('');
+  var rows = AGENT_SMALL_MODELS.map(function(m, i) { return agentPullRowHtml(m, 'small-' + i); });
+  if (agentShowLargeModels) {
+    rows = rows.concat(AGENT_LARGE_MODELS.map(function(m, i) { return agentPullRowHtml(m, 'large-' + i); }));
+    rows.push('<div class="agent-hint" style="margin-top:0.3rem"><a href="#" onclick="agentShowLargeModels=false;agentRenderQuickPull(true);return false;">Hide larger models</a></div>');
+  } else {
+    rows.push('<div class="agent-hint" style="margin-top:0.3rem"><a href="#" onclick="agentShowLargeModels=true;agentRenderQuickPull(true);return false;">Show larger, more capable models</a></div>');
+  }
+  list.innerHTML = rows.join('');
+}
+
+function agentPullRowHtml(m, key) {
+  return '<div style="display:flex;align-items:center;gap:0.4rem;margin-top:0.3rem">'
+    + '<div style="flex:1;font-size:0.75rem"><b>' + esc(m.label) + '</b> ' + esc(m.size)
+    + '<br><span style="color:#888">' + esc(m.note) + '</span></div>'
+    + '<button class="btn btn-secondary" style="font-size:0.72rem;padding:0.3rem 0.5rem" '
+    + 'id="agent-pull-btn-' + key + "\" onclick='agentPullModel(" + JSON.stringify(m.name) + ", " + JSON.stringify(key) + ")'>Download</button>"
+    + '</div>';
 }
 
 async function agentPullModel(model, btnIndex) {

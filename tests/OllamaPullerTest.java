@@ -22,12 +22,23 @@ public class OllamaPullerTest {
             ex.getResponseHeaders().add("Content-Type", "application/x-ndjson");
             ex.sendResponseHeaders(200, 0); // chunked, unknown length
             try (OutputStream os = ex.getResponseBody()) {
+                // Status strings match what a real Ollama instance actually sends (confirmed against
+                // a real pull of llama3.2:1b), not a made-up shape — see the trailing bookkeeping
+                // lines below, which is exactly what previously corrupted the final reported progress.
                 writeLine(os, "{\"status\":\"pulling manifest\"}");
                 sleep(50);
-                writeLine(os, "{\"status\":\"downloading\",\"total\":1000,\"completed\":250}");
+                writeLine(os, "{\"status\":\"pulling abc123digest\",\"total\":1000,\"completed\":250}");
                 sleep(50);
-                writeLine(os, "{\"status\":\"downloading\",\"total\":1000,\"completed\":1000}");
+                writeLine(os, "{\"status\":\"pulling abc123digest\",\"total\":1000,\"completed\":1000}");
                 sleep(50);
+                // Trailing bookkeeping lines, each with their own small, unrelated total/completed —
+                // these must NOT overwrite the real download's progress (the bug this regression
+                // guards against: a real pull's final reported pct came out as a nonsensical
+                // multi-hundred-million percent because a later small total/completed pair stomped
+                // the real ones).
+                writeLine(os, "{\"status\":\"verifying sha256 digest\"}");
+                writeLine(os, "{\"status\":\"writing manifest\",\"total\":485,\"completed\":485}");
+                writeLine(os, "{\"status\":\"removing any unused layers\"}");
                 writeLine(os, "{\"status\":\"success\"}");
             }
         });
@@ -40,7 +51,9 @@ public class OllamaPullerTest {
             failures += check("pull completed (done=true within timeout)", last.done);
             failures += check("no error on a successful pull", last.error == null);
             failures += check("final status is 'success'", "success".equals(last.status));
-            failures += check("final completed == total", last.completed == last.total && last.total == 1000);
+            failures += check("final completed/total reflect the real download, not a trailing " +
+                "bookkeeping line's unrelated small total/completed (485)",
+                last.completed == 1000 && last.total == 1000);
         } finally {
             ok.stop(0);
         }

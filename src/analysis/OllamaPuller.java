@@ -78,8 +78,17 @@ public class OllamaPuller {
         try {
             Map<String, Object> obj = MiniJson.asObject(MiniJson.parse(line));
             if (obj.get("status") != null) CURRENT.status = String.valueOf(obj.get("status"));
-            if (obj.get("total") != null) CURRENT.total = ((Number) obj.get("total")).longValue();
-            if (obj.get("completed") != null) CURRENT.completed = ((Number) obj.get("completed")).longValue();
+            // Ollama's stream keeps sending lines after the model layer itself is fully downloaded
+            // ("verifying sha256 digest", "writing manifest", "removing any unused layers", "success")
+            // and some of those carry their own small, unrelated total/completed pair (e.g. the
+            // manifest file's own byte count) — applying those would stomp the real download's
+            // progress right at the end (observed directly: a real pull's final reported pct came out
+            // as a nonsensical multi-hundred-million percent). Only "pulling ..." lines describe the
+            // actual model download, so only those are allowed to update total/completed.
+            String status = CURRENT.status;
+            boolean isDownloadLine = status != null && status.startsWith("pulling");
+            if (isDownloadLine && obj.get("total") != null) CURRENT.total = ((Number) obj.get("total")).longValue();
+            if (isDownloadLine && obj.get("completed") != null) CURRENT.completed = ((Number) obj.get("completed")).longValue();
             if (obj.get("error") != null) CURRENT.error = String.valueOf(obj.get("error"));
         } catch (Exception ignore) {
             // A non-JSON or partial line should never crash the whole pull — skip it, the next line
