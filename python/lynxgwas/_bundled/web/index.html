@@ -79,6 +79,49 @@ td.actions button { margin-right: 0.3rem; }
 .badge-stale     { background: #fef3c7; color: #92400e; }
 .badge-proc      { background: #dbeafe; color: #1e40af; }
 .badge-error     { background: #fee2e2; color: #991b1b; }
+.badge-contains  { background: #ede9fe; color: #5b21b6; }
+.badge-nearest   { background: #e0f2fe; color: #075985; }
+
+/* ── Global search (Search button) ─────────────────── */
+.gsearch-field-row { display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: flex-end; margin-bottom: 1rem; }
+.gsearch-field-row .wiz-field { flex: 1; min-width: 140px; margin-bottom: 0; }
+.gsearch-summary {
+  font-size: 0.78rem; color: #64748b; background: #f8fafc; border: 1px solid #e5e7eb;
+  border-radius: 8px; padding: 0.5rem 0.75rem; margin-bottom: 0.75rem; display: flex;
+  justify-content: space-between; align-items: center; gap: 0.75rem; flex-wrap: wrap;
+}
+.gsearch-summary a { color: #0F6E56; font-weight: 600; text-decoration: none; cursor: pointer; }
+.gsearch-summary a:hover { text-decoration: underline; }
+.gsearch-table-wrap {
+  max-height: 55vh; overflow: auto; border: 1px solid #e5e7eb; border-radius: 10px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+}
+table.gsearch-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 0.8rem; }
+table.gsearch-table thead th {
+  position: sticky; top: 0; z-index: 1; text-align: left; padding: 0.55rem 0.7rem;
+  background: #0F6E56; color: #eafff6; font-weight: 600; font-size: 0.68rem;
+  text-transform: uppercase; letter-spacing: 0.4px; white-space: nowrap;
+}
+table.gsearch-table tbody tr { transition: background 0.1s; }
+table.gsearch-table tbody tr:nth-child(even) { background: #fafbfc; }
+table.gsearch-table tbody tr:hover { background: #eefaf5; }
+table.gsearch-table td {
+  padding: 0.5rem 0.7rem; border-bottom: 1px solid #f0f2f4; vertical-align: middle;
+}
+table.gsearch-table td.mono { font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace; font-size: 0.78rem; color: #334155; }
+table.gsearch-table td.pval { font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace; font-weight: 600; color: #b91c1c; }
+table.gsearch-table td .gsearch-gene-cell { display: flex; align-items: center; gap: 0.4rem; }
+table.gsearch-table a.gsearch-open {
+  display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.25rem 0.6rem;
+  background: #0F6E56; color: #fff; border-radius: 6px; font-size: 0.75rem; font-weight: 600;
+  text-decoration: none; white-space: nowrap;
+}
+table.gsearch-table a.gsearch-open:hover { background: #0b5a46; }
+.gsearch-not-compared {
+  margin-top: 0.75rem; font-size: 0.78rem; color: #92400e; background: #fffbeb;
+  border: 1px solid #fde68a; border-radius: 8px; padding: 0.5rem 0.75rem;
+}
+.gsearch-empty { padding: 2rem; text-align: center; color: #888; font-size: 0.85rem; }
 
 /* ── Empty state ─────────────────────────────────── */
 .empty {
@@ -157,6 +200,75 @@ td.actions button { margin-right: 0.3rem; }
 .wiz-col-grid .wiz-field { margin-bottom: 0.5rem; }
 .wiz-col-required { border-left: 3px solid #0F6E56; padding-left: 0.75rem; }
 .wiz-col-optional { border-left: 3px solid #d1d5db; padding-left: 0.75rem; }
+
+/* ── AI Agent panel (Phase 4) ──────────────────────── */
+#agent-launcher {
+  position: fixed; right: 1.5rem; bottom: 1.5rem; z-index: 2000;
+  width: 56px; height: 56px; border-radius: 50%; border: none;
+  background: linear-gradient(135deg, #0F6E56 0%, #1a3a4a 100%);
+  color: #fff; font-size: 1.6rem; cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.3);
+  display: flex; align-items: center; justify-content: center;
+}
+#agent-launcher:hover { filter: brightness(1.1); }
+#agent-panel {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 2000;
+  height: 440px; max-height: 78vh;
+  background: #fff; border-top: 1px solid #d8dbe0;
+  box-shadow: 0 -4px 24px rgba(0,0,0,0.18);
+  display: none; flex-direction: column;
+  font-size: 0.85rem;
+}
+#agent-panel.open { display: flex; }
+#agent-panel .agent-hd {
+  display: flex; align-items: center; gap: 0.6rem;
+  padding: 0.6rem 1rem; background: #14212b; color: #fff; flex-shrink: 0;
+}
+#agent-panel .agent-hd b { flex: 1; font-size: 0.95rem; }
+#agent-panel .agent-hd button {
+  background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.25); border-radius: 6px;
+  color: #fff; cursor: pointer; font-size: 0.85rem; font-weight: 500;
+  padding: 0.35rem 0.7rem; display: inline-flex; align-items: center; gap: 0.3rem;
+}
+#agent-panel .agent-hd button:hover { background: rgba(255,255,255,0.22); }
+#agent-panel .agent-hd .agent-settings-btn { font-size: 1.05rem; }
+#agent-panel .agent-hd .agent-close-btn { font-size: 1.1rem; padding: 0.35rem 0.6rem; }
+#agent-body { flex: 1; display: flex; min-height: 0; }
+#agent-settings {
+  width: 280px; flex-shrink: 0; border-right: 1px solid #eee; padding: 0.75rem;
+  overflow-y: auto; background: #fafbfc; display: none;
+}
+#agent-settings.open { display: block; }
+#agent-settings label { display: block; font-size: 0.75rem; font-weight: 600; color: #555; margin: 0.6rem 0 0.2rem; }
+#agent-settings input, #agent-settings select {
+  width: 100%; padding: 0.35rem 0.5rem; border: 1px solid #ccc; border-radius: 4px; font-size: 0.8rem;
+}
+#agent-settings .agent-mode-row { display: flex; gap: 0.5rem; margin-top: 0.4rem; }
+#agent-settings .agent-mode-row label {
+  flex: 1; display: flex; align-items: center; gap: 0.3rem; font-weight: 500; color: #333;
+  border: 1px solid #ccc; border-radius: 4px; padding: 0.3rem 0.4rem; cursor: pointer; margin: 0;
+}
+#agent-settings .agent-mode-row input { width: auto; }
+#agent-settings .agent-hint { font-size: 0.7rem; color: #888; margin-top: 0.25rem; line-height: 1.3; }
+#agent-main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+#agent-log { flex: 1; overflow-y: auto; padding: 0.75rem 1rem; }
+.agent-msg { margin-bottom: 0.7rem; max-width: 82%; }
+.agent-msg.user { margin-left: auto; text-align: right; }
+.agent-msg .bubble {
+  display: inline-block; padding: 0.5rem 0.75rem; border-radius: 10px; text-align: left;
+  white-space: pre-wrap; word-break: break-word;
+}
+.agent-msg.user .bubble { background: #0F6E56; color: #fff; }
+.agent-msg.assistant .bubble { background: #eef1f3; color: #1a1a2e; }
+.agent-step {
+  font-size: 0.72rem; color: #555; background: #f5f6f8; border-left: 3px solid #0F6E56;
+  padding: 0.3rem 0.5rem; margin: 0.25rem 0; border-radius: 3px;
+}
+.agent-step.fail { border-left-color: #dc2626; color: #7a1f1f; }
+#agent-inputrow { display: flex; gap: 0.5rem; padding: 0.6rem 0.75rem; border-top: 1px solid #eee; flex-shrink: 0; }
+#agent-inputrow input { flex: 1; padding: 0.5rem 0.7rem; border: 1px solid #ccc; border-radius: 6px; font-size: 0.85rem; }
+#agent-inputrow button { padding: 0.5rem 1.1rem; }
+#agent-status { font-size: 0.72rem; color: #888; padding: 0 0.75rem 0.4rem; }
 </style>
 </head>
 <body>
@@ -171,6 +283,65 @@ td.actions button { margin-right: 0.3rem; }
     <span id="version-label"></span>
   </div>
 </header>
+
+<button id="agent-launcher" title="LYNXgwas Agent" onclick="agentToggle()">&#129302;</button>
+<div id="agent-panel">
+  <div class="agent-hd">
+    <span>&#129302;</span>
+    <b>LYNXgwas Agent</b>
+    <button class="agent-settings-btn" onclick="agentToggleSettings()" title="Model settings">&#9881; Settings</button>
+    <button class="agent-close-btn" onclick="agentToggle()" title="Close">&times;</button>
+  </div>
+  <div id="agent-body">
+    <div id="agent-settings">
+      <label>Model source</label>
+      <div class="agent-mode-row">
+        <label><input type="radio" name="agent-mode" value="local" onchange="agentModeChanged()" checked> Local</label>
+        <label><input type="radio" name="agent-mode" value="cloud" onchange="agentModeChanged()"> Cloud API</label>
+      </div>
+
+      <div id="agent-local-fields">
+        <label>Detected local models</label>
+        <select id="agent-local-model"><option value="">(click Detect)</option></select>
+        <button class="btn btn-secondary" style="margin-top:0.4rem;width:100%" onclick="agentDetectLocal()">Detect local models</button>
+
+        <div id="agent-no-ollama" class="agent-hint" style="display:none;margin-top:0.5rem">
+          Ollama not found running on this machine.
+          <a href="https://ollama.com/download" target="_blank" rel="noopener"><b>Download &amp; install Ollama</b></a>
+          (free, official installer, ~2 min, one-time) — then click Detect again.
+        </div>
+
+        <label style="margin-top:0.6rem">Or download a model now (via Ollama)</label>
+        <div id="agent-quick-pull-list"></div>
+        <div id="agent-pull-status" class="agent-hint"></div>
+
+        <div class="agent-hint" style="margin-top:0.4rem">LM Studio (localhost:1234) is also detected automatically if you use that instead.</div>
+      </div>
+
+      <div id="agent-cloud-fields" style="display:none">
+        <label>API base URL</label>
+        <input id="agent-cloud-url" placeholder="https://api.openai.com/v1">
+        <label>API key</label>
+        <input id="agent-cloud-key" type="password" placeholder="sk-...">
+        <label>Model</label>
+        <input id="agent-cloud-model" placeholder="gpt-4o-mini">
+        <div class="agent-hint">Works with any OpenAI-compatible endpoint (OpenAI, Groq, Together, etc).</div>
+      </div>
+
+      <button class="btn btn-primary" style="margin-top:0.75rem;width:100%" onclick="agentSaveConfig()">Save settings</button>
+      <div id="agent-settings-status" class="agent-hint"></div>
+    </div>
+    <div id="agent-main">
+      <div id="agent-log"></div>
+      <div id="agent-status"></div>
+      <div id="agent-inputrow">
+        <input id="agent-input" placeholder="Ask the agent to create a project, run the pipeline, check progress..."
+               onkeydown="if(event.key==='Enter') agentSend();">
+        <button class="btn btn-primary" onclick="agentSend()">Send</button>
+      </div>
+    </div>
+  </div>
+</div>
 
 <main>
   <div class="toolbar">
@@ -189,6 +360,9 @@ td.actions button { margin-right: 0.3rem; }
     </button>
     <button class="btn btn-secondary" onclick="openSusiex()">
       SuSiEx
+    </button>
+    <button class="btn btn-secondary" onclick="openGlobalSearch()">
+      Search
     </button>
     <button class="btn btn-secondary" onclick="exportProjectsInfo()">
       Info
@@ -1656,6 +1830,224 @@ async function saveMissingRsid(idx) {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// Global search — cross-project gene/SNP/position lookup
+// ═══════════════════════════════════════════════════════════════
+var gsearchState = { type: 'gene', lastSummary: null };
+
+function openGlobalSearch() {
+  var overlay = document.getElementById('gsearch-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'gsearch-overlay';
+    overlay.className = 'wizard-overlay';
+    overlay.innerHTML = '<div class="wizard-box" style="max-width:980px;width:94vw" id="gsearch-box"></div>';
+    overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.classList.remove('open'); });
+    document.body.appendChild(overlay);
+  }
+  renderGlobalSearchForm();
+  overlay.classList.add('open');
+}
+
+function gsearchClose() {
+  var overlay = document.getElementById('gsearch-overlay');
+  if (overlay) overlay.classList.remove('open');
+}
+
+function renderGlobalSearchForm() {
+  var box = document.getElementById('gsearch-box');
+  var type = gsearchState.type;
+  box.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center">'
+    + '<h3>Gene / SNP Lookup</h3>'
+    + '<button class="btn btn-secondary" onclick="gsearchClose()" style="padding:0.3rem 0.7rem">&times;</button>'
+    + '</div>'
+    + '<p style="color:#666;font-size:0.85rem;margin:0.35rem 0 1rem">'
+    + 'Find every project with a significant hit at a gene, SNP, or genomic position — without opening each project one at a time.</p>'
+    + '<div class="gsearch-field-row">'
+    +   '<div class="wiz-field" style="max-width:180px">'
+    +     '<label>Search by</label>'
+    +     '<select id="gs-type" onchange="gsearchTypeChanged()">'
+    +       '<option value="gene"' + (type === 'gene' ? ' selected' : '') + '>Gene name</option>'
+    +       '<option value="snp"' + (type === 'snp' ? ' selected' : '') + '>SNP rsID</option>'
+    +       '<option value="position"' + (type === 'position' ? ' selected' : '') + '>Position</option>'
+    +     '</select>'
+    +   '</div>'
+    +   '<div id="gs-query-fields" style="display:flex;gap:0.75rem;flex:1;flex-wrap:wrap"></div>'
+    +   '<div class="wiz-field" style="max-width:150px">'
+    +     '<label>Significance threshold</label>'
+    +     '<input id="gs-threshold" type="text" value="5e-8">'
+    +   '</div>'
+    +   '<div class="wiz-field" style="max-width:120px;flex:none">'
+    +     '<button class="btn btn-primary" style="width:100%" onclick="runGlobalSearch()">Search</button>'
+    +   '</div>'
+    + '</div>'
+    + '<div class="gsearch-summary" id="gs-summary" style="display:none"></div>'
+    + '<div id="gs-results"></div>';
+  renderGsearchQueryFields();
+
+  // Enter key triggers search from any query field
+  box.querySelectorAll('#gs-query-fields input, #gs-threshold').forEach(function(el) {
+    el.addEventListener('keydown', function(e) { if (e.key === 'Enter') runGlobalSearch(); });
+  });
+
+  if (gsearchState.lastSummary) renderGsearchSummary(gsearchState.lastSummary);
+  else fetchGsearchSummaryQuietly();
+}
+
+function gsearchTypeChanged() {
+  gsearchState.type = document.getElementById('gs-type').value;
+  renderGsearchQueryFields();
+}
+
+function renderGsearchQueryFields() {
+  var el = document.getElementById('gs-query-fields');
+  var type = gsearchState.type;
+  if (type === 'position') {
+    el.innerHTML =
+        '<div class="wiz-field" style="max-width:110px"><label>Chr</label><input id="gs-chr" type="text" placeholder="e.g. 1"></div>'
+      + '<div class="wiz-field" style="max-width:160px"><label>Position</label><input id="gs-pos" type="text" placeholder="e.g. 8371171"></div>'
+      + '<div class="wiz-field" style="max-width:140px"><label>Build</label>'
+      +   '<select id="gs-build"><option value="GRCh37">GRCh37</option><option value="GRCh38">GRCh38</option></select>'
+      + '</div>';
+  } else {
+    var placeholder = type === 'gene' ? 'e.g. TNFSF4' : 'e.g. rs10399665';
+    el.innerHTML = '<div class="wiz-field" style="flex:1;min-width:200px"><label>' + (type === 'gene' ? 'Gene name' : 'SNP rsID') + '</label>'
+      + '<input id="gs-q" type="text" placeholder="' + placeholder + '"></div>';
+  }
+  var box = document.getElementById('gsearch-box');
+  box.querySelectorAll('#gs-query-fields input').forEach(function(elm) {
+    elm.addEventListener('keydown', function(e) { if (e.key === 'Enter') runGlobalSearch(); });
+  });
+}
+
+async function fetchGsearchSummaryQuietly() {
+  // Silent best-effort peek so the panel shows index stats even before the user searches —
+  // a zero-hit search with type=gene&q= is enough to trigger a lazy build without side effects.
+  try {
+    var resp = await fetch(API + '/api/search?type=gene&q=');
+    var d = await resp.json();
+    if (d.index_summary) { gsearchState.lastSummary = d.index_summary; renderGsearchSummary(d.index_summary); }
+  } catch (e) { /* silent — the form still works without this */ }
+}
+
+function renderGsearchSummary(summary) {
+  var el = document.getElementById('gs-summary');
+  if (!el) return;
+  el.style.display = 'flex';
+  el.innerHTML = '<span>Index: <b>' + summary.project_count + '</b> project(s), <b>' + summary.loci_count + '</b> loci, '
+    + '<b>' + summary.snp_count + '</b> significant SNP(s) at p&le;' + summary.threshold + ' &mdash; built in ' + summary.build_ms + 'ms</span>'
+    + '<a onclick="rebuildGlobalSearchIndex()">Rebuild index</a>';
+}
+
+async function rebuildGlobalSearchIndex() {
+  var el = document.getElementById('gs-summary');
+  if (el) el.innerHTML = '<span>Rebuilding…</span>';
+  try {
+    var thresholdEl = document.getElementById('gs-threshold');
+    var threshold = thresholdEl && thresholdEl.value.trim() ? thresholdEl.value.trim() : '5e-8';
+    var resp = await fetch(API + '/api/search/rebuild-index?threshold=' + encodeURIComponent(threshold), { method: 'POST' });
+    var summary = await resp.json();
+    gsearchState.lastSummary = summary;
+    renderGsearchSummary(summary);
+  } catch (e) {
+    if (el) el.innerHTML = '<span style="color:#dc2626">Rebuild failed: ' + esc(e.message) + '</span>';
+  }
+}
+
+async function runGlobalSearch() {
+  var type = gsearchState.type;
+  var threshold = document.getElementById('gs-threshold').value.trim() || '5e-8';
+  var resultsEl = document.getElementById('gs-results');
+  var params = new URLSearchParams();
+  params.set('type', type);
+  params.set('threshold', threshold);
+
+  if (type === 'position') {
+    var chr = document.getElementById('gs-chr').value.trim();
+    var pos = document.getElementById('gs-pos').value.trim();
+    var build = document.getElementById('gs-build').value;
+    if (!chr || !pos) { resultsEl.innerHTML = '<div class="gsearch-empty">Enter both chromosome and position.</div>'; return; }
+    params.set('chr', chr); params.set('pos', pos); params.set('build', build);
+  } else {
+    var q = document.getElementById('gs-q').value.trim();
+    if (!q) { resultsEl.innerHTML = '<div class="gsearch-empty">Enter a search term.</div>'; return; }
+    params.set('q', q);
+  }
+
+  resultsEl.innerHTML = '<div class="gsearch-empty">Searching…</div>';
+  try {
+    var resp = await fetch(API + '/api/search?' + params.toString());
+    var data = await resp.json();
+    if (!resp.ok || data.error) {
+      resultsEl.innerHTML = '<div class="gsearch-empty" style="color:#dc2626">' + esc(data.error || 'Search failed') + '</div>';
+      return;
+    }
+    if (data.index_summary) { gsearchState.lastSummary = data.index_summary; renderGsearchSummary(data.index_summary); }
+    renderGsearchResults(data);
+  } catch (e) {
+    resultsEl.innerHTML = '<div class="gsearch-empty" style="color:#dc2626">Search failed: ' + esc(e.message) + '</div>';
+  }
+}
+
+function renderGsearchResults(data) {
+  var resultsEl = document.getElementById('gs-results');
+  var hits = data.hits || [];
+  var notCompared = data.not_compared || [];
+
+  var notComparedHtml = '';
+  if (notCompared.length > 0) {
+    notComparedHtml = '<div class="gsearch-not-compared">' + notCompared.length + ' project(s) could not be honestly compared: '
+      + notCompared.map(function(nc) { return esc(nc.project_name) + ' (' + esc(nc.reason) + ')'; }).join(', ')
+      + '</div>';
+  }
+
+  if (hits.length === 0) {
+    resultsEl.innerHTML = '<div class="gsearch-empty">No significant hits found' + (data.q ? ' for &ldquo;' + esc(data.q) + '&rdquo;' : '') + '.</div>' + notComparedHtml;
+    return;
+  }
+
+  var rows = hits.map(function(h) {
+    var geneCell = '&mdash;';
+    if (h.gene_name) {
+      var badge = h.match_type === 'contains' ? '<span class="badge badge-contains" title="SNP position falls inside this gene\'s own boundaries">contains</span>'
+        : h.match_type === 'nearest' ? '<span class="badge badge-nearest" title="No gene in this locus contains the SNP; nearest reported gene shown">nearest</span>' : '';
+      geneCell = '<div class="gsearch-gene-cell"><b>' + esc(h.gene_name) + '</b>' + badge + '</div>';
+    }
+    var effectLabel = h.effect_type ? h.effect_type : 'Effect';
+    var effectVal = (h.effect_value === null || h.effect_value === undefined) ? '&mdash;' : fmtGsearchNum(h.effect_value);
+    var pvalStr = fmtGsearchP(h.pvalue);
+    var openUrl = 'viewer.html?project=' + encodeURIComponent(h.project_id) + '&locus=' + encodeURIComponent(h.locus_index);
+    return '<tr>'
+      + '<td>' + esc(h.project_name) + '</td>'
+      + '<td>' + esc(h.locus_name) + '</td>'
+      + '<td>' + geneCell + '</td>'
+      + '<td class="mono">' + esc(h.snp_id || '&mdash;') + '</td>'
+      + '<td class="mono">' + esc(h.chr) + ':' + h.pos.toLocaleString() + '</td>'
+      + '<td class="pval">' + pvalStr + '</td>'
+      + '<td class="mono" title="' + esc(effectLabel) + '">' + effectVal + '</td>'
+      + '<td><a class="gsearch-open" href="' + openUrl + '" target="_blank" rel="noopener">Open &rarr;</a></td>'
+      + '</tr>';
+  }).join('');
+
+  resultsEl.innerHTML = '<div style="font-size:0.85rem;margin-bottom:0.5rem;color:#475569"><b>' + hits.length + '</b> hit(s)</div>'
+    + '<div class="gsearch-table-wrap"><table class="gsearch-table">'
+    + '<thead><tr><th>Project</th><th>Locus</th><th>Gene</th><th>SNP</th><th>Chr:Pos</th><th>P-value</th><th>Effect</th><th></th></tr></thead>'
+    + '<tbody>' + rows + '</tbody></table></div>'
+    + notComparedHtml;
+}
+
+function fmtGsearchP(p) {
+  if (p === null || p === undefined || isNaN(p)) return 'NA';
+  if (p === 0) return '0';
+  var s = Number(p).toExponential(2);
+  return s.replace(/e([+-])0*(\d)/, 'e$1$2');
+}
+
+function fmtGsearchNum(v) {
+  if (v === null || v === undefined || isNaN(v)) return '&mdash;';
+  return (Math.round(v * 1000) / 1000).toString();
+}
+
+// ═══════════════════════════════════════════════════════════════
 // Locus Matrix — cross-dataset locus significance grid
 // ═══════════════════════════════════════════════════════════════
 
@@ -2582,6 +2974,257 @@ loadProjects();
 loadResources();
 loadLocusMatrixJobs();
 setInterval(loadProjects, 10000);
+
+// ═══════════════════════════════════════════════════════════════
+// AI Agent panel (Phase 4) — see DECISIONS_PHASE4.md
+// ═══════════════════════════════════════════════════════════════
+var agentHistory = [];   // full message history, resent to the server each turn (server is stateless)
+var agentBusy = false;
+var agentSettingsLoaded = false;
+
+function agentToggle() {
+  var panel = document.getElementById('agent-panel');
+  var opening = !panel.classList.contains('open');
+  panel.classList.toggle('open');
+  if (opening && !agentSettingsLoaded) agentLoadConfig();
+}
+
+function agentToggleSettings() {
+  document.getElementById('agent-settings').classList.toggle('open');
+}
+
+function agentModeChanged() {
+  var mode = document.querySelector('input[name="agent-mode"]:checked').value;
+  document.getElementById('agent-local-fields').style.display = mode === 'local' ? 'block' : 'none';
+  document.getElementById('agent-cloud-fields').style.display = mode === 'cloud' ? 'block' : 'none';
+}
+
+async function agentLoadConfig() {
+  agentSettingsLoaded = true;
+  try {
+    var r = await fetch('/api/agent/config');
+    var cfg = await r.json();
+    document.querySelector('input[name="agent-mode"][value="' + (cfg.mode || 'local') + '"]').checked = true;
+    agentModeChanged();
+    if (cfg.mode === 'cloud') {
+      document.getElementById('agent-cloud-url').value = cfg.base_url || '';
+      document.getElementById('agent-cloud-key').value = cfg.api_key || '';
+      document.getElementById('agent-cloud-model').value = cfg.model || '';
+    }
+    if (!cfg.model) document.getElementById('agent-settings').classList.add('open');
+    if (cfg.mode !== 'cloud') {
+      // Silent auto-detect so the quick-pull list appears without an extra click; re-select the
+      // already-configured model afterward in case it's not among the freshly-detected options
+      // (e.g. Ollama isn't running right now) so it isn't silently lost from the dropdown.
+      await agentDetectLocal();
+      if (cfg.model) {
+        var sel2 = document.getElementById('agent-local-model');
+        var found = false;
+        for (var i = 0; i < sel2.options.length; i++) {
+          if (sel2.options[i].value === cfg.model) { sel2.selectedIndex = i; found = true; break; }
+        }
+        if (!found) {
+          var opt = document.createElement('option');
+          opt.value = cfg.model; opt.textContent = cfg.model + ' (saved)';
+          sel2.insertBefore(opt, sel2.firstChild);
+          sel2.value = cfg.model;
+        }
+      }
+    }
+  } catch (e) { /* settings endpoint not reachable yet — leave defaults */ }
+}
+
+// Curated, tool-calling-capable models (per Ollama's own library listings) for the one-click
+// "download a model" affordance — deliberately short lists, not the full Ollama catalog, so a
+// first-time user isn't asked to choose among hundreds of options. Small models are shown by
+// default since this feature is mainly about automating the analysis pipeline (running tools with
+// clear, structured calls), not open-ended chat — a small model is usually enough and starts/responds
+// much faster. Larger models are one click away for anyone who wants stronger reasoning and doesn't
+// mind the extra download size and slower responses.
+var AGENT_SMALL_MODELS = [
+  { name: 'llama3.2:1b', label: 'Llama 3.2 (1B)', size: '~1.3 GB', note: 'smallest, fastest — good for simple automation' },
+  { name: 'llama3.2:3b', label: 'Llama 3.2 (3B)',  size: '~2 GB',   note: 'small, good default balance' },
+  { name: 'qwen2.5:3b',  label: 'Qwen 2.5 (3B)',   size: '~2 GB',   note: 'small, strong tool-calling for its size' }
+];
+var AGENT_LARGE_MODELS = [
+  { name: 'qwen2.5:7b',  label: 'Qwen 2.5 (7B)',  size: '~4.7 GB', note: 'stronger reasoning, slower' },
+  { name: 'llama3.1:8b', label: 'Llama 3.1 (8B)', size: '~4.7 GB', note: 'stronger reasoning, slower' },
+  { name: 'qwen2.5:14b', label: 'Qwen 2.5 (14B)', size: '~9 GB',   note: 'most capable of this list, needs more RAM/disk' }
+];
+var agentShowLargeModels = false;
+
+async function agentDetectLocal() {
+  var sel = document.getElementById('agent-local-model');
+  sel.innerHTML = '<option value="">Detecting...</option>';
+  try {
+    var r = await fetch('/api/agent/detect-local');
+    var d = await r.json();
+    var opts = [];
+    if (d.ollama && d.ollama.available) {
+      d.ollama.models.forEach(function(m) {
+        opts.push('<option value="' + escAttr(m) + '" data-base="' + escAttr(d.ollama.base_url) + '">Ollama: ' + esc(m) + '</option>');
+      });
+    }
+    if (d.lmstudio && d.lmstudio.available) {
+      d.lmstudio.models.forEach(function(m) {
+        opts.push('<option value="' + escAttr(m) + '" data-base="' + escAttr(d.lmstudio.base_url) + '">LM Studio: ' + esc(m) + '</option>');
+      });
+    }
+    sel.innerHTML = opts.length ? opts.join('') :
+      '<option value="">No local model yet</option>';
+    document.getElementById('agent-no-ollama').style.display =
+      (d.ollama && d.ollama.available) ? 'none' : 'block';
+    agentRenderQuickPull(d.ollama && d.ollama.available);
+  } catch (e) {
+    sel.innerHTML = '<option value="">Detection failed: ' + esc(e.message) + '</option>';
+  }
+}
+
+function agentRenderQuickPull(ollamaAvailable) {
+  var list = document.getElementById('agent-quick-pull-list');
+  if (!ollamaAvailable) {
+    list.innerHTML = '<div class="agent-hint">Install Ollama first (link above), then these one-click downloads appear here.</div>';
+    return;
+  }
+  var rows = AGENT_SMALL_MODELS.map(function(m, i) { return agentPullRowHtml(m, 'small-' + i); });
+  if (agentShowLargeModels) {
+    rows = rows.concat(AGENT_LARGE_MODELS.map(function(m, i) { return agentPullRowHtml(m, 'large-' + i); }));
+    rows.push('<div class="agent-hint" style="margin-top:0.3rem"><a href="#" onclick="agentShowLargeModels=false;agentRenderQuickPull(true);return false;">Hide larger models</a></div>');
+  } else {
+    rows.push('<div class="agent-hint" style="margin-top:0.3rem"><a href="#" onclick="agentShowLargeModels=true;agentRenderQuickPull(true);return false;">Show larger, more capable models</a></div>');
+  }
+  list.innerHTML = rows.join('');
+}
+
+function agentPullRowHtml(m, key) {
+  return '<div style="display:flex;align-items:center;gap:0.4rem;margin-top:0.3rem">'
+    + '<div style="flex:1;font-size:0.75rem"><b>' + esc(m.label) + '</b> ' + esc(m.size)
+    + '<br><span style="color:#888">' + esc(m.note) + '</span></div>'
+    + '<button class="btn btn-secondary" style="font-size:0.72rem;padding:0.3rem 0.5rem" '
+    + 'id="agent-pull-btn-' + key + "\" onclick='agentPullModel(" + JSON.stringify(m.name) + ", " + JSON.stringify(key) + ")'>Download</button>"
+    + '</div>';
+}
+
+async function agentPullModel(model, btnIndex) {
+  var btn = document.getElementById('agent-pull-btn-' + btnIndex);
+  var status = document.getElementById('agent-pull-status');
+  if (btn) { btn.disabled = true; btn.textContent = 'Starting...'; }
+  try {
+    var r = await fetch('/api/agent/pull-model', { method: 'POST', body: JSON.stringify({ model: model }) });
+    if (!r.ok) throw new Error('Could not start download');
+    var pollId = setInterval(async function() {
+      try {
+        var pr = await fetch('/api/agent/pull-progress');
+        var p = await pr.json();
+        if (p.error) {
+          status.textContent = 'Download failed: ' + p.error;
+          status.style.color = '#dc2626';
+          clearInterval(pollId);
+          if (btn) { btn.disabled = false; btn.textContent = 'Download'; }
+          return;
+        }
+        var mb = function(b) { return (b / 1e6).toFixed(0); };
+        status.style.color = '#555';
+        status.textContent = model + ': ' + p.status + (p.total ? ' — ' + mb(p.completed) + '/' + mb(p.total) + ' MB (' + p.pct + '%)' : '');
+        if (p.done) {
+          clearInterval(pollId);
+          if (btn) { btn.textContent = 'Downloaded'; }
+          status.style.color = '#059669';
+          status.textContent = model + ' is ready.';
+          await agentDetectLocal();
+          var sel = document.getElementById('agent-local-model');
+          for (var i = 0; i < sel.options.length; i++) {
+            if (sel.options[i].value === model) { sel.selectedIndex = i; break; }
+          }
+        }
+      } catch (e) { /* transient poll failure — try again on the next tick */ }
+    }, 800);
+  } catch (e) {
+    status.textContent = 'Could not start download: ' + e.message;
+    status.style.color = '#dc2626';
+    if (btn) { btn.disabled = false; btn.textContent = 'Download'; }
+  }
+}
+
+async function agentSaveConfig() {
+  var mode = document.querySelector('input[name="agent-mode"]:checked').value;
+  var body;
+  if (mode === 'local') {
+    var sel = document.getElementById('agent-local-model');
+    var opt = sel.options[sel.selectedIndex];
+    body = {
+      mode: 'local',
+      base_url: (opt && opt.dataset.base) || 'http://localhost:11434/v1',
+      api_key: '',
+      model: sel.value
+    };
+  } else {
+    body = {
+      mode: 'cloud',
+      base_url: document.getElementById('agent-cloud-url').value || 'https://api.openai.com/v1',
+      api_key: document.getElementById('agent-cloud-key').value,
+      model: document.getElementById('agent-cloud-model').value
+    };
+  }
+  var status = document.getElementById('agent-settings-status');
+  try {
+    var r = await fetch('/api/agent/config', { method: 'POST', body: JSON.stringify(body) });
+    if (!r.ok) throw new Error('Save failed');
+    status.textContent = 'Saved.';
+    status.style.color = '#059669';
+  } catch (e) {
+    status.textContent = 'Could not save: ' + e.message;
+    status.style.color = '#dc2626';
+  }
+}
+
+function agentAppendMsg(role, text) {
+  var log = document.getElementById('agent-log');
+  var div = document.createElement('div');
+  div.className = 'agent-msg ' + role;
+  var bubble = document.createElement('div');
+  bubble.className = 'bubble';
+  bubble.textContent = text;
+  div.appendChild(bubble);
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+}
+
+function agentAppendStep(step) {
+  var log = document.getElementById('agent-log');
+  var div = document.createElement('div');
+  div.className = 'agent-step' + (step.ok ? '' : ' fail');
+  div.textContent = (step.ok ? '⚙ ' : '✗ ') + step.tool + ' — ' + step.summary;
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+}
+
+async function agentSend() {
+  if (agentBusy) return;
+  var input = document.getElementById('agent-input');
+  var message = input.value.trim();
+  if (!message) return;
+  input.value = '';
+  agentAppendMsg('user', message);
+  agentBusy = true;
+  document.getElementById('agent-status').textContent = 'Thinking...';
+  try {
+    var r = await fetch('/api/agent/chat', {
+      method: 'POST',
+      body: JSON.stringify({ message: message, history: agentHistory })
+    });
+    var data = await r.json();
+    if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status));
+    (data.steps || []).forEach(agentAppendStep);
+    agentAppendMsg('assistant', data.reply || '(no reply)');
+    agentHistory = data.history || agentHistory;
+  } catch (e) {
+    agentAppendMsg('assistant', 'Error: ' + e.message);
+  } finally {
+    agentBusy = false;
+    document.getElementById('agent-status').textContent = '';
+  }
+}
 </script>
 </body>
 </html>

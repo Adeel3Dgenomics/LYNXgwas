@@ -6,7 +6,7 @@
 <title>Gene Constellation — LYNXgwas</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,wght@0,500;0,600;0,700;1,500&family=Work+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap">
-<script src="https://d3js.org/d3.v7.min.js"></script>
+<script src="assets/vendor/d3.v7.min.js"></script>
 <style>
   :root{
     --bg:#F5F6F8;
@@ -23,8 +23,11 @@
     --font-display:'Newsreader', Georgia, 'Times New Roman', serif;
     --font-body:'Work Sans', -apple-system, Segoe UI, sans-serif;
     --font-mono:'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
-    --canvas-bg-1:#11141c;
-    --canvas-bg-2:#1b2033;
+    /* White canvas (DECISIONS_PHASE5.md section 3.5) — was a dark radial gradient (#11141c/#1b2033);
+       every color below tuned specifically for a dark backdrop was re-tuned alongside this change,
+       not left as-is (edge stroke, node stroke fallback, glow filter — see their own comments). */
+    --canvas-bg-1:#FAFBFC;
+    --canvas-bg-2:#FFFFFF;
   }
   @media (prefers-color-scheme: dark){
     :root:not([data-theme="light"]){
@@ -46,6 +49,13 @@
   }
   header .meta{font-size:.82rem;color:var(--ink-soft)}
   header .meta b{color:var(--ink); font-family:var(--font-mono); font-weight:600}
+  .mode-toggle{display:inline-flex; border:1px solid var(--border); border-radius:8px; overflow:hidden}
+  .mode-btn{
+    border:none; background:var(--surface); color:var(--ink-soft); padding:.4rem .9rem;
+    font-size:.8rem; font-weight:600; cursor:pointer; font-family:var(--font-body);
+  }
+  .mode-btn + .mode-btn{border-left:1px solid var(--border)}
+  .mode-btn.active{background:var(--accent); color:#fff}
   .btn{
     display:inline-flex; align-items:center; gap:.35rem; padding:.45rem .95rem; border-radius:8px;
     border:1px solid var(--border); background:var(--surface); color:var(--ink); text-decoration:none;
@@ -138,6 +148,7 @@
   .anova-box .al{color:var(--ink-soft); font-size:.7rem; text-transform:uppercase; letter-spacing:.03em; margin-bottom:.2rem}
   .anova-box .av{font-family:var(--font-mono); color:var(--ink)}
   .anova-none{color:var(--ink-faint); font-size:.76rem; font-style:italic}
+  .anova-caveat{color:var(--ink-faint); font-size:.7rem; line-height:1.4; margin:-.3rem 0 .6rem}
 
   .chr-label{fill:#C9D0DE; font-family:var(--font-mono); font-weight:600; font-size:12px}
   .center-label{fill:#EDEFF5; font-family:var(--font-display); text-anchor:middle}
@@ -149,7 +160,11 @@
 </head>
 <body>
 <header>
-  <h1>Gene Constellation</h1>
+  <h1 id="hdr-title">Gene Constellation</h1>
+  <div class="mode-toggle" id="mode-toggle">
+    <button class="mode-btn active" id="mode-btn-gene" onclick="setMode('gene')">Genes</button>
+    <button class="mode-btn" id="mode-btn-region" onclick="setMode('region')">Regions</button>
+  </div>
   <div class="meta" id="hdr-meta">Loading…</div>
   <div class="top-actions">
     <a class="btn" id="export-link" href="#">Export Excel (gene-level)</a>
@@ -279,6 +294,9 @@ function esc(s) {
   return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
+var lastData = null;
+var currentMode = 'gene';
+
 async function load() {
   if (!jobId) return showError('No job id in URL (?job=...)');
   try {
@@ -287,10 +305,50 @@ async function load() {
     if (!resp.ok || data.error) throw new Error(data.error || 'Failed to load result');
     document.getElementById('loading').style.display = 'none';
     document.getElementById('wrap').style.display = 'flex';
-    render(data);
+    lastData = data;
+    render(data, currentMode);
   } catch (e) {
     showError('Error: ' + e.message);
   }
+}
+
+function setMode(mode) {
+  if (mode === currentMode || !lastData) return;
+  currentMode = mode;
+  document.getElementById('mode-btn-gene').classList.toggle('active', mode === 'gene');
+  document.getElementById('mode-btn-region').classList.toggle('active', mode === 'region');
+  document.getElementById('hdr-title').textContent = mode === 'gene' ? 'Gene Constellation' : 'Region Constellation';
+  closeDetail();
+  render(lastData, mode);
+}
+
+// Region entries (DECISIONS_PHASE5.md section 3.2/3.4) are adapted into the same shape as gene
+// entries so the entire existing circular-layout renderer below is reused unchanged rather than
+// duplicated for a second node type. Co-significance edges are a gene-level construct in this pass
+// (see RegionConstellationBuilder's own javadoc on what's deliberately out of scope) — region mode
+// always gets an empty edge list rather than a fabricated one.
+function normalizeForMode(data, mode) {
+  if (mode !== 'region') {
+    return { genes: data.genes || [], edges: data.edges || [] };
+  }
+  var genes = (data.regions || []).map(function(r) {
+    return {
+      gene: r.nearest_gene && r.nearest_gene.length ? r.nearest_gene : r.region_id,
+      regionLabel: r.region_id,
+      chr: r.chr,
+      pos: Math.round((r.start + r.end) / 2),
+      n_datasets_significant: r.n_datasets_significant,
+      n_datasets_total: r.n_datasets_total,
+      agg_neglog10_p: r.agg_neglog10_p,
+      direction_fraction_risk: r.direction_fraction_risk,
+      between_disease_anova: r.between_disease_anova,
+      between_disease_anova_effect: r.between_disease_anova_effect,
+      within_disease_anova: r.within_disease_anova || {},
+      within_disease_anova_effect: r.within_disease_anova_effect || {},
+      per_dataset: r.per_dataset || []
+    };
+  });
+  return { genes: genes, edges: [] };
 }
 function showError(msg) {
   document.getElementById('loading').style.display = 'none';
@@ -299,15 +357,18 @@ function showError(msg) {
   el.textContent = msg;
 }
 
-function render(data) {
+function render(data, mode) {
+  mode = mode || 'gene';
+  var normalized = normalizeForMode(data, mode);
   var nDatasets = data.datasets.length;
-  var genes = data.genes.filter(function(g) { return chrIndex(g.chr) >= 0; });
+  var genes = normalized.genes.filter(function(g) { return chrIndex(g.chr) >= 0; });
+  var nodeWord = mode === 'region' ? 'regions' : 'genes';
 
   document.getElementById('hdr-meta').innerHTML =
-    '<b>' + nDatasets + '</b> datasets &nbsp;·&nbsp; <b>' + genes.length + '</b> genes plotted' +
-    (data.unassigned_loci_count ? ' &nbsp;·&nbsp; <b>' + data.unassigned_loci_count + '</b> loci with no nearest gene (excluded)' : '') +
+    '<b>' + nDatasets + '</b> datasets &nbsp;·&nbsp; <b>' + genes.length + '</b> ' + nodeWord + ' plotted' +
+    (mode === 'gene' && data.unassigned_loci_count ? ' &nbsp;·&nbsp; <b>' + data.unassigned_loci_count + '</b> loci with no nearest gene (excluded)' : '') +
     ' &nbsp;·&nbsp; threshold p&le;' + data.threshold +
-    ((data.edges || []).length ? ' &nbsp;·&nbsp; <b>' + data.edges.length + '</b> co-significance links' : '');
+    (normalized.edges.length ? ' &nbsp;·&nbsp; <b>' + normalized.edges.length + '</b> co-significance links' : '');
 
   document.getElementById('run-summary').innerHTML =
     '<div>Run: <b style="color:var(--ink);font-family:var(--font-mono)">' + esc(data.name) + '</b></div>' +
@@ -324,13 +385,15 @@ function render(data) {
 
   var defs = svg.append('defs');
 
-  // Soft glow filter reused by every gene node (colored per-node via feFlood would be overkill;
-  // a neutral blur "halo" beneath the node reads as a glow against the dark canvas).
+  // Soft shadow filter reused by every gene node. Was a neutral blur "halo" that read as a glow
+  // against the old dark canvas; the same blur-behind-the-shape trick just looks like a smudged edge
+  // on white with no dark backdrop for it to stand out against, so this is now a proper drop shadow
+  // (a dark, semi-transparent, offset blur) — the light-background equivalent that still lifts each
+  // node off the canvas.
   var glow = defs.append('filter').attr('id', 'glow').attr('x', '-100%').attr('y', '-100%').attr('width', '300%').attr('height', '300%');
-  glow.append('feGaussianBlur').attr('stdDeviation', 3.2).attr('result', 'blur');
-  var glowMerge = glow.append('feMerge');
-  glowMerge.append('feMergeNode').attr('in', 'blur');
-  glowMerge.append('feMergeNode').attr('in', 'SourceGraphic');
+  glow.append('feDropShadow')
+    .attr('dx', 0).attr('dy', 1).attr('stdDeviation', 1.6)
+    .attr('flood-color', '#1B2430').attr('flood-opacity', 0.28);
 
   var ringShadow = defs.append('filter').attr('id', 'ringShadow').attr('x','-20%').attr('y','-20%').attr('width','140%').attr('height','140%');
   ringShadow.append('feDropShadow').attr('dx',0).attr('dy',0).attr('stdDeviation',6).attr('flood-color','#000').attr('flood-opacity',0.45);
@@ -381,7 +444,7 @@ function render(data) {
   // ── Center summary badge ──
   var center = g.append('g').attr('class', 'center-label');
   center.append('text').attr('class', 'n').attr('y', -4).attr('text-anchor', 'middle').text(genes.length);
-  center.append('text').attr('class', 'l').attr('y', 16).attr('text-anchor', 'middle').text('genes');
+  center.append('text').attr('class', 'l').attr('y', 16).attr('text-anchor', 'middle').text(nodeWord);
 
   // ── Gene nodes ──
   var maxNegLogP = d3.max(genes, function(g) { return isFinite(g.agg_neglog10_p) ? g.agg_neglog10_p : null; }) || 1;
@@ -416,7 +479,7 @@ function render(data) {
   placed.forEach(function(p) { byGeneName.set(p.g.gene, p); });
 
   // ── Co-significance links, drawn first so they sit behind the gene nodes ──
-  var edges = (data.edges || []).map(function(e) {
+  var edges = normalized.edges.map(function(e) {
     var a = byGeneName.get(e.gene_a), b = byGeneName.get(e.gene_b);
     if (!a || !b) return null; // one endpoint had no plottable chr/pos — skip rather than guess a position
     return { a: a, b: b, count: e.count };
@@ -444,7 +507,10 @@ function render(data) {
         return 'M' + e.a.x + ',' + e.a.y + ' Q' + mx + ',' + my + ' ' + e.b.x + ',' + e.b.y;
       })
       .attr('fill', 'none')
-      .attr('stroke', '#E8ECF5')
+      // Was #E8ECF5 (a near-white blue-gray, tuned to glow softly against the old dark canvas) — on
+      // the white canvas that color is nearly invisible, so retuned to a mid-tone that still relies on
+      // the existing opacity/width scales to separate low- from high-count edges.
+      .attr('stroke', '#8C9BC4')
       .attr('stroke-width', function(e) { return widthScale(e.count); })
       .attr('stroke-opacity', function(e) { return opacityScale(e.count); })
       .attr('stroke-linecap', 'round')
@@ -465,7 +531,9 @@ function render(data) {
   nodeG.append('circle')
     .attr('r', function(d) { return d.vis; })
     .attr('fill', function(d) { return d.color; })
-    .attr('stroke', function(d) { var idx = chrIndex(d.g.chr); return idx >= 0 ? CHR_PALETTE[idx] : '#fff'; })
+    // Fallback was '#fff' (invisible against the old dark canvas's own near-black tone, by design —
+    // now invisible against the *new* white canvas for the opposite reason, so it needs to flip too).
+    .attr('stroke', function(d) { var idx = chrIndex(d.g.chr); return idx >= 0 ? CHR_PALETTE[idx] : '#1B2430'; })
     .attr('stroke-width', 1.1)
     .attr('stroke-opacity', 0.85)
     .attr('filter', 'url(#glow)')
@@ -508,13 +576,19 @@ function openDetail(gg) {
   html += '<div class="dp-stat-row"><span>Direction (fraction risk)</span><span>' +
     (isNaN(gg.direction_fraction_risk) ? '—' : fmtNum(gg.direction_fraction_risk * 100, 0) + '% risk') + '</span></div>';
 
-  html += '<h4>Between-disease ANOVA</h4>';
+  html += '<h4>Between-disease ANOVA (significance, &minus;log10 p)</h4>';
   html += anovaHtml(gg.between_disease_anova, 'across disease groups');
 
-  html += '<h4>Within-disease ANOVA</h4>';
+  html += '<h4>Between-disease ANOVA (effect size, ln OR / &beta;)</h4>';
+  html += anovaHtml(gg.between_disease_anova_effect, 'across disease groups');
+  html += '<div class="anova-caveat">Uses each dataset\'s own reported effect direction; cross-study allele-coding is not harmonized, so treat this as a magnitude-of-variation signal, not a directional claim.</div>';
+
+  html += '<h4>Within-disease ANOVA (significance)</h4>';
   var diseases = Object.keys(gg.within_disease_anova || {});
   if (!diseases.length) {
-    html += '<div class="anova-none">No disease grouping available.</div>';
+    html += '<div class="anova-none">' +
+      (currentMode === 'region' ? 'Not computable at the region level (each dataset contributes only one observation per region — see the docs).' : 'No disease grouping available.') +
+      '</div>';
   } else {
     diseases.forEach(function(d) {
       html += anovaHtml(gg.within_disease_anova[d], 'within ' + d);
