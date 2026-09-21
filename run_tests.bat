@@ -32,6 +32,7 @@ javac -encoding UTF-8 -d bin -cp "bin%LIBCP%" ^
   tests\GwamaAdapterTest.java ^
   tests\EnrichmentAnalyzerTest.java ^
   tests\GeneConstellationBuilderTest.java ^
+  tests\RegionConstellationBuilderTest.java ^
   tests\GlobalSearchIndexTest.java ^
   tests\RegulatoryPeakIndexTest.java ^
   tests\RegulatoryEnrichmentAnalyzerTest.java ^
@@ -123,6 +124,11 @@ if %ERRORLEVEL% neq 0 set FAILED=1
 echo.
 echo --- GeneConstellationBuilderTest ---
 java -cp "bin%LIBCP%" GeneConstellationBuilderTest
+if %ERRORLEVEL% neq 0 set FAILED=1
+
+echo.
+echo --- RegionConstellationBuilderTest ---
+java -cp "bin%LIBCP%" RegionConstellationBuilderTest
 if %ERRORLEVEL% neq 0 set FAILED=1
 
 echo.

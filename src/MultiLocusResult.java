@@ -13,6 +13,7 @@ public class MultiLocusResult {
         public String id;
         public String name;
         public String effectType; // "OR" or "Beta"
+        public String diseaseName = ""; // explicit Config.diseaseName, "" if the user never set it
         public List<String> extraColumns = new ArrayList<>(); // that dataset's own unmapped header columns
 
         public DatasetInfo(String id, String name, String effectType) {
@@ -67,6 +68,7 @@ public class MultiLocusResult {
             kv(j, "id", d.id); j.append(",");
             kv(j, "name", d.name); j.append(",");
             kv(j, "effect_type", d.effectType); j.append(",");
+            kv(j, "disease_name", d.diseaseName); j.append(",");
             j.append("\"extra_columns\":[");
             for (int k = 0; k < d.extraColumns.size(); k++) {
                 if (k > 0) j.append(",");

@@ -33,6 +33,7 @@ javac -encoding UTF-8 -d bin -cp "bin%LIBCP%" ^
   src\analysis\AnovaUtil.java ^
   src\analysis\GeneConstellationResult.java ^
   src\analysis\GeneConstellationBuilder.java ^
+  src\analysis\RegionConstellationBuilder.java ^
   src\analysis\GlobalSearchIndex.java ^
   src\analysis\StepManifest.java ^
   src\analysis\LocusGwasExtractor.java ^

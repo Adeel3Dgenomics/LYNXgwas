@@ -67,6 +67,7 @@ public class MultiLocusScanner {
             String effectType = !cfg.colOr.isEmpty() ? "OR" : "Beta";
             MultiLocusResult.DatasetInfo di_ = new MultiLocusResult.DatasetInfo(
                 datasetIds.get(di), new File(cfg.outputDir).getName(), effectType);
+            di_.diseaseName = cfg.diseaseName == null ? "" : cfg.diseaseName;
             di_.extraColumns = extraColumnsByDataset.get(datasetIds.get(di));
             result.datasets.add(di_);
         }

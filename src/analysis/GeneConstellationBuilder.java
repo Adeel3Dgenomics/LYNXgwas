@@ -42,10 +42,11 @@ public class GeneConstellationBuilder {
         out.threshold = genomewideThreshold;
         out.datasets = mlr.datasets;
 
-        // dataset id -> disease group (best-effort: substring before first '-', else "ungrouped")
+        // dataset id -> disease group: the project's own explicit disease name if set, else the
+        // id-prefix heuristic (DECISIONS_PHASE5.md section 2).
         Map<String, String> diseaseOf = new LinkedHashMap<>();
         for (MultiLocusResult.DatasetInfo d : mlr.datasets) {
-            diseaseOf.put(d.id, diseaseGroupOf(d.id));
+            diseaseOf.put(d.id, diseaseGroupOf(d.id, d.diseaseName));
         }
         Map<String, String> nameOf = new LinkedHashMap<>();
         for (MultiLocusResult.DatasetInfo d : mlr.datasets) nameOf.put(d.id, d.name);
@@ -158,11 +159,57 @@ public class GeneConstellationBuilder {
                 }
             }
 
+            // ── Effect-size ANOVA: same two groupings, on ln(effect) instead of -log10(p) ──
+            // (DECISIONS_PHASE5.md section 2: ln(OR)/beta, not raw OR, and no cross-study allele
+            // harmonization — a stated limitation, not an oversight.)
+            Map<String, List<Double>> byDiseaseEffect = new LinkedHashMap<>();
+            for (GeneAgg.Obs o : agg.observations) {
+                double v = effectValue(o.beta, o.or);
+                if (Double.isNaN(v)) continue;
+                byDiseaseEffect.computeIfAbsent(o.disease, k -> new ArrayList<>()).add(v);
+            }
+            if (byDiseaseEffect.size() >= 2) {
+                List<double[]> groups = new ArrayList<>();
+                for (List<Double> vals : byDiseaseEffect.values()) groups.add(toArr(vals));
+                try {
+                    AnovaUtil.Result r = AnovaUtil.oneWay(groups);
+                    GeneConstellationResult.AnovaSummary a = new GeneConstellationResult.AnovaSummary();
+                    a.fStat = r.fStat; a.pValue = r.pValue; a.dfBetween = r.dfBetween; a.dfWithin = r.dfWithin;
+                    ge.betweenDiseaseAnovaEffect = a;
+                } catch (IllegalArgumentException skip) { /* leave null */ }
+            }
+
+            Map<String, Map<String, List<Double>>> byDiseaseThenDatasetEffect = new LinkedHashMap<>();
+            for (GeneAgg.Obs o : agg.observations) {
+                double v = effectValue(o.beta, o.or);
+                if (Double.isNaN(v)) continue;
+                byDiseaseThenDatasetEffect
+                    .computeIfAbsent(o.disease, k -> new LinkedHashMap<>())
+                    .computeIfAbsent(o.datasetId, k -> new ArrayList<>())
+                    .add(v);
+            }
+            for (Map.Entry<String, Map<String, List<Double>>> de : byDiseaseThenDatasetEffect.entrySet()) {
+                String disease = de.getKey();
+                Map<String, List<Double>> byDataset = de.getValue();
+                if (byDataset.size() < 2) { ge.withinDiseaseAnovaEffect.put(disease, null); continue; }
+                List<double[]> groups = new ArrayList<>();
+                for (List<Double> vals : byDataset.values()) groups.add(toArr(vals));
+                try {
+                    AnovaUtil.Result r = AnovaUtil.oneWay(groups);
+                    GeneConstellationResult.AnovaSummary a = new GeneConstellationResult.AnovaSummary();
+                    a.fStat = r.fStat; a.pValue = r.pValue; a.dfBetween = r.dfBetween; a.dfWithin = r.dfWithin;
+                    ge.withinDiseaseAnovaEffect.put(disease, a);
+                } catch (IllegalArgumentException skip) {
+                    ge.withinDiseaseAnovaEffect.put(disease, null);
+                }
+            }
+
             out.genes.add(ge);
         }
 
         out.unassignedLociCount = unassigned;
         out.edges = buildCoSignificanceEdges(genes, genomewideThreshold, minEdgeCount, maxEdges);
+        out.regions = RegionConstellationBuilder.build(mlr, genomewideThreshold);
         return out;
     }
 
@@ -216,7 +263,9 @@ public class GeneConstellationBuilder {
     }
 
     /** Best-effort disease-group key: substring of the project id before its first '-'.
-     *  Falls back cleanly to "ungrouped" for ids that don't follow the convention. */
+     *  Falls back cleanly to "ungrouped" for ids that don't follow the convention. Kept for backward
+     *  compatibility (existing corpora that never set an explicit disease name) and as the fallback
+     *  branch of {@link #diseaseGroupOf(String, String)}. */
     static String diseaseGroupOf(String projectId) {
         if (projectId == null || projectId.isEmpty()) return "ungrouped";
         int dash = projectId.indexOf('-');
@@ -224,9 +273,37 @@ public class GeneConstellationBuilder {
         return projectId.substring(0, dash);
     }
 
+    /**
+     * Preferred disease-group key: the project's own explicit {@code Config.diseaseName}
+     * (DECISIONS_PHASE5.md section 2, "Explicit disease field") if the user set one, normalized to
+     * lower case and trimmed so "Schizophrenia" and "schizophrenia " group together. Falls back to the
+     * id-prefix heuristic only when no explicit name was ever set, so nothing built on the existing
+     * id-prefix-convention corpus (e.g. the 30-dataset validation) breaks.
+     */
+    static String diseaseGroupOf(String projectId, String explicitDiseaseName) {
+        if (explicitDiseaseName != null) {
+            String norm = explicitDiseaseName.trim().toLowerCase();
+            if (!norm.isEmpty()) return norm;
+        }
+        return diseaseGroupOf(projectId);
+    }
+
     private static double neglog10(double p) {
         if (Double.isNaN(p) || p <= 0) return Double.NaN;
         return -Math.log10(p);
+    }
+
+    /**
+     * Effect size on an additive, symmetric-around-zero scale for ANOVA: {@code beta} directly when
+     * present (already additive), else {@code ln(OR)} (an OR of 0.5 and 2.0 are equal-magnitude
+     * opposite effects; raw OR is not symmetric around 1, so ANOVA-ing it directly would be invalid).
+     * Package-visible so {@link RegionConstellationBuilder} uses the exact same definition rather than
+     * a second, potentially inconsistent one.
+     */
+    static double effectValue(double beta, double or) {
+        if (!Double.isNaN(beta)) return beta;
+        if (!Double.isNaN(or) && or > 0) return Math.log(or);
+        return Double.NaN;
     }
 
     private static double[] toArr(List<Double> vals) {
