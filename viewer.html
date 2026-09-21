@@ -3492,17 +3492,14 @@ function renderGenomeChromosomePanel(container, chr, chrOffset, chrLength, lociF
       .attr('fill', 'none').attr('stroke', '#7c3aed').attr('stroke-width', 1.25);
   }
 
-  // Threshold lines
+  // Threshold lines (labels intentionally omitted — same overlap-with-the-y-axis reason as the
+  // main genome-wide skyline view above)
   svg.append('line').attr('x1', plotX0).attr('x2', plotX0 + plotW)
     .attr('y1', ySc(sugSig)).attr('y2', ySc(sugSig))
     .attr('stroke', '#a16207').attr('stroke-width', 1).attr('stroke-dasharray', '4,3').attr('opacity', 0.7);
-  svg.append('text').attr('x', plotX0 - 3).attr('y', ySc(sugSig) + 3)
-    .attr('text-anchor', 'end').attr('font-size', '8px').attr('fill', '#a16207').text('5×10⁻⁵');
   svg.append('line').attr('x1', plotX0).attr('x2', plotX0 + plotW)
     .attr('y1', ySc(gwSig)).attr('y2', ySc(gwSig))
     .attr('stroke', '#dc2626').attr('stroke-width', 1.5).attr('stroke-dasharray', '6,3').attr('opacity', 0.8);
-  svg.append('text').attr('x', plotX0 - 3).attr('y', ySc(gwSig) + 3)
-    .attr('text-anchor', 'end').attr('font-size', '8px').attr('font-weight', '700').attr('fill', '#dc2626').text('5×10⁻⁸');
 
   // Density curve
   if (binsInChr.length) {
@@ -3747,28 +3744,21 @@ function renderSkyline() {
       .text(c.chr);
   });
 
-  // Suggestive significance line (5×10⁻⁵)
+  // Suggestive significance line (5×10⁻⁵) — label intentionally omitted: it sat at the same x
+  // position as the y-axis tick labels (both anchored at SKY_ML) and overlapped them.
   const sugSig = -Math.log10(5e-5);
   svg.append('line')
     .attr('x1', SKY_ML).attr('x2', SKY_ML + plotW)
     .attr('y1', ySc(sugSig)).attr('y2', ySc(sugSig))
     .attr('stroke', '#22c55e').attr('stroke-width', 1)
     .attr('stroke-dasharray', '4,3').attr('opacity', 0.7);
-  svg.append('text')
-    .attr('x', SKY_ML - 3).attr('y', ySc(sugSig) + 3)
-    .attr('text-anchor', 'end').attr('font-size', '8px').attr('fill', '#22c55e')
-    .text('5×10⁻⁵');
 
-  // Genome-wide significance line (5×10⁻⁸)
+  // Genome-wide significance line (5×10⁻⁸) — label intentionally omitted, same reason as above.
   svg.append('line')
     .attr('x1', SKY_ML).attr('x2', SKY_ML + plotW)
     .attr('y1', ySc(gwSig)).attr('y2', ySc(gwSig))
     .attr('stroke', '#dc2626').attr('stroke-width', 1.5)
     .attr('stroke-dasharray', '6,3').attr('opacity', 0.8);
-  svg.append('text')
-    .attr('x', SKY_ML - 3).attr('y', ySc(gwSig) + 3)
-    .attr('text-anchor', 'end').attr('font-size', '8px').attr('font-weight', '700').attr('fill', '#dc2626')
-    .text('5×10⁻⁸');
 
   // Y-axis
   svg.append('text')
