@@ -367,6 +367,10 @@ table.gsearch-table a.gsearch-open:hover { background: #0b5a46; }
     <button class="btn btn-secondary" onclick="exportProjectsInfo()">
       Info
     </button>
+    <button class="btn btn-secondary" onclick="githubOpenImport()" title="Extract a project from a GitHub repository">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="vertical-align:-2px"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+      Import from GitHub
+    </button>
     <button class="btn btn-primary" id="btn-new" onclick="newProject()">
       + New project
     </button>
@@ -448,6 +452,12 @@ table.gsearch-table a.gsearch-open:hover { background: #0b5a46; }
       <p style="color:#666;font-size:0.8rem;margin-bottom:0.5rem">Point at a shared lab folder (or a Google Drive/Dropbox desktop sync folder — any local or network path works), or a git repo you already have your own credentials for, so reference panels and annotation files don't need to be re-downloaded per machine.</p>
       <div id="sharedstorage-form" style="font-size:0.85rem"></div>
 
+      <h4 style="font-size:0.9rem;margin:1rem 0 0.5rem">GitHub (save / extract projects)</h4>
+      <p style="color:#666;font-size:0.8rem;margin-bottom:0.5rem">Save a project to a GitHub repository (private repos work fine) or extract one back — from the
+      GitHub "Save" button on a project row, or "Import from GitHub" above. LYNXgwas never stores your token
+      itself; choose one of the two ways below to authenticate.</p>
+      <div id="github-settings-form" style="font-size:0.85rem"></div>
+
       <h4 style="font-size:0.9rem;margin:1rem 0 0.5rem">Cluster (HPC)</h4>
       <p style="color:#666;font-size:0.8rem;margin-bottom:0.5rem">Optional. Off by default — local processing is unaffected either way. Configures LYNXgwas to submit analysis jobs to a cluster over your own SSH access (key-based only) using Snakemake, instead of running locally.</p>
       <div id="hpc-form" style="font-size:0.85rem"></div>
@@ -495,10 +505,33 @@ table.gsearch-table a.gsearch-open:hover { background: #0b5a46; }
 </div>
 </div>
 
+<!-- ── GitHub push modal ───────────────────────────────────── -->
+<div class="wizard-overlay" id="github-push-overlay">
+<div class="wizard-box" style="max-width:520px">
+  <div style="display:flex;justify-content:space-between;align-items:center">
+    <h3>Save project to GitHub</h3>
+    <button class="btn btn-secondary" onclick="githubCloseModals()" style="padding:0.3rem 0.7rem">&times;</button>
+  </div>
+  <div id="github-push-content"></div>
+</div>
+</div>
+
+<!-- ── GitHub import modal ─────────────────────────────────── -->
+<div class="wizard-overlay" id="github-import-overlay">
+<div class="wizard-box" style="max-width:520px">
+  <div style="display:flex;justify-content:space-between;align-items:center">
+    <h3>Extract project from GitHub</h3>
+    <button class="btn btn-secondary" onclick="githubCloseModals()" style="padding:0.3rem 0.7rem">&times;</button>
+  </div>
+  <div id="github-import-content"></div>
+</div>
+</div>
+
 <script>
 const API = '';
 let projects = [];
 let pollTimers = {};
+const GITHUB_ICON_SVG = '<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" style="vertical-align:-1px"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>';
 
 async function loadProjects() {
   try {
@@ -580,6 +613,7 @@ function render() {
       + '<button class="btn btn-secondary" style="background:#d1fae5;color:#065f46" onclick="openProjectAnalysis(\'' + esc(p.id) + '\')" title="Build analysis base artifacts">Analyze</button>'
       + '<button class="btn btn-secondary" onclick="openGwasQc(\'' + esc(p.id) + '\')" title="Genomic inflation / confounding triage">QC</button>'
       + '<button class="btn btn-secondary" onclick="openEvidence(\'' + esc(p.id) + '\')" title="Attach gene-level evidence data (PPI, expression, etc.)">Evidence</button>'
+      + '<button class="btn btn-secondary" onclick="githubOpenPush(\'' + esc(p.id) + '\')" title="Save this project to a GitHub repository">' + GITHUB_ICON_SVG + ' Save</button>'
       + '<button class="btn btn-danger" style="padding:0.2rem 0.6rem;font-size:0.75rem" onclick="deleteProject(\'' + esc(p.id) + '\')" title="Delete project">Delete</button>'
       + '</td></tr>';
   }).join('');
@@ -1281,6 +1315,139 @@ async function loadResources() {
     renderHpc(gc.hpc || {enabled:false, ssh_host:'', ssh_user:'', ssh_key_path:'', remote_work_dir:'',
       poll_interval_min_minutes:5, poll_interval_max_minutes:20, module_names:{}});
   } catch(e) {}
+  renderGithubSettings();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// GitHub project save/extract (Phase 6) — see DECISIONS_PHASE6.md
+// ═══════════════════════════════════════════════════════════════
+var githubOneTimeMode = true; // default to the safest option: nothing stored, ask each time
+
+async function renderGithubSettings() {
+  var el = document.getElementById('github-settings-form');
+  if (!el) return;
+  el.innerHTML = '<p style="color:#888">Checking...</p>';
+  var configured = false;
+  try {
+    var r = await (await fetch(API + '/api/github/token-status')).json();
+    configured = !!r.configured;
+  } catch (e) {}
+
+  if (configured) {
+    el.innerHTML =
+      '<div style="display:flex;align-items:center;gap:0.6rem;padding:0.5rem 0.7rem;background:#d1fae5;border-radius:6px">'
+      + '<span style="color:#065f46;font-weight:600">&#10003; A GitHub credential is saved</span>'
+      + '<span style="color:#666;font-size:0.78rem">(via your system\'s own git credential manager — LYNXgwas never stored it itself)</span>'
+      + '</div>'
+      + '<button class="btn btn-secondary" style="margin-top:0.5rem" onclick="githubForgetToken()">Forget saved credential</button>';
+  } else {
+    el.innerHTML =
+      '<div class="agent-mode-row" style="display:flex;gap:0.5rem;margin-bottom:0.5rem">'
+      + '<label style="flex:1;display:flex;align-items:center;gap:0.3rem;border:1px solid #ccc;border-radius:4px;padding:0.4rem 0.5rem;cursor:pointer">'
+      + '<input type="radio" name="gh-cred-mode" value="onetime" checked onchange="githubOneTimeMode=true"> Ask me each time (most private — nothing stored)</label>'
+      + '<label style="flex:1;display:flex;align-items:center;gap:0.3rem;border:1px solid #ccc;border-radius:4px;padding:0.4rem 0.5rem;cursor:pointer">'
+      + '<input type="radio" name="gh-cred-mode" value="saved" onchange="githubOneTimeMode=false"> Save it the safe way (your OS credential manager)</label>'
+      + '</div>'
+      + '<div id="gh-save-row" style="display:none;gap:0.4rem;align-items:center">'
+      + '<input type="password" id="gh-token-input" placeholder="GitHub personal access token (ghp_... or fine-grained)" style="flex:1;padding:0.35rem 0.5rem;border:1px solid #ccc;border-radius:4px">'
+      + '<button class="btn btn-primary" onclick="githubSaveToken()">Save securely</button>'
+      + '</div>'
+      + '<p style="color:#888;font-size:0.75rem;margin-top:0.4rem">Tip: create a <a href="https://github.com/settings/tokens?type=beta" target="_blank" rel="noopener">fine-grained token</a> scoped to only the repo(s) you\'ll use, not all your repos. With "Ask me each time", you\'ll paste the token directly into the Push/Import dialog and it is never written to disk.</p>';
+    document.querySelectorAll('input[name="gh-cred-mode"]').forEach(function(r) {
+      r.addEventListener('change', function() {
+        document.getElementById('gh-save-row').style.display = (r.value === 'saved' && r.checked) ? 'flex' : 'none';
+      });
+    });
+  }
+}
+
+async function githubSaveToken() {
+  var token = document.getElementById('gh-token-input').value.trim();
+  if (!token) return;
+  var r = await (await fetch(API + '/api/github/token', { method: 'POST', body: JSON.stringify({ token: token }) })).json();
+  alert(r.message || (r.ok ? 'Saved.' : 'Could not save.'));
+  if (r.ok) renderGithubSettings();
+}
+
+async function githubForgetToken() {
+  if (!confirm('Remove the saved GitHub credential?')) return;
+  var r = await (await fetch(API + '/api/github/token', { method: 'DELETE' })).json();
+  alert(r.message || (r.ok ? 'Removed.' : 'Could not remove.'));
+  renderGithubSettings();
+}
+
+function githubCloseModals() {
+  document.getElementById('github-push-overlay').classList.remove('open');
+  document.getElementById('github-import-overlay').classList.remove('open');
+}
+
+function githubOpenPush(projectId) {
+  document.getElementById('github-push-content').innerHTML =
+    '<div class="wiz-field"><label>Repository URL</label>'
+    + '<input id="gh-push-url" placeholder="https://github.com/you/your-repo.git"></div>'
+    + '<div class="wiz-field"><label>Branch</label><input id="gh-push-branch" value="main"></div>'
+    + '<div class="wiz-field"><label>Commit message</label><input id="gh-push-msg" value="Update from LYNXgwas"></div>'
+    + '<div class="wiz-field" id="gh-push-token-field"><label>One-time token (leave blank to use a saved credential)</label>'
+    + '<input id="gh-push-token" type="password" placeholder="Only needed if you have not saved a credential"></div>'
+    + '<p style="color:#888;font-size:0.78rem">The private repo you push to is created by you on GitHub first (empty is fine) — LYNXgwas only pushes into it, it does not create repos.</p>'
+    + '<button class="btn btn-primary" onclick="githubSubmitPush(' + JSON.stringify(projectId) + ')">Push</button>'
+    + '<div id="gh-push-status" style="margin-top:0.5rem;font-size:0.85rem"></div>';
+  document.getElementById('github-push-overlay').classList.add('open');
+}
+
+async function githubSubmitPush(projectId) {
+  var repoUrl = document.getElementById('gh-push-url').value.trim();
+  var branch = document.getElementById('gh-push-branch').value.trim();
+  var msg = document.getElementById('gh-push-msg').value.trim();
+  var token = document.getElementById('gh-push-token').value.trim();
+  var status = document.getElementById('gh-push-status');
+  status.textContent = 'Pushing...';
+  try {
+    var r = await (await fetch(API + '/api/project/' + encodeURIComponent(projectId) + '/github/push', {
+      method: 'POST',
+      body: JSON.stringify({ repo_url: repoUrl, branch: branch, commit_message: msg, token: token })
+    })).json();
+    status.style.color = r.ok ? '#059669' : '#dc2626';
+    status.textContent = r.message || (r.ok ? 'Done.' : 'Failed.');
+  } catch (e) {
+    status.style.color = '#dc2626';
+    status.textContent = 'Error: ' + e.message;
+  }
+}
+
+function githubOpenImport() {
+  document.getElementById('github-import-content').innerHTML =
+    '<div class="wiz-field"><label>Repository URL</label>'
+    + '<input id="gh-import-url" placeholder="https://github.com/you/your-repo.git"></div>'
+    + '<div class="wiz-field"><label>Branch</label><input id="gh-import-branch" value="main"></div>'
+    + '<div class="wiz-field"><label>New project ID (folder name)</label><input id="gh-import-id" placeholder="my-imported-project"></div>'
+    + '<div class="wiz-field"><label>One-time token (leave blank to use a saved credential)</label>'
+    + '<input id="gh-import-token" type="password" placeholder="Only needed if you have not saved a credential"></div>'
+    + '<button class="btn btn-primary" onclick="githubSubmitImport()">Extract</button>'
+    + '<div id="gh-import-status" style="margin-top:0.5rem;font-size:0.85rem"></div>';
+  document.getElementById('github-import-overlay').classList.add('open');
+}
+
+async function githubSubmitImport() {
+  var repoUrl = document.getElementById('gh-import-url').value.trim();
+  var branch = document.getElementById('gh-import-branch').value.trim();
+  var projectId = document.getElementById('gh-import-id').value.trim();
+  var token = document.getElementById('gh-import-token').value.trim();
+  var status = document.getElementById('gh-import-status');
+  if (!projectId) { status.style.color = '#dc2626'; status.textContent = 'Project ID is required.'; return; }
+  status.textContent = 'Extracting...';
+  try {
+    var r = await (await fetch(API + '/api/github/import', {
+      method: 'POST',
+      body: JSON.stringify({ repo_url: repoUrl, branch: branch, project_id: projectId, token: token })
+    })).json();
+    status.style.color = r.ok ? '#059669' : '#dc2626';
+    status.textContent = r.message || (r.ok ? 'Done.' : 'Failed.');
+    if (r.ok) { loadProjects(); setTimeout(githubCloseModals, 1200); }
+  } catch (e) {
+    status.style.color = '#dc2626';
+    status.textContent = 'Error: ' + e.message;
+  }
 }
 
 // ── Shared Storage ──────────────────────────────────────────

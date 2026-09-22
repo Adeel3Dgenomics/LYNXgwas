@@ -241,6 +241,11 @@ public class LocalServer {
         http.createContext("/api/agent/pull-model",    this::agentPullModel);
         http.createContext("/api/agent/pull-progress", this::agentPullProgress);
 
+        // ── GitHub project save/extract (Phase 6) ──────────────────────────
+        http.createContext("/api/github/token-status", this::githubTokenStatus);
+        http.createContext("/api/github/token",        this::githubToken);
+        http.createContext("/api/github/import",       this::githubImport);
+
         // ── Legacy endpoints (kept for backward compatibility) ───────────
         http.createContext("/manifest",                    this::manifest);
         http.createContext("/locus/",                      this::locus);
@@ -560,6 +565,8 @@ public class LocalServer {
             projectEnrichment(ex, projectId, projectDir);
         } else if (action.equals("regulatory-enrichment")) {
             projectRegulatoryEnrichment(ex, projectId, projectDir);
+        } else if (action.equals("github/push")) {
+            projectGithubPush(ex, projectDir);
         } else {
             respond(ex, 404, "application/json",
                 ("{\"error\":\"Unknown action: " + escJ(action) + "\"}").getBytes());
@@ -2011,6 +2018,76 @@ public class LocalServer {
             + "\"error\":" + (s.error == null ? "null" : jsonStrStatic(s.error))
             + "}";
         respond(ex, 200, "application/json", json.getBytes("UTF-8"));
+    }
+
+    // ── GitHub project save/extract (Phase 6) ───────────────────────────────
+
+    // GET /api/github/token-status — reports only whether a credential currently resolves for
+    // github.com; never the value itself (see GithubTokenStore's own javadoc for why).
+    private void githubTokenStatus(HttpExchange ex) throws IOException {
+        cors(ex); if (preflight(ex)) return;
+        boolean configured = GithubTokenStore.isConfigured();
+        respond(ex, 200, "application/json", ("{\"configured\":" + configured + "}").getBytes("UTF-8"));
+    }
+
+    // POST /api/github/token — { "token": "..." } — saves it via the user's own configured git
+    // credential helper. DELETE /api/github/token — forgets it. Neither ever echoes the token back.
+    private void githubToken(HttpExchange ex) throws IOException {
+        cors(ex); if (preflight(ex)) return;
+        if ("DELETE".equalsIgnoreCase(ex.getRequestMethod())) {
+            GithubTokenStore.Result r = GithubTokenStore.forget();
+            respond(ex, r.ok ? 200 : 500, "application/json",
+                ("{\"ok\":" + r.ok + ",\"message\":" + jsonStrStatic(r.message) + "}").getBytes("UTF-8"));
+            return;
+        }
+        if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) {
+            respond(ex, 405, "application/json", "{\"error\":\"POST or DELETE required\"}".getBytes()); return;
+        }
+        String body = new String(readAll(ex.getRequestBody()), "UTF-8");
+        String token = extractStr(body, "token");
+        GithubTokenStore.Result r = GithubTokenStore.save(token);
+        respond(ex, r.ok ? 200 : 400, "application/json",
+            ("{\"ok\":" + r.ok + ",\"message\":" + jsonStrStatic(r.message) + "}").getBytes("UTF-8"));
+    }
+
+    // POST /api/project/{id}/github/push — { "repo_url", "branch"?, "commit_message"?, "token"? } —
+    // pushes this project's own directory. "token" here, if given, is a one-time credential
+    // (DECISIONS_PHASE6.md section 2) never saved anywhere; omit it to use whatever credential is
+    // already configured via /api/github/token.
+    private void projectGithubPush(HttpExchange ex, String projectDir) throws IOException {
+        if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) {
+            respond(ex, 405, "application/json", "{\"error\":\"POST required\"}".getBytes()); return;
+        }
+        String body = new String(readAll(ex.getRequestBody()), "UTF-8");
+        String repoUrl = extractStr(body, "repo_url");
+        String branch = extractStr(body, "branch");
+        String commitMessage = extractStr(body, "commit_message");
+        String token = extractStr(body, "token");
+        GithubProjectSync.Result r = GithubProjectSync.push(new File(projectDir), repoUrl, branch, commitMessage, token);
+        respond(ex, r.ok ? 200 : 400, "application/json",
+            ("{\"ok\":" + r.ok + ",\"message\":" + jsonStrStatic(r.message) + "}").getBytes("UTF-8"));
+    }
+
+    // POST /api/github/import — { "repo_url", "branch"?, "project_id", "token"? } — extracts a
+    // project from a GitHub repo into projects/{project_id}. Refuses to overwrite an existing,
+    // unrelated directory (see GithubProjectSync.pullInto).
+    private void githubImport(HttpExchange ex) throws IOException {
+        cors(ex); if (preflight(ex)) return;
+        if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) {
+            respond(ex, 405, "application/json", "{\"error\":\"POST required\"}".getBytes()); return;
+        }
+        String body = new String(readAll(ex.getRequestBody()), "UTF-8");
+        String repoUrl = extractStr(body, "repo_url");
+        String branch = extractStr(body, "branch");
+        String projectId = extractStr(body, "project_id");
+        String token = extractStr(body, "token");
+        if (projectId == null || projectId.isEmpty()) {
+            respond(ex, 400, "application/json", "{\"error\":\"project_id is required\"}".getBytes()); return;
+        }
+        File targetDir = new File("projects", projectId);
+        GithubProjectSync.Result r = GithubProjectSync.pullInto(targetDir, repoUrl, branch, token);
+        respond(ex, r.ok ? 200 : 400, "application/json",
+            ("{\"ok\":" + r.ok + ",\"message\":" + jsonStrStatic(r.message) + "}").getBytes("UTF-8"));
     }
 
     // GET /api/agent/detect-local — probes common local LLM runtime ports (Ollama 11434, LM Studio

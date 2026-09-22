@@ -25,6 +25,8 @@ javac -encoding UTF-8 -d bin -cp "bin$LIBCP" \
   tests/GwasQcTest.java \
   tests/GlobalConfigTest.java \
   tests/SharedStorageResolverTest.java \
+  tests/GithubTokenStoreTest.java \
+  tests/GithubProjectSyncTest.java \
   tests/SnakemakeSubmitterTest.java \
   tests/AnovaUtilTest.java \
   tests/MagmaAdapterTest.java \
@@ -65,6 +67,14 @@ java -cp "bin$LIBCP" GlobalConfigTest || FAILED=1
 echo
 echo "--- SharedStorageResolverTest ---"
 java -cp "bin$LIBCP" SharedStorageResolverTest || FAILED=1
+
+echo
+echo "--- GithubTokenStoreTest ---"
+java -cp "bin$LIBCP" GithubTokenStoreTest || FAILED=1
+
+echo
+echo "--- GithubProjectSyncTest ---"
+java -cp "bin$LIBCP" GithubProjectSyncTest || FAILED=1
 
 echo
 echo "--- SnakemakeSubmitterTest ---"

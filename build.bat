@@ -23,6 +23,8 @@ javac -encoding UTF-8 -d bin -cp "bin%LIBCP%" ^
   src\rsid\CrossFileLookup.java ^
   src\rsid\RsidPipeline.java ^
   src\rsid\SharedStorageResolver.java ^
+  src\rsid\GithubTokenStore.java ^
+  src\rsid\GithubProjectSync.java ^
   src\catalog\GwasCatalogClient.java ^
   src\catalog\GwasCatalogLocalIndex.java ^
   src\opentargets\OpenTargetsL2GClient.java ^
