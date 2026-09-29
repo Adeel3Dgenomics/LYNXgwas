@@ -47,6 +47,9 @@ public class Config {
     public String ancestry          = "";
     public String diseaseName       = "";     // free-text trait/disease name, used as the default
                                                // keyword for the GWAS-Catalog known-vs-novel same-trait check
+    /** Free-form dataset categories from {@code category.<name>=<value>} lines (e.g. category.tissue=blood),
+     *  used by the Locus Serpent Plot's category analysis alongside disease and ancestry. */
+    public java.util.Map<String, String> categories = new java.util.LinkedHashMap<>();
 
     /**
      * Load config from a project directory's config.properties.
@@ -143,6 +146,12 @@ public class Config {
         genomeBuild        = p.getProperty("genome.build", genomeBuild);
         ancestry           = p.getProperty("ancestry", ancestry.isEmpty() ? refPanelPopulation : ancestry);
         diseaseName        = p.getProperty("disease.name", diseaseName);
+        for (String k : new java.util.TreeSet<>(p.stringPropertyNames())) {
+            if (k.startsWith("category.") && k.length() > 9) {
+                String v = p.getProperty(k, "").trim();
+                if (!v.isEmpty()) categories.put(k.substring(9), v);
+            }
+        }
 
         // Auto-enable LD if ref.panel.path is set and ld.enabled not explicitly false
         if (!refPanelPath.isEmpty() && !p.containsKey("ld.enabled")) ldEnabled = true;
@@ -274,6 +283,8 @@ public class Config {
             pw.println("genome.build=" + genomeBuild);
             pw.println("ancestry=" + ancestry);
             pw.println("disease.name=" + diseaseName);
+            for (java.util.Map.Entry<String, String> c : categories.entrySet())
+                pw.println("category." + c.getKey() + "=" + c.getValue());
         }
     }
 

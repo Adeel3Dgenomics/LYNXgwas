@@ -39,6 +39,8 @@ javac -encoding UTF-8 -d bin -cp "bin$LIBCP" \
   tests/EnrichmentAnalyzerTest.java \
   tests/GeneConstellationBuilderTest.java \
   tests/RegionConstellationBuilderTest.java \
+  tests/SerpentPlotBuilderTest.java \
+  tests/MultiLocusResultPersistenceTest.java \
   tests/GlobalSearchIndexTest.java \
   tests/RegulatoryPeakIndexTest.java \
   tests/RegulatoryEnrichmentAnalyzerTest.java \
@@ -123,6 +125,14 @@ java -cp "bin$LIBCP" GeneConstellationBuilderTest || FAILED=1
 echo
 echo "--- RegionConstellationBuilderTest ---"
 java -cp "bin$LIBCP" RegionConstellationBuilderTest || FAILED=1
+
+echo
+echo "--- MultiLocusResultPersistenceTest ---"
+java -cp "bin$LIBCP" MultiLocusResultPersistenceTest || FAILED=1
+
+echo
+echo "--- SerpentPlotBuilderTest ---"
+java -cp "bin$LIBCP" SerpentPlotBuilderTest || FAILED=1
 
 echo
 echo "--- GlobalSearchIndexTest ---"

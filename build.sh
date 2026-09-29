@@ -40,6 +40,7 @@ javac -encoding UTF-8 -d bin -cp "bin$LIBCP" \
   src/analysis/GeneConstellationResult.java \
   src/analysis/GeneConstellationBuilder.java \
   src/analysis/RegionConstellationBuilder.java \
+  src/analysis/SerpentPlotBuilder.java \
   src/analysis/GlobalSearchIndex.java \
   src/analysis/StepManifest.java \
   src/analysis/LocusGwasExtractor.java \
@@ -120,6 +121,7 @@ mkdir -p output/assets
 cp -f index.html output/index.html 2>/dev/null || true
 cp -f viewer.html output/viewer.html 2>/dev/null || true
 cp -f gene_constellation.html output/gene_constellation.html 2>/dev/null || true
+cp -f serpent_plot.html output/serpent_plot.html 2>/dev/null || true
 cp -f annotations.js output/annotations.js 2>/dev/null || true
 cp -Rf assets/. output/assets/ 2>/dev/null || true
 if [ -f projects/config.properties.template ]; then

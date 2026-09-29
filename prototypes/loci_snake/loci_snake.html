@@ -1,0 +1,403 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Locus Serpent Plot</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-0: #f4f3f0;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted: #8a8984;
+    --rule: #e2e1dc;
+    --row-line: #cfcdc6;
+    --band-a: #f7f6f3;
+    --band-b: #efeee9;
+    --chr-a: #c9c7c0;
+    --chr-b: #a9a7a0;
+    --nonsig: #b9b7b0;
+    /* sequential significance ramp (blue 150 -> 700) */
+    --p-green: #0ca30c; --p-yellow: #e5a000; --p-red: #d03b3b;
+    /* categorical disease identity (fixed order) */
+    --c1: #2a78d6; --c2: #eb6834; --c3: #1baf7a; --c4: #eda100; --c5: #e87ba4; --c6: #008300; --c7: #4a3aa7;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --surface-0: #121211; --surface-1: #1a1a19;
+      --text-primary: #ffffff; --text-secondary: #c3c2b7; --text-muted: #8f8e86;
+      --rule: #2e2e2b; --row-line: #45443f; --band-a: #1d1d1b; --band-b: #242422;
+      --chr-a: #4a4945; --chr-b: #66655f; --nonsig: #5c5b55;
+      --p-green: #1fb31f; --p-yellow: #fab219; --p-red: #e05252;
+      --c1: #3987e5; --c2: #d95926; --c3: #199e70; --c4: #c98500; --c5: #d55181; --c6: #008300; --c7: #9085e9;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-0: #121211; --surface-1: #1a1a19;
+    --text-primary: #ffffff; --text-secondary: #c3c2b7; --text-muted: #8f8e86;
+    --rule: #2e2e2b; --row-line: #45443f; --band-a: #1d1d1b; --band-b: #242422;
+    --chr-a: #4a4945; --chr-b: #66655f; --nonsig: #5c5b55;
+    --p-green: #1fb31f; --p-yellow: #fab219; --p-red: #e05252;
+    --c1: #3987e5; --c2: #d95926; --c3: #199e70; --c4: #c98500; --c5: #d55181; --c6: #008300; --c7: #9085e9;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--surface-0); color: var(--text-primary);
+         font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 1480px; margin: 0 auto; padding: 24px 16px 40px; }
+  h1 { font-size: 22px; margin: 0 0 4px; letter-spacing: -0.01em; }
+  .sub { color: var(--text-secondary); margin: 0 0 16px; max-width: 900px; }
+  .badge { display: inline-block; font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+           color: var(--text-secondary); border: 1px solid var(--rule); border-radius: 999px; padding: 1px 8px; margin-left: 8px; vertical-align: 3px; }
+  .card { background: var(--surface-1); border: 1px solid var(--rule); border-radius: 12px; padding: 16px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; margin-bottom: 12px; }
+  .controls label { color: var(--text-secondary); font-size: 13px; display: flex; gap: 6px; align-items: center; }
+  select, button { font: inherit; font-size: 13px; color: var(--text-primary); background: var(--surface-1);
+                   border: 1px solid var(--rule); border-radius: 8px; padding: 4px 8px; cursor: pointer; }
+  button[aria-pressed="true"] { background: var(--text-primary); color: var(--surface-1); }
+  .scroll { overflow-x: auto; }
+  svg { display: block; }
+  svg text { fill: var(--text-secondary); font-size: 11px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 28px; margin-top: 12px; align-items: flex-start; color: var(--text-secondary); font-size: 12px; }
+  .tip { position: fixed; pointer-events: none; background: var(--surface-1); color: var(--text-primary);
+         border: 1px solid var(--rule); border-radius: 8px; padding: 8px 10px; font-size: 12px;
+         box-shadow: 0 4px 16px rgba(0,0,0,.12); opacity: 0; transition: opacity .08s; max-width: 260px; z-index: 10; }
+  .tip b { font-weight: 600; }
+  .tip .muted { color: var(--text-secondary); }
+  .snake { transition: opacity .12s; }
+  .dim .snake { opacity: .12; }
+  .dim .snake.on { opacity: 1; }
+  table { border-collapse: collapse; width: 100%; font-size: 12px; margin-top: 12px; }
+  th, td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--rule); }
+  th { color: var(--text-secondary); font-weight: 600; position: sticky; top: 0; background: var(--surface-1); }
+  td.num { font-variant-numeric: tabular-nums; }
+  #tableWrap { max-height: 420px; overflow: auto; display: none; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Locus Serpent Plot <span class="badge">simulated data</span></h1>
+  <p class="sub">Each locus drops a translucent snake from its genome position through every dataset. The snake turns green, then yellow, then red, and gets thicker at each step, as the locus becomes more significant in that dataset. Its sideways drift shows how far that dataset's lead SNP sits from the locus center. Loci shared across diseases show up as long, thick snakes.</p>
+
+  <div class="card">
+    <div class="controls">
+      <label>Row order <select id="orderSel"><option value="disease">Disease</option><option value="ancestry">Ancestry</option><option value="cluster">Shared-loci clusters</option></select></label>
+      <label>Chromosome <select id="chrSel"><option value="all">Whole genome</option></select></label>
+      <label>Show loci significant in ≥ <select id="minDis"><option>1</option><option selected>1</option><option>2</option><option>3</option></select> disease(s)</label>
+      <label>Significance <select id="thr"><option value="7.30103" selected>p &lt; 5×10⁻⁸</option><option value="4.30103">p &lt; 5×10⁻⁵</option></select></label>
+      <button id="labelsBtn" aria-pressed="true">Gene labels</button>
+      <button id="tableBtn" aria-pressed="false">Table view</button>
+    </div>
+    <div class="scroll"><svg id="viz" role="img" aria-label="Locus serpent plot of simulated GWAS loci across diseases and datasets"></svg></div>
+    <div class="legend">
+      <div>
+        <div style="margin-bottom:6px">Significance at each crossing: color and thickness</div>
+        <div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap">
+          <span style="display:flex;align-items:center;gap:6px"><svg width="14" height="20" aria-hidden="true"><rect x="6.3" y="2" width="1.4" height="16" rx=".7" fill="var(--nonsig)"/></svg>p &gt; 5×10⁻³</span>
+          <span style="display:flex;align-items:center;gap:6px"><svg width="14" height="20" aria-hidden="true"><rect x="5.25" y="2" width="3.5" height="16" rx="1.75" fill="var(--p-green)"/></svg>5×10⁻³ – 5×10⁻⁵</span>
+          <span style="display:flex;align-items:center;gap:6px"><svg width="14" height="20" aria-hidden="true"><rect x="3.5" y="2" width="7" height="16" rx="3.5" fill="var(--p-yellow)"/></svg>5×10⁻⁵ – 5×10⁻⁸</span>
+          <span style="display:flex;align-items:center;gap:6px"><svg width="14" height="20" aria-hidden="true"><rect x="1" y="2" width="12" height="16" rx="6" fill="var(--p-red)"/></svg>p &lt; 5×10⁻⁸</span>
+        </div>
+        <div style="color:var(--text-muted);font-size:11px;margin-top:4px">label ×N = genome-wide significant in N diseases</div>
+      </div>
+      <div style="max-width:360px">
+        <div style="margin-bottom:6px">Disease</div>
+        <div id="disChips" style="display:flex;flex-wrap:wrap;gap:6px 14px"></div>
+      </div>
+      <div style="max-width:320px">
+        <div style="margin-bottom:4px">Sideways drift</div>
+        <div style="color:var(--text-muted);font-size:11px">Lead-SNP offset from the locus center: ±150 kb is drawn as ±14 px, so a snake that bends means that dataset peaks somewhere else in the locus.</div>
+      </div>
+    </div>
+    <div id="tableWrap"><table id="tbl"></table></div>
+  </div>
+</main>
+<div class="tip" id="tip"></div>
+
+<script>
+// ---------- simulated data ----------
+function rng(seed){ return function(){ seed|=0; seed=seed+0x6D2B79F5|0; let t=Math.imul(seed^seed>>>15,1|seed); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+const R = rng(20260928);
+const CHR_MB = [249.25,243.2,198.0,191.15,180.9,171.1,159.1,146.4,141.2,135.5,135.0,133.9,115.2,107.3,102.5,90.4,81.2,78.1,59.1,63.0,48.1,51.3];
+const CHR = []; { let off=0; CHR_MB.forEach((len,i)=>{ CHR.push({name:String(i+1), start:off, len}); off+=len; }); }
+const GENOME = CHR.at(-1).start + CHR.at(-1).len;
+
+const DISEASES = [
+  {key:"SCZ", name:"Schizophrenia", n:5},
+  {key:"AD",  name:"Alzheimer's",   n:5},
+  {key:"T2D", name:"Type 2 diabetes", n:5},
+  {key:"CAD", name:"Coronary artery", n:5},
+  {key:"RA",  name:"Rheumatoid arthritis", n:5},
+  {key:"IBD", name:"IBD / Crohn's", n:5},
+  {key:"SARC",name:"Sarcoidosis", n:3},
+];
+const DATASETS = [];
+const ANCESTRIES = [
+  {key:"EUR", name:"European"}, {key:"AFR", name:"African"}, {key:"EAS", name:"East Asian"},
+  {key:"AMR", name:"Admixed American"}, {key:"SAS", name:"South Asian"},
+];
+const ANC_OF = { SCZ:["EUR","EUR","EAS","AFR","EUR"], AD:["EUR","EUR","EAS","EUR","AMR"], T2D:["EUR","EAS","AFR","AMR","EUR"],
+                 CAD:["EUR","EUR","SAS","EAS","EUR"], RA:["EUR","EAS","EUR","EUR","AFR"], IBD:["EUR","EUR","EAS","EUR","SAS"],
+                 SARC:["EUR","AFR","EAS"] };
+DISEASES.forEach((d,di)=>{ for(let k=0;k<d.n;k++){ const power = k===0 ? 1.15 : 0.35 + R()*0.75;
+  DATASETS.push({disease:d.key, di, anc:ANC_OF[d.key][k], name:`${d.key} · D${k+1}`, power, N: Math.round((power*120+8)*1000)}); } });
+
+// locus: chr, Mb, gene, per-disease strength (expected −log10 p at power 1)
+const LOCI_DEF = [
+  ["1",67.6,"IL23R",{IBD:40,SARC:22,RA:6}], ["1",114.3,"PTPN22",{RA:60,IBD:9}], ["1",98.5,"MIR137",{SCZ:18}],
+  ["1",161.5,"FCGR2A",{RA:10,IBD:9}], ["1",207.7,"CR1",{AD:16}], ["2",127.8,"BIN1",{AD:30}],
+  ["2",191.9,"STAT4",{RA:24}], ["2",60.9,"REL",{RA:9,SARC:8}], ["2",200.8,"C2orf47",{SCZ:14}],
+  ["3",12.4,"PPARG",{T2D:14,SARC:8}], ["3",112.0,"CD200",{SARC:10}], ["4",103.2,"SLC39A8",{SCZ:12,CAD:6}],
+  ["5",40.4,"PTGER4",{IBD:26}], ["5",158.8,"IL12B",{IBD:18,SARC:6}], ["6",32.5,"HLA-DRB1",{RA:120,IBD:30,SARC:90,SCZ:12,T2D:5}],
+  ["6",20.7,"CDKAL1",{T2D:28}], ["6",161.0,"LPA",{CAD:38}], ["6",138.0,"TNFAIP3",{RA:16,IBD:8}],
+  ["7",75.4,"POR",{SARC:12}], ["8",27.4,"CLU",{AD:22}], ["8",11.4,"BLK",{RA:9}], ["9",22.1,"CDKN2B",{CAD:60,T2D:20}],
+  ["9",4.98,"JAK2",{IBD:12,SARC:7}], ["10",81.9,"ANXA11",{SARC:48}], ["10",112.9,"TCF7L2",{T2D:120}],
+  ["10",104.8,"NT5C2",{SCZ:16,CAD:7}], ["11",64.1,"PLCB3",{SARC:18}], ["11",85.8,"PICALM",{AD:20}],
+  ["12",2.3,"CACNA1C",{SCZ:22}], ["12",111.9,"SH2B3",{CAD:18,RA:9,SARC:20,IBD:8}], ["13",28.6,"FLT3",{T2D:9}],
+  ["14",103.3,"TRAF3",{SCZ:9}], ["15",91.4,"FURIN",{CAD:12,SCZ:10}], ["16",50.7,"NOD2",{IBD:70}],
+  ["16",53.8,"FTO",{T2D:34,CAD:6}], ["17",45.9,"MAPT",{AD:9}], ["18",53.2,"TCF4",{SCZ:24}],
+  ["19",10.4,"TYK2",{RA:14,IBD:16,SARC:14}], ["19",45.4,"APOE",{AD:300,CAD:10}], ["19",11.2,"LDLR",{CAD:22}],
+  ["20",62.3,"RTEL1",{IBD:9}], ["21",45.6,"ICOSLG",{IBD:14}], ["22",21.9,"UBE2L3",{RA:12,IBD:7}],
+];
+const LOCI = LOCI_DEF.map(([chr,mb,gene,eff],li)=>{
+  const c = CHR[+chr-1]; const g = c.start + mb;
+  const cross = DATASETS.map(ds=>{
+    const s = eff[ds.disease] || 0;
+    let lp = s>0 ? s*ds.power*(0.7+0.6*R()) + R()*1.5 : R()*R()*4.2;
+    lp = Math.max(0.05, lp);
+    const off = (s>0 && lp>5) ? (R()-0.5)*120 : (R()-0.5)*300;     // kb, tighter when truly associated
+    return {lp, off};
+  });
+  return {li, chr, mb, gene, g, eff, cross};
+});
+
+// ---------- row orderings ----------
+// Shared-loci clustering: each dataset is a vector of its significance bin (0 grey .. 3 red) at every locus;
+// cosine distance, average-linkage agglomerative clustering; rows follow the dendrogram's leaf order.
+function clusterDatasets(){
+  const bin = lp => lp >= 7.30103 ? 3 : lp >= 4.30103 ? 2 : lp >= 2.30103 ? 1 : 0;
+  const V = DATASETS.map((ds,i)=>LOCI.map(L=>bin(L.cross[i].lp)));
+  const cos = (a,b)=>{ let d=0,na=0,nb=0; for(let k=0;k<a.length;k++){ d+=a[k]*b[k]; na+=a[k]*a[k]; nb+=b[k]*b[k]; } return (na&&nb) ? 1 - d/Math.sqrt(na*nb) : 1; };
+  const D = V.map(a=>V.map(b=>cos(a,b)));
+  let nodes = DATASETS.map((ds,i)=>({id:i, leaves:[i], h:0, leaf:true}));
+  let next = DATASETS.length;
+  while (nodes.length > 1){
+    let best = [0,1,Infinity];
+    for (let a=0;a<nodes.length;a++) for (let b=a+1;b<nodes.length;b++){
+      let sum=0; for (const i of nodes[a].leaves) for (const j of nodes[b].leaves) sum += D[i][j];
+      const avg = sum / (nodes[a].leaves.length*nodes[b].leaves.length);
+      if (avg < best[2]) best = [a,b,avg];
+    }
+    const [a,b,h] = best, A = nodes[a], B = nodes[b];
+    const m = {id:next++, left:A, right:B, leaves:[...A.leaves, ...B.leaves], h};
+    nodes = nodes.filter((_,k)=>k!==a && k!==b); nodes.push(m);
+  }
+  const root = nodes[0];
+  // cut into K clusters by repeatedly splitting the highest remaining merge
+  const K = 6; let tops = [root];
+  while (tops.length < K){
+    let i = -1; tops.forEach((n,k)=>{ if (!n.leaf && (i<0 || n.h > tops[i].h)) i = k; });
+    if (i < 0) break; const n = tops[i]; tops.splice(i,1,n.left,n.right);
+  }
+  return {root, tops};
+}
+const CLUSTER = clusterDatasets();
+
+function layoutRows(mode){
+  const byDisease = (a,b)=> DATASETS[a].di - DATASETS[b].di || a - b;
+  if (mode === "ancestry"){
+    return ANCESTRIES.map(A=>({label:A.name, idx: DATASETS.map((d,i)=>i).filter(i=>DATASETS[i].anc===A.key).sort(byDisease)}))
+                     .filter(g=>g.idx.length);
+  }
+  if (mode === "cluster"){
+    return CLUSTER.tops.map((n,k)=>({label:`Cluster ${k+1}`, idx:n.leaves,
+      diseases:[...new Set(n.leaves.map(i=>DATASETS[i].di))].sort((a,b)=>a-b)}));
+  }
+  return DISEASES.map((d,di)=>({label:d.name, chip:di, idx: DATASETS.map((x,i)=>i).filter(i=>DATASETS[i].di===di)}));
+}
+
+// ---------- rendering ----------
+const svg = document.getElementById("viz");
+const NS = "http://www.w3.org/2000/svg";
+const el = (t,a={},p)=>{ const e=document.createElementNS(NS,t); for(const k in a) e.setAttribute(k,a[k]); if(p) p.appendChild(e); return e; };
+const css = v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const state = {chr:"all", minDis:1, thr:7.30103, labels:true, order:"disease"};
+
+// p-value bins: grey > 5e-3 | green 5e-3..5e-5 | yellow 5e-5..5e-8 | red < 5e-8  (lp = -log10 p)
+const BINS = [
+  {min:-Infinity, max:-Math.log10(5e-3), col:"--nonsig",  w:1.4,  a:0.35, label:"p > 5×10⁻³"},
+  {min:-Math.log10(5e-3), max:-Math.log10(5e-5), col:"--p-green",  w:3.5,  a:0.80, label:"5×10⁻³ – 5×10⁻⁵"},
+  {min:-Math.log10(5e-5), max:-Math.log10(5e-8), col:"--p-yellow", w:7,    a:0.85, label:"5×10⁻⁵ – 5×10⁻⁸"},
+  {min:-Math.log10(5e-8), max: Infinity,         col:"--p-red",    w:12,   a:0.88, label:"p < 5×10⁻⁸"},
+];
+const binOf = lp => BINS.find(b=>lp>=b.min && lp<b.max);
+function rampColor(lp){ return css(binOf(lp).col); }
+function width(lp){ return binOf(lp).w; }
+function alpha(lp){ return binOf(lp).a; }
+
+function draw(){
+  svg.innerHTML = "";
+  const mode = state.order;
+  const ROW = 17, BANDGAP = 10, RIGHT = 24, TOP = 26, GENOME_H = 14, DROP = 34;
+  const LEFT = mode === "cluster" ? 330 : mode === "ancestry" ? 250 : 190;
+  const W = Math.max(960, svg.parentElement.clientWidth);
+  const groups = layoutRows(mode);
+  const order = groups.flatMap(g=>g.idx);
+  const rowsTop = TOP + GENOME_H + DROP;
+  const rowY = new Array(DATASETS.length); let y = rowsTop;
+  groups.forEach((g,gi)=>{ if (gi) y += BANDGAP; g.idx.forEach(i=>{ rowY[i] = y; y += ROW; }); });
+  const bottom = y - ROW;
+  const H = bottom + (state.labels ? 86 : 30);
+  svg.setAttribute("width", W); svg.setAttribute("height", H); svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+
+  // x domain
+  let d0 = 0, d1 = GENOME;
+  if (state.chr !== "all"){ const c = CHR[+state.chr-1]; d0 = c.start; d1 = c.start + c.len; }
+  const X = g => LEFT + (g - d0) / (d1 - d0) * (W - LEFT - RIGHT);
+  const KB2PX = 14/150;
+
+  // bands + dataset lines
+  const gBands = el("g",{},svg);
+  groups.forEach((grp,gi)=>{
+    const y0 = rowY[grp.idx[0]] - ROW/2 - 2, y1 = rowY[grp.idx.at(-1)] + ROW/2 + 2, ym = (y0+y1)/2;
+    el("rect",{x:LEFT-6,y:y0,width:W-LEFT-RIGHT+12,height:y1-y0,rx:6,fill: gi%2? "var(--band-b)":"var(--band-a)"},gBands);
+    let tx = 8;
+    if (grp.chip !== undefined){ el("rect",{x:8,y:ym-5,width:10,height:10,rx:2,fill:`var(--c${grp.chip+1})`},gBands); tx = 24; }
+    const t = el("text",{x:tx,y:ym+4,"font-weight":600,style:"fill:var(--text-primary);font-size:12px"},gBands); t.textContent = grp.label;
+    if (grp.diseases) grp.diseases.forEach((di,k)=> el("rect",{x:78+k*11,y:ym-4,width:8,height:8,rx:2,fill:`var(--c${di+1})`},gBands));
+    grp.idx.forEach(i=>{
+      const ds = DATASETS[i];
+      el("line",{x1:LEFT,x2:W-RIGHT,y1:rowY[i],y2:rowY[i],stroke:"var(--row-line)","stroke-width":1},gBands);
+      const lt = el("text",{x:LEFT-10,y:rowY[i]+3.5,"text-anchor":"end",style:"font-size:10px;fill:var(--text-muted)"},gBands);
+      if (mode === "disease"){ lt.textContent = `${ds.name.split(" · ")[1]} · ${ds.anc}`; }
+      else {
+        lt.textContent = mode === "ancestry" ? `${ds.disease} ${ds.name.split(" · ")[1]}` : `${ds.disease} ${ds.name.split(" · ")[1]} · ${ds.anc}`;
+        el("rect",{x:LEFT - (mode==="ancestry" ? 70 : 96),y:rowY[i]-4,width:8,height:8,rx:2,fill:`var(--c${ds.di+1})`},gBands);
+      }
+    });
+  });
+  // dendrogram (cluster mode)
+  if (mode === "cluster"){
+    const gD = el("g",{},svg), xR = LEFT - 104, xL = 190, hMax = CLUSTER.root.h || 1;
+    const cutH = Math.max(...CLUSTER.tops.map(n=>n.h||0));
+    const X_ = h => xR - (h/hMax)*(xR-xL);
+    const walk = n => {
+      if (n.leaf) return {x:xR, y:rowY[n.id]};
+      const a = walk(n.left), b = walk(n.right), x = X_(n.h), above = n.h > cutH + 1e-9;
+      const st = {stroke: above ? "var(--text-muted)" : "var(--text-secondary)", "stroke-width": above ? 1 : 1.3, fill:"none", opacity: above ? 0.6 : 1};
+      el("path",{d:`M${a.x},${a.y} H${x} V${b.y} H${b.x}`, ...st},gD);
+      return {x, y:(a.y+b.y)/2};
+    };
+    walk(CLUSTER.root);
+  }
+
+  // genome bar
+  const gG = el("g",{},svg);
+  CHR.forEach((c,i)=>{
+    const x0 = X(Math.max(c.start,d0)), x1 = X(Math.min(c.start+c.len,d1));
+    if (x1 <= LEFT || x0 >= W-RIGHT || x1-x0 < 0.5) return;
+    const r = el("rect",{x:x0+0.75,y:TOP,width:Math.max(0.5,x1-x0-1.5),height:GENOME_H,rx:3,fill: i%2? "var(--chr-b)":"var(--chr-a)",style:"cursor:pointer"},gG);
+    r.addEventListener("click",()=>{ state.chr = state.chr==="all" ? c.name : "all"; document.getElementById("chrSel").value = state.chr; draw(); });
+    if (x1-x0 > 14){ const t = el("text",{x:(x0+x1)/2,y:TOP-6,"text-anchor":"middle",style:"font-size:10px"},gG); t.textContent = c.name; }
+  });
+  if (state.chr!=="all"){ // Mb ticks when zoomed
+    const c = CHR[+state.chr-1];
+    for (let mb=0; mb<=c.len; mb+=20){ const x=X(c.start+mb); el("line",{x1:x,x2:x,y1:TOP+GENOME_H,y2:TOP+GENOME_H+4,stroke:"var(--text-muted)"},gG);
+      const t=el("text",{x,y:TOP+GENOME_H+14,"text-anchor":"middle",style:"font-size:9px;fill:var(--text-muted)"},gG); t.textContent = mb+" Mb"; }
+  }
+
+  // snakes
+  const defs = el("defs",{},svg);
+  const gS = el("g",{},svg);
+  const visible = LOCI.filter(L=>{
+    if (L.g < d0 || L.g > d1) return false;
+    const sigDis = new Set(DATASETS.filter((ds,i)=>L.cross[i].lp>=state.thr).map(ds=>ds.disease));
+    L.sigDis = sigDis; return sigDis.size >= state.minDis;
+  });
+  // draw weakest first so strong snakes sit on top
+  visible.sort((a,b)=>Math.max(...a.cross.map(c=>c.lp)) - Math.max(...b.cross.map(c=>c.lp)));
+  visible.forEach(L=>{
+    const g = el("g",{class:"snake"},gS);
+    const x0 = X(L.g);
+    const pts = [{x:x0, y:TOP+GENOME_H, w:2.2, c:css("--text-secondary"), a:0.7}];
+    order.forEach(i=>{ const ds = DATASETS[i], cr = L.cross[i]; pts.push({x:x0 + cr.off*KB2PX, y:rowY[i], w:width(cr.lp), c:rampColor(cr.lp), a:alpha(cr.lp), lp:cr.lp, ds, off:cr.off}); });
+    pts.push({x:x0, y:bottom+18, w:1, c:css("--text-muted"), a:0.4});
+    for (let k=0;k<pts.length-1;k++){
+      const p=pts[k], q=pts[k+1], ym=(p.y+q.y)/2, id=`g${L.li}_${k}`;
+      const lg = el("linearGradient",{id,gradientUnits:"userSpaceOnUse",x1:0,y1:p.y,x2:0,y2:q.y},defs);
+      el("stop",{offset:0,"stop-color":p.c,"stop-opacity":p.a},lg); el("stop",{offset:1,"stop-color":q.c,"stop-opacity":q.a},lg);
+      const d = `M${p.x-p.w/2},${p.y} C${p.x-p.w/2},${ym} ${q.x-q.w/2},${ym} ${q.x-q.w/2},${q.y} L${q.x+q.w/2},${q.y} C${q.x+q.w/2},${ym} ${p.x+p.w/2},${ym} ${p.x+p.w/2},${p.y} Z`;
+      el("path",{d,fill:`url(#${id})`},g);
+    }
+    // hit targets
+    pts.forEach(p=>{ if(!p.ds) return;
+      const h = el("circle",{cx:p.x,cy:p.y,r:Math.max(7,p.w/2+3),fill:"transparent"},g);
+      h.addEventListener("mousemove",ev=>showTip(ev,L,p)); h.addEventListener("mouseleave",hideTip);
+    });
+    g.addEventListener("mouseenter",()=>{ svg.classList.add("dim"); g.classList.add("on"); });
+    g.addEventListener("mouseleave",()=>{ svg.classList.remove("dim"); g.classList.remove("on"); });
+    L._x0 = x0; L._g = g;
+  });
+  if (state.labels){
+    // greedy: most-shared / strongest loci claim label space first; anything too close is left to the tooltip
+    const cand = visible.slice().sort((a,b)=> (b.sigDis.size-a.sigDis.size) || (Math.max(...b.cross.map(c=>c.lp))-Math.max(...a.cross.map(c=>c.lp))));
+    const placed = [];
+    cand.forEach(L=>{
+      if (placed.some(x=>Math.abs(x-L._x0)<13)) return;
+      placed.push(L._x0);
+      const x0=L._x0, t = el("text",{x:x0,y:bottom+30,transform:`rotate(-45 ${x0} ${bottom+30})`,"text-anchor":"end",
+        style:`font-size:10.5px;fill:var(--text-${L.sigDis.size>=2?"primary":"secondary"})`},L._g);
+      const gi = el("tspan",{"font-style":"italic"},t); gi.textContent = L.gene;
+      if (L.sigDis.size>=2){ const n = el("tspan",{style:"font-size:9px;fill:var(--text-muted)"},t); n.textContent = ` ×${L.sigDis.size}`; }
+    });
+  }
+  buildTable(visible);
+}
+
+const tip = document.getElementById("tip");
+function showTip(ev,L,p){
+  const disName = DISEASES.find(d=>d.key===p.ds.disease).name;
+  const pv = Math.pow(10,-p.lp);
+  tip.innerHTML = `<b><i>${L.gene}</i></b> <span class="muted">chr${L.chr}:${L.mb.toFixed(1)} Mb</span><br>
+    ${disName} · ${p.ds.name.split(" · ")[1]} <span class="muted">(${ANCESTRIES.find(a=>a.key===p.ds.anc).name}, N≈${(p.ds.N/1000).toFixed(0)}k)</span><br>
+    p = <b>${pv.toExponential(1)}</b> <span class="muted">(${binOf(p.lp).label})</span><br>
+    <span class="muted">lead SNP offset ${p.off>=0?"+":""}${p.off.toFixed(0)} kb · significant in ${L.sigDis.size} disease(s)</span>`;
+  tip.style.opacity = 1;
+  const x = Math.min(ev.clientX+14, window.innerWidth-270); tip.style.left = x+"px"; tip.style.top = (ev.clientY+14)+"px";
+}
+function hideTip(){ tip.style.opacity = 0; }
+
+function buildTable(vis){
+  const t = document.getElementById("tbl");
+  const rows = vis.slice().sort((a,b)=>a.g-b.g).map(L=>{
+    const best = L.cross.reduce((m,c,i)=>c.lp>m.lp?{lp:c.lp,i}:m,{lp:-1,i:0});
+    return `<tr><td><i>${L.gene}</i></td><td>chr${L.chr}:${L.mb.toFixed(1)}</td><td>${[...L.sigDis].join(", ")||"—"}</td>
+      <td class="num">${DATASETS.filter((d,i)=>L.cross[i].lp>=state.thr).length}</td><td>${DATASETS[best.i].name} (${DATASETS[best.i].anc})</td><td class="num">${Math.pow(10,-best.lp).toExponential(1)}</td></tr>`;
+  }).join("");
+  t.innerHTML = `<thead><tr><th>Locus</th><th>Position (GRCh37)</th><th>Significant in</th><th>Datasets sig.</th><th>Strongest dataset</th><th>Best p</th></tr></thead><tbody>${rows}</tbody>`;
+}
+
+// controls
+document.getElementById("disChips").innerHTML = DISEASES.map((d,di)=>`<span style="display:flex;align-items:center;gap:5px"><span style="width:9px;height:9px;border-radius:2px;background:var(--c${di+1})"></span>${d.name}</span>`).join("");
+document.getElementById("orderSel").onchange = e=>{ state.order = e.target.value; draw(); };
+const params = new URLSearchParams(location.search);
+if (params.get("order")) { state.order = params.get("order"); document.getElementById("orderSel").value = state.order; }
+const chrSel = document.getElementById("chrSel");
+CHR.forEach(c=>{ const o=document.createElement("option"); o.value=c.name; o.textContent="chr"+c.name; chrSel.appendChild(o); });
+chrSel.onchange = e=>{ state.chr = e.target.value; draw(); };
+const minDis = document.getElementById("minDis"); minDis.remove(1);
+minDis.onchange = e=>{ state.minDis = +e.target.value; draw(); };
+document.getElementById("thr").onchange = e=>{ state.thr = +e.target.value; draw(); };
+const lb = document.getElementById("labelsBtn");
+lb.onclick = ()=>{ state.labels=!state.labels; lb.setAttribute("aria-pressed",state.labels); draw(); };
+const tb = document.getElementById("tableBtn");
+tb.onclick = ()=>{ const on = tb.getAttribute("aria-pressed")!=="true"; tb.setAttribute("aria-pressed",on); document.getElementById("tableWrap").style.display = on?"block":"none"; };
+window.addEventListener("resize", ()=>{ clearTimeout(window._rt); window._rt=setTimeout(draw,120); });
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+draw();
+</script>
+</body>
+</html>

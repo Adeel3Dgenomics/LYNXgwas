@@ -358,6 +358,9 @@ table.gsearch-table a.gsearch-open:hover { background: #0b5a46; }
     <button class="btn btn-secondary" onclick="openLocusMatrix()">
       Gene Constellation
     </button>
+    <button class="btn btn-secondary" onclick="openLocusMatrix('serpent')" title="Linear cross-dataset view: one serpent per locus through every dataset, plus a category analysis of what drives shared loci">
+      Locus Serpent Plot
+    </button>
     <button class="btn btn-secondary" onclick="openSusiex()">
       SuSiEx
     </button>
@@ -419,6 +422,27 @@ table.gsearch-table a.gsearch-open:hover { background: #0b5a46; }
     </table>
     <div class="empty" id="locus-matrix-empty" style="display:none">
       <p>No Gene Constellation runs yet. Click <b>Gene Constellation</b> above to compare datasets.</p>
+    </div>
+  </div>
+
+  <div class="table-wrap" style="margin-top:1.5rem">
+    <h3 style="font-size:0.95rem;margin:0 0 0.5rem">Locus Serpent Plot runs</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Datasets</th>
+          <th>Ref Panel</th>
+          <th>Loci</th>
+          <th>Status</th>
+          <th>Created</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="serpent-tbody"></tbody>
+    </table>
+    <div class="empty" id="serpent-empty" style="display:none">
+      <p>No Locus Serpent Plot runs yet. Click <b>Locus Serpent Plot</b> above, pick the datasets to compare, and run it.</p>
     </div>
   </div>
 
@@ -2223,7 +2247,11 @@ var locusMatrixPollTimer = null;
 var gcWiz = { step: 0 }; // Gene Constellation setup wizard state (separate from the project-creation `wiz`)
 var GC_STEPS = ['Datasets', 'Reference panel & review'];
 
-async function openLocusMatrix() {
+function gcTitle() {
+  return gcWiz.kind === 'serpent' ? 'Locus Serpent Plot — cross-dataset comparison' : 'Gene Constellation — cross-dataset comparison';
+}
+
+async function openLocusMatrix(kind) {
   var overlay = document.getElementById('locus-matrix-overlay');
   if (!overlay) {
     overlay = document.createElement('div');
@@ -2234,7 +2262,7 @@ async function openLocusMatrix() {
     document.body.appendChild(overlay);
   }
   locusMatrixSelected = {};
-  gcWiz = { step: 0, name: '', refPanelId: '' };
+  gcWiz = { step: 0, name: '', refPanelId: '', kind: kind === 'serpent' ? 'serpent' : 'constellation' };
   if (locusMatrixPollTimer) { clearInterval(locusMatrixPollTimer); locusMatrixPollTimer = null; }
   await renderLocusMatrixForm();
   overlay.classList.add('open');
@@ -2258,7 +2286,7 @@ function gcStepsBarHtml() {
 async function renderLocusMatrixForm() {
   var box = document.getElementById('locus-matrix-box');
   if (gcWiz.step === 0) {
-    box.innerHTML = '<h3>Gene Constellation — cross-dataset comparison</h3>'
+    box.innerHTML = '<h3>' + gcTitle() + '</h3>'
       + gcStepsBarHtml()
       + '<p style="color:#666;font-size:0.85rem;margin:0.5rem 0 1rem">'
       + 'Pick two or more datasets to compare. Each SNP\'s best p-value across the selected '
@@ -2294,7 +2322,7 @@ async function renderLocusMatrixForm() {
     var p = projects.find(function(x) { return x.id === id; });
     return p ? (p.name || p.id) : id;
   });
-  box.innerHTML = '<h3>Gene Constellation — cross-dataset comparison</h3>'
+  box.innerHTML = '<h3>' + gcTitle() + '</h3>'
     + gcStepsBarHtml()
     + '<div style="font-size:0.85rem;font-weight:600;margin-bottom:0.4rem">Selected datasets (' + ids.length + ')</div>'
     + '<div style="font-size:0.82rem;color:#475569;background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:0.5rem 0.75rem;margin-bottom:1rem">'
@@ -2361,7 +2389,7 @@ async function runLocusMatrix() {
   var name = gcWiz.name || '';
 
   var box = document.getElementById('locus-matrix-box');
-  box.innerHTML = '<h3>Gene Constellation</h3>'
+  box.innerHTML = '<h3>' + (gcWiz.kind === 'serpent' ? 'Locus Serpent Plot' : 'Gene Constellation') + '</h3>'
     + '<div id="lm-progress" style="margin:1rem 0;font-size:0.85rem;color:#475569">Starting…</div>'
     + '<div style="display:flex;justify-content:flex-end">'
     + '<button class="btn btn-secondary" onclick="closeLocusMatrix()">Close</button></div>';
@@ -2369,7 +2397,7 @@ async function runLocusMatrix() {
   try {
     var resp = await fetch(API + '/api/locus-matrix-run', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ project_ids: ids, ref_panel_id: refPanelId, name: name })
+      body: JSON.stringify({ project_ids: ids, ref_panel_id: refPanelId, name: name, kind: gcWiz.kind })
     });
     var d = await resp.json();
     if (!resp.ok || d.error) {
@@ -2402,7 +2430,9 @@ function pollLocusMatrixProgress(jobId) {
         } else {
           el.innerHTML = '<div style="color:#065f46;margin-bottom:0.75rem">Done &mdash; ' + p.loci_found + ' loci found.</div>'
             + '<div style="display:flex;gap:0.5rem">'
-            + '<a class="btn btn-primary" href="gene_constellation.html?job=' + encodeURIComponent(jobId) + '" target="_blank">View Constellation &rarr;</a>'
+            + (gcWiz.kind === 'serpent'
+                ? '<a class="btn btn-primary" href="serpent_plot.html?job=' + encodeURIComponent(jobId) + '" target="_blank">View Serpent Plot &rarr;</a>'
+                : '<a class="btn btn-primary" href="gene_constellation.html?job=' + encodeURIComponent(jobId) + '" target="_blank">View Constellation &rarr;</a>')
             + '<a class="btn btn-secondary" href="' + API + '/api/locus-matrix-export?job=' + encodeURIComponent(jobId) + '">Export Excel</a>'
             + '</div>';
         }
@@ -2755,41 +2785,49 @@ async function deleteEvidence(projectId, name) {
 }
 
 async function loadLocusMatrixJobs() {
-  var tbody = document.getElementById('locus-matrix-tbody');
-  var empty = document.getElementById('locus-matrix-empty');
-  if (!tbody) return;
   try {
     var jobs = await (await fetch(API + '/api/locus-matrix-jobs')).json();
-    if (!jobs.length) {
-      tbody.innerHTML = '';
-      empty.style.display = '';
-      return;
-    }
-    empty.style.display = 'none';
-    tbody.innerHTML = jobs.map(function(j) {
-      var statusBadge = j.status === 'done'
-        ? '<span class="badge badge-ok">Done</span>'
-        : j.status === 'error'
-        ? '<span class="badge badge-error" title="' + escAttr(j.error || '') + '">Error</span>'
-        : '<span class="badge badge-proc">Running…</span>';
-      var actions = (j.status === 'done'
-        ? '<a class="btn btn-secondary" href="gene_constellation.html?job=' + encodeURIComponent(j.job_id) + '" target="_blank">View</a> '
-          + '<a class="btn btn-secondary" href="' + API + '/api/locus-matrix-export?job=' + encodeURIComponent(j.job_id) + '">Export</a> '
-        : '')
-        + '<button class="btn btn-danger" style="padding:0.2rem 0.6rem;font-size:0.75rem" onclick="deleteLocusMatrixJob(\'' + esc(j.job_id) + '\')">Delete</button>';
-      return '<tr>'
-        + '<td><b>' + esc(j.name) + '</b></td>'
-        + '<td class="desc">' + esc(j.datasets) + '</td>'
-        + '<td>' + esc(j.ref_panel_label) + '</td>'
-        + '<td>' + (j.status === 'done' ? j.loci_found : '—') + '</td>'
-        + '<td>' + statusBadge + '</td>'
-        + '<td>' + formatDate(j.created_at) + '</td>'
-        + '<td class="actions">' + actions + '</td>'
-        + '</tr>';
-    }).join('');
+    renderRunsTable('locus-matrix-tbody', 'locus-matrix-empty', jobs.filter(function(j) { return j.kind !== 'serpent'; }), 'constellation');
+    renderRunsTable('serpent-tbody', 'serpent-empty', jobs.filter(function(j) { return j.kind === 'serpent'; }), 'serpent');
   } catch (e) {
-    tbody.innerHTML = '';
+    ['locus-matrix-tbody', 'serpent-tbody'].forEach(function(id) { var t = document.getElementById(id); if (t) t.innerHTML = ''; });
   }
+}
+
+// One runs table (Gene Constellation or Locus Serpent Plot). Both views read the same completed job,
+// so every finished run also links to the other view.
+function renderRunsTable(tbodyId, emptyId, jobs, kind) {
+  var tbody = document.getElementById(tbodyId);
+  var empty = document.getElementById(emptyId);
+  if (!tbody) return;
+  if (!jobs.length) { tbody.innerHTML = ''; if (empty) empty.style.display = ''; return; }
+  if (empty) empty.style.display = 'none';
+  tbody.innerHTML = jobs.map(function(j) {
+    var statusBadge = j.status === 'done'
+      ? '<span class="badge badge-ok">Done</span>'
+      : j.status === 'error'
+      ? '<span class="badge badge-error" title="' + escAttr(j.error || '') + '">Error</span>'
+      : '<span class="badge badge-proc">Running…</span>';
+    var jid = encodeURIComponent(j.job_id);
+    var primary = kind === 'serpent'
+      ? '<a class="btn btn-secondary" href="serpent_plot.html?job=' + jid + '" target="_blank">View</a> '
+        + '<a class="btn btn-secondary" href="gene_constellation.html?job=' + jid + '" target="_blank" title="Same run as a Gene Constellation">Constellation</a> '
+      : '<a class="btn btn-secondary" href="gene_constellation.html?job=' + jid + '" target="_blank">View</a> '
+        + '<a class="btn btn-secondary" href="serpent_plot.html?job=' + jid + '" target="_blank" title="Same run as a Locus Serpent Plot">Serpent</a> ';
+    var actions = (j.status === 'done'
+      ? primary + '<a class="btn btn-secondary" href="' + API + '/api/locus-matrix-export?job=' + jid + '">Export</a> '
+      : '')
+      + '<button class="btn btn-danger" style="padding:0.2rem 0.6rem;font-size:0.75rem" onclick="deleteLocusMatrixJob(\'' + esc(j.job_id) + '\')">Delete</button>';
+    return '<tr>'
+      + '<td><b>' + esc(j.name) + '</b></td>'
+      + '<td class="desc">' + esc(j.datasets) + '</td>'
+      + '<td>' + esc(j.ref_panel_label) + '</td>'
+      + '<td>' + (j.status === 'done' ? j.loci_found : '—') + '</td>'
+      + '<td>' + statusBadge + '</td>'
+      + '<td>' + formatDate(j.created_at) + '</td>'
+      + '<td class="actions">' + actions + '</td>'
+      + '</tr>';
+  }).join('');
 }
 
 async function deleteLocusMatrixJob(jobId) {

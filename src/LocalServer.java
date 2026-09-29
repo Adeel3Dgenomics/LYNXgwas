@@ -198,6 +198,7 @@ public class LocalServer {
         new File(this.lastFolder).mkdirs();
 
         http = HttpServer.create(new InetSocketAddress("localhost", PORT), 32);
+        loadPersistedLocusMatrixJobs();
 
         // ── Project-scoped API (Step 6) ──────────────────────────────────
         http.createContext("/api/projects/process", this::processProjects);
@@ -227,6 +228,7 @@ public class LocalServer {
         http.createContext("/api/locus-matrix-delete",   this::locusMatrixDelete);
         http.createContext("/api/gene-constellation",    this::geneConstellation);
         http.createContext("/api/gene-constellation-export", this::geneConstellationExport);
+        http.createContext("/api/serpent-plot",          this::serpentPlot);
         http.createContext("/api/susiex-run",        this::susiexRun);
         http.createContext("/api/susiex-progress",   this::susiexProgress);
         http.createContext("/api/susiex-result",     this::susiexResult);
@@ -1669,8 +1671,11 @@ public class LocalServer {
         String refPanelId;
         String refPanelLabel;
         String createdAt;
+        String kind = "constellation"; // "constellation" | "serpent" — which view the run was started for
     }
     private final Set<String> cancelledJobs = ConcurrentHashMap.newKeySet();
+    /** Serpent Plot JSON per completed job (the category analysis runs permutations, so build once). */
+    private final Map<String, String> serpentPlotCache = new ConcurrentHashMap<>();
 
     // GET /api/project/{id}/analysis/tools — discovered descriptors + param schemas
     private void projectAnalysisTools(HttpExchange ex) throws IOException {
@@ -2729,6 +2734,7 @@ public class LocalServer {
         List<String> projectIds = extractStringArray(body, "project_ids");
         String refPanelId = extractStr(body, "ref_panel_id");
         String requestedName = extractStr(body, "name");
+        String requestedKind = extractStr(body, "kind");
 
         if (projectIds.isEmpty()) {
             respond(ex, 400, "application/json", "{\"error\":\"project_ids required\"}".getBytes()); return;
@@ -2781,8 +2787,10 @@ public class LocalServer {
         meta.refPanelId = panel.id;
         meta.refPanelLabel = panel.label;
         meta.createdAt = java.time.Instant.now().toString();
+        if ("serpent".equals(requestedKind)) meta.kind = "serpent";
         locusMatrixJobMeta.put(jobId, meta);
         locusMatrixJobOrder.add(jobId);
+        saveLocusMatrixJobMeta(meta, "running", null);
 
         final GlobalConfig.RefPanel finalPanel = panel;
         final List<String> finalProjectIds = projectIds;
@@ -2811,12 +2819,15 @@ public class LocalServer {
                 result.createdAt = java.time.Instant.now().toString();
 
                 locusMatrixJobs.put(jobId, result);
+                saveLocusMatrixJobResult(jobId, result);
+                saveLocusMatrixJobMeta(meta, "done", null);
                 progress.phase = "done";
                 progress.done = true;
             } catch (Exception e) {
                 progress.phase = "error";
                 progress.error = e.getMessage();
                 progress.done = true;
+                saveLocusMatrixJobMeta(meta, "error", e.getMessage());
                 System.err.printf("[LocusMatrix] Job '%s' failed: %s%n", jobId, e.getMessage());
                 e.printStackTrace(System.err);
             }
@@ -2859,6 +2870,7 @@ public class LocalServer {
             j.append("\"datasets\":\"").append(escJ(String.join(", ", meta.datasetNames))).append("\",");
             j.append("\"ref_panel_label\":\"").append(escJ(meta.refPanelLabel)).append("\",");
             j.append("\"created_at\":\"").append(escJ(meta.createdAt)).append("\",");
+            j.append("\"kind\":\"").append(escJ(meta.kind)).append("\",");
             j.append("\"status\":\"").append(status).append("\",");
             j.append("\"loci_found\":").append(result != null ? result.loci.size() : 0).append(",");
             j.append("\"error\":").append(progress != null && progress.error != null
@@ -2885,12 +2897,13 @@ public class LocalServer {
         locusMatrixJobMeta.remove(jobId);
         locusMatrixJobProgress.remove(jobId);
         locusMatrixJobs.remove(jobId);
+        serpentPlotCache.remove(jobId);
 
         try {
-            File jobDir = new File("output/multi_locus/" + jobId);
-            if (jobDir.isDirectory()) {
-                File merged = new File(jobDir, "merged.tsv");
-                if (merged.exists()) merged.delete();
+            File jobDir = new File(MULTI_LOCUS_DIR, jobId);
+            if (jobDir.isDirectory() && jobId.matches("[A-Za-z0-9-]+")) {
+                File[] files = jobDir.listFiles();
+                if (files != null) for (File f : files) f.delete();
                 jobDir.delete();
             }
         } catch (Exception ignored) {}
@@ -2938,6 +2951,128 @@ public class LocalServer {
         try {
             GeneConstellationResult gcr = GeneConstellationBuilder.build(result, threshold, minEdgeCount, maxEdges);
             respond(ex, 200, "application/json", gcr.toJson().getBytes("UTF-8"));
+        } catch (Exception e) {
+            respond(ex, 500, "application/json", ("{\"error\":\"" + escJ(e.getMessage()) + "\"}").getBytes());
+        }
+    }
+
+    // ── Persisted Locus Matrix runs (Gene Constellation / Locus Serpent Plot) ─────────────────────
+    // Each run lives in output/multi_locus/<jobId>/: merged.tsv (pipeline input), job.json (name,
+    // kind, datasets, ref panel, created, status) and, once finished, result.json
+    // (MultiLocusResult.toJson()). Runs are reloaded at startup so they survive a restart; a run that
+    // was still going when LYNXgwas stopped comes back as "interrupted" instead of vanishing.
+    private static final String MULTI_LOCUS_DIR = "output/multi_locus";
+
+    private void saveLocusMatrixJobMeta(LocusMatrixJobMeta meta, String status, String error) {
+        try {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("job_id", meta.jobId);
+            m.put("name", meta.name);
+            m.put("kind", meta.kind);
+            m.put("project_ids", new ArrayList<Object>(meta.projectIds));
+            m.put("dataset_names", new ArrayList<Object>(meta.datasetNames));
+            m.put("ref_panel_id", meta.refPanelId);
+            m.put("ref_panel_label", meta.refPanelLabel);
+            m.put("created_at", meta.createdAt);
+            m.put("status", status);
+            m.put("error", error);
+            writeAtomically(new File(new File(MULTI_LOCUS_DIR, meta.jobId), "job.json"), MiniJson.encode(m));
+        } catch (Exception e) {
+            System.err.printf("[LocusMatrix] Could not save job.json for '%s': %s%n", meta.jobId, e.getMessage());
+        }
+    }
+
+    private void saveLocusMatrixJobResult(String jobId, MultiLocusResult result) {
+        try {
+            writeAtomically(new File(new File(MULTI_LOCUS_DIR, jobId), "result.json"), result.toJson());
+        } catch (Exception e) {
+            System.err.printf("[LocusMatrix] Could not save result.json for '%s': %s%n", jobId, e.getMessage());
+        }
+    }
+
+    /** Write to a temp file then rename, so a crash mid-write never leaves a truncated file. */
+    private static void writeAtomically(File target, String content) throws IOException {
+        target.getParentFile().mkdirs();
+        File tmp = new File(target.getParentFile(), target.getName() + ".tmp");
+        Files.write(tmp.toPath(), content.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        try {
+            Files.move(tmp.toPath(), target.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                       java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+        } catch (java.nio.file.AtomicMoveNotSupportedException e) {
+            Files.move(tmp.toPath(), target.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        }
+    }
+
+    private void loadPersistedLocusMatrixJobs() {
+        File root = new File(MULTI_LOCUS_DIR);
+        File[] dirs = root.listFiles(File::isDirectory);
+        if (dirs == null) return;
+        List<LocusMatrixJobMeta> loaded = new ArrayList<>();
+        int ok = 0, failed = 0;
+        for (File dir : dirs) {
+            File metaFile = new File(dir, "job.json");
+            if (!metaFile.isFile()) continue; // runs from before persistence existed: nothing to restore
+            try {
+                Map<String, Object> m = MiniJson.asObject(MiniJson.parse(
+                    new String(Files.readAllBytes(metaFile.toPath()), java.nio.charset.StandardCharsets.UTF_8)));
+                LocusMatrixJobMeta meta = new LocusMatrixJobMeta();
+                meta.jobId = MiniJson.getStr(m, "job_id", dir.getName());
+                meta.name = MiniJson.getStr(m, "name", meta.jobId);
+                meta.kind = MiniJson.getStr(m, "kind", "constellation");
+                meta.projectIds = new ArrayList<>();
+                meta.datasetNames = new ArrayList<>();
+                if (m.get("project_ids") instanceof List) for (Object x : MiniJson.asArray(m.get("project_ids"))) meta.projectIds.add(String.valueOf(x));
+                if (m.get("dataset_names") instanceof List) for (Object x : MiniJson.asArray(m.get("dataset_names"))) meta.datasetNames.add(String.valueOf(x));
+                meta.refPanelId = MiniJson.getStr(m, "ref_panel_id", "");
+                meta.refPanelLabel = MiniJson.getStr(m, "ref_panel_label", "");
+                meta.createdAt = MiniJson.getStr(m, "created_at", "");
+                String status = MiniJson.getStr(m, "status", "");
+
+                MultiLocusProgress progress = new MultiLocusProgress();
+                progress.done = true;
+                File resultFile = new File(dir, "result.json");
+                if ("done".equals(status) && resultFile.isFile()) {
+                    MultiLocusResult result = MultiLocusResult.fromJson(
+                        new String(Files.readAllBytes(resultFile.toPath()), java.nio.charset.StandardCharsets.UTF_8));
+                    locusMatrixJobs.put(meta.jobId, result);
+                    progress.phase = "done";
+                    progress.lociFound = result.loci.size();
+                    ok++;
+                } else {
+                    progress.phase = "error";
+                    progress.error = "done".equals(status) ? "Saved result is missing (result.json)."
+                        : "error".equals(status) ? MiniJson.getStr(m, "error", "Run failed.")
+                        : "Interrupted: LYNXgwas stopped before this run finished. Delete it and run again.";
+                    failed++;
+                }
+                locusMatrixJobMeta.put(meta.jobId, meta);
+                locusMatrixJobProgress.put(meta.jobId, progress);
+                loaded.add(meta);
+            } catch (Exception e) {
+                failed++;
+                System.err.printf("[LocusMatrix] Could not restore run '%s': %s%n", dir.getName(), e.getMessage());
+            }
+        }
+        loaded.sort(Comparator.comparing(x -> x.createdAt == null ? "" : x.createdAt));
+        for (LocusMatrixJobMeta meta : loaded) locusMatrixJobOrder.add(meta.jobId);
+        if (!loaded.isEmpty())
+            System.out.printf("Restored %d saved cross-dataset run(s) (%d complete, %d failed/interrupted)%n", loaded.size(), ok, failed);
+    }
+
+    // GET /api/serpent-plot?job=<jobId> — Locus Serpent Plot view + category analysis, derived from an
+    // already-completed Locus Matrix job (same job store as Gene Constellation; no pipeline re-run).
+    private void serpentPlot(HttpExchange ex) throws IOException {
+        cors(ex); if (preflight(ex)) return;
+        String jobId = queryParam(ex, "job");
+        MultiLocusResult result = jobId != null ? locusMatrixJobs.get(jobId) : null;
+        if (result == null) {
+            respond(ex, 404, "application/json", "{\"error\":\"Job not found or not complete\"}".getBytes());
+            return;
+        }
+        try {
+            String json = serpentPlotCache.computeIfAbsent(jobId,
+                k -> SerpentPlotBuilder.toJson(SerpentPlotBuilder.build(result)));
+            respond(ex, 200, "application/json", json.getBytes("UTF-8"));
         } catch (Exception e) {
             respond(ex, 500, "application/json", ("{\"error\":\"" + escJ(e.getMessage()) + "\"}").getBytes());
         }

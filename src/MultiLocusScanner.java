@@ -68,6 +68,9 @@ public class MultiLocusScanner {
             MultiLocusResult.DatasetInfo di_ = new MultiLocusResult.DatasetInfo(
                 datasetIds.get(di), new File(cfg.outputDir).getName(), effectType);
             di_.diseaseName = cfg.diseaseName == null ? "" : cfg.diseaseName;
+            di_.ancestry = cfg.ancestry == null ? "" : cfg.ancestry;
+            di_.sampleN = cfg.sampleN;
+            di_.categories = new LinkedHashMap<>(cfg.categories);
             di_.extraColumns = extraColumnsByDataset.get(datasetIds.get(di));
             result.datasets.add(di_);
         }

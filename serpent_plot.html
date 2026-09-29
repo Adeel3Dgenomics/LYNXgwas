@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Locus Serpent Plot — LYNXgwas</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,wght@0,500;0,600;0,700;1,500&family=Work+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root{
+    color-scheme: light;
+    --bg:#F5F6F8; --surface:#FFFFFF; --surface-2:#FBFBFC;
+    --ink:#1B2430; --ink-soft:#5B6472; --ink-faint:#8B93A1; --border:#DDE1E8;
+    --accent:#6B4E9E; --accent-bg:#F1ECF9;
+    --row-line:#D5D9E0; --band-a:#FAFBFC; --band-b:#F1F3F6;
+    --chr-a:#C9CDD5; --chr-b:#A9AFBA; --nonsig:#B9BEC7;
+    --p-green:#0ca30c; --p-yellow:#e5a000; --p-red:#d03b3b;
+    --bar:#2a78d6; --bar-muted:#b7d3f6;
+    --c1:#2a78d6; --c2:#eb6834; --c3:#1baf7a; --c4:#eda100; --c5:#e87ba4; --c6:#008300; --c7:#4a3aa7; --c8:#e34948; --c9:#9aa1ad;
+    --shadow: 0 1px 2px rgba(27,36,48,.06), 0 10px 30px rgba(27,36,48,.08);
+    --font-display:'Newsreader', Georgia, serif;
+    --font-body:'Work Sans', -apple-system, 'Segoe UI', sans-serif;
+    --font-mono:'IBM Plex Mono', ui-monospace, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:where(:not([data-theme="light"])){
+      color-scheme: dark;
+      --bg:#0F1116; --surface:#171A22; --surface-2:#1B1F29;
+      --ink:#ECEEF2; --ink-soft:#A3ACB9; --ink-faint:#727C8B; --border:#2B303C;
+      --accent:#B79CE6; --accent-bg:rgba(183,156,230,.14);
+      --row-line:#343947; --band-a:#191C24; --band-b:#1F232C;
+      --chr-a:#4A4F5B; --chr-b:#666C79; --nonsig:#5A606C;
+      --p-green:#1fb31f; --p-yellow:#fab219; --p-red:#e05252;
+      --bar:#3987e5; --bar-muted:#184f95;
+      --c1:#3987e5; --c2:#d95926; --c3:#199e70; --c4:#c98500; --c5:#d55181; --c6:#008300; --c7:#9085e9; --c8:#e66767; --c9:#6b7280;
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="dark"]{
+    color-scheme: dark;
+    --bg:#0F1116; --surface:#171A22; --surface-2:#1B1F29;
+    --ink:#ECEEF2; --ink-soft:#A3ACB9; --ink-faint:#727C8B; --border:#2B303C;
+    --accent:#B79CE6; --accent-bg:rgba(183,156,230,.14);
+    --row-line:#343947; --band-a:#191C24; --band-b:#1F232C;
+    --chr-a:#4A4F5B; --chr-b:#666C79; --nonsig:#5A606C;
+    --p-green:#1fb31f; --p-yellow:#fab219; --p-red:#e05252;
+    --bar:#3987e5; --bar-muted:#184f95;
+    --c1:#3987e5; --c2:#d95926; --c3:#199e70; --c4:#c98500; --c5:#d55181; --c6:#008300; --c7:#9085e9; --c8:#e66767; --c9:#6b7280;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-body);font-size:14px;line-height:1.45}
+  header{display:flex;align-items:center;gap:1.1rem;flex-wrap:wrap;padding:1rem 1.6rem;background:var(--surface);border-bottom:1px solid var(--border)}
+  header h1{font-family:var(--font-display);font-weight:600;font-size:1.35rem;margin:0;letter-spacing:-.01em}
+  header .meta{font-size:.82rem;color:var(--ink-soft)}
+  header .meta b{color:var(--ink);font-family:var(--font-mono);font-weight:600}
+  .top-actions{margin-left:auto;display:flex;gap:.5rem;flex-wrap:wrap}
+  .btn{display:inline-flex;align-items:center;gap:.35rem;padding:.45rem .95rem;border-radius:8px;border:1px solid var(--border);
+       background:var(--surface);color:var(--ink);text-decoration:none;font-size:.82rem;font-weight:500;cursor:pointer;font-family:var(--font-body)}
+  .btn[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:#fff}
+  main{padding:1.2rem 1.6rem 2.5rem;max-width:1800px;margin:0 auto}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:1rem 1.1rem;box-shadow:var(--shadow);margin-bottom:1.2rem}
+  .card h2{font-family:var(--font-display);font-size:1.15rem;font-weight:600;margin:0 0 .35rem}
+  .sub{color:var(--ink-soft);font-size:.85rem;margin:0 0 .8rem;max-width:980px}
+  .controls{display:flex;flex-wrap:wrap;gap:.9rem 1.2rem;align-items:center;margin-bottom:.7rem}
+  .controls label{color:var(--ink-soft);font-size:.82rem;display:flex;gap:.4rem;align-items:center}
+  select{font:inherit;font-size:.82rem;color:var(--ink);background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:.3rem .5rem}
+  .scroll{overflow-x:auto}
+  svg{display:block}
+  svg text{fill:var(--ink-soft);font-family:var(--font-body)}
+  .snake{transition:opacity .12s}
+  svg.dim .snake{opacity:.08}
+  svg.dim .snake.on{opacity:1}
+  .legend{display:flex;flex-wrap:wrap;gap:1.2rem 2rem;margin-top:.8rem;color:var(--ink-soft);font-size:.78rem;align-items:flex-start}
+  .legend .ttl{margin-bottom:.35rem;color:var(--ink-soft);font-weight:600}
+  .sw{display:inline-flex;align-items:center;gap:.35rem;margin-right:.9rem}
+  .chip{display:inline-block;width:9px;height:9px;border-radius:2px;vertical-align:-1px}
+  .tip{position:fixed;pointer-events:none;background:var(--surface);color:var(--ink);border:1px solid var(--border);border-radius:10px;
+       padding:.55rem .7rem;font-size:.78rem;box-shadow:var(--shadow);opacity:0;transition:opacity .08s;max-width:300px;z-index:20}
+  .tip .m{color:var(--ink-soft)}
+  #loading,#error{padding:2rem 1.6rem;color:var(--ink-soft)}
+  #error{color:#B23A2E;display:none}
+  /* category analysis */
+  .verdict{font-size:.92rem;margin:.2rem 0 1rem;max-width:1100px}
+  .cat-row{display:grid;grid-template-columns:170px minmax(160px,1fr) 300px;gap:.8rem;align-items:center;padding:.35rem .4rem;border-radius:8px;cursor:pointer}
+  .cat-row:hover{background:var(--surface-2)}
+  .cat-row.sel{background:var(--accent-bg)}
+  .cat-name{font-weight:600;font-size:.85rem}
+  .bar-track{height:12px;background:var(--surface-2);border:1px solid var(--border);border-radius:4px;overflow:hidden}
+  .bar-fill{height:100%;background:var(--bar);border-radius:0 4px 4px 0}
+  .bar-fill.ns{background:var(--bar-muted)}
+  .cat-stats{font-family:var(--font-mono);font-size:.76rem;color:var(--ink-soft)}
+  .cat-stats b{color:var(--ink)}
+  .note{font-size:.76rem;color:var(--ink-faint)}
+  table{border-collapse:collapse;width:100%;font-size:.8rem}
+  th,td{text-align:left;padding:.35rem .55rem;border-bottom:1px solid var(--border);vertical-align:top}
+  th{color:var(--ink-soft);font-weight:600;position:sticky;top:0;background:var(--surface)}
+  td.num{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+  tr.lvl{cursor:pointer}
+  tr.lvl:hover td{background:var(--surface-2)}
+  .lchip{display:inline-block;border:1px solid var(--border);border-radius:999px;padding:.05rem .5rem;margin:.1rem .2rem .1rem 0;font-size:.74rem;cursor:pointer;background:var(--surface)}
+  .lchip:hover{border-color:var(--accent)}
+  .lchip i{font-style:italic}
+  .lchip span{color:var(--ink-faint);font-family:var(--font-mono);font-size:.7rem}
+  .tabs{display:flex;gap:.35rem;flex-wrap:wrap;margin:.2rem 0 .6rem}
+  .method{font-size:.74rem;color:var(--ink-faint);margin-top:.8rem;max-width:1100px}
+  #tableWrap{max-height:460px;overflow:auto;display:none;margin-top:.8rem}
+  .hl-bar{display:none;align-items:center;gap:.6rem;font-size:.8rem;color:var(--ink-soft);margin-bottom:.5rem}
+</style>
+</head>
+<body>
+<header>
+  <h1>Locus Serpent Plot</h1>
+  <div class="meta" id="hdr-meta">Loading…</div>
+  <div class="top-actions">
+    <a class="btn" id="gc-link" href="#">Gene Constellation view</a>
+    <a class="btn" id="export-link" href="#" title="Locus-level Excel export of the same run">Export Excel (locus-level)</a>
+  </div>
+</header>
+<div id="loading">Building the Locus Serpent Plot and running the category analysis…</div>
+<div id="error"></div>
+
+<main id="main" style="display:none">
+  <div class="card">
+    <p class="sub">Each locus drops a serpent from its genomic position through every dataset. At each crossing, color and thickness show that dataset's significance, and sideways drift shows how far its lead SNP sits from the strongest dataset's lead SNP. Loci shared across diseases appear as long, thick red serpents.</p>
+    <div class="controls">
+      <label>Row order <select id="orderSel"></select></label>
+      <label>Chromosome <select id="chrSel"><option value="all">Whole genome</option></select></label>
+      <label>Show loci significant (p&lt;5×10⁻⁸) in ≥ <select id="minDis"></select> disease(s)</label>
+      <button class="btn" id="labelsBtn" aria-pressed="true">Gene labels</button>
+      <button class="btn" id="tableBtn" aria-pressed="false">Table view</button>
+    </div>
+    <div class="hl-bar" id="hlBar"><span id="hlText"></span><button class="btn" id="hlClear">Clear highlight</button></div>
+    <div class="scroll"><svg id="viz" role="img" aria-label="Locus Serpent Plot"></svg></div>
+    <div class="legend">
+      <div>
+        <div class="ttl">Significance at each crossing: color and thickness</div>
+        <span class="sw"><svg width="12" height="18" aria-hidden="true"><rect x="5.3" y="1" width="1.4" height="16" rx=".7" fill="var(--nonsig)"/></svg>p ≥ 5×10⁻³</span>
+        <span class="sw"><svg width="12" height="18" aria-hidden="true"><rect x="4.7" y="1" width="2.6" height="16" rx="1.3" fill="var(--p-green)" fill-opacity=".7"/></svg>5×10⁻³ – 5×10⁻⁵</span>
+        <span class="sw"><svg width="12" height="18" aria-hidden="true"><rect x="2.5" y="1" width="7" height="16" rx="3.5" fill="var(--p-yellow)"/></svg>5×10⁻⁵ – 5×10⁻⁸</span>
+        <span class="sw"><svg width="14" height="18" aria-hidden="true"><rect x="1" y="1" width="12" height="16" rx="6" fill="var(--p-red)"/></svg>p &lt; 5×10⁻⁸</span>
+        <div class="note" style="margin-top:.3rem">label ×N = genome-wide significant in N diseases</div>
+      </div>
+      <div style="max-width:420px"><div class="ttl">Disease</div><div id="disLegend"></div></div>
+      <div style="max-width:330px"><div class="ttl">Sideways drift</div>
+        <div class="note">Offset of each dataset's lead SNP from the lead SNP of the strongest dataset at that locus: ±150 kb is drawn as ±14 px (capped at ±300 kb). A bend means that dataset peaks somewhere else in the locus.</div></div>
+    </div>
+    <div id="tableWrap"><table id="tbl"></table></div>
+  </div>
+
+  <div class="card" id="catCard">
+    <h2>What drives the clustering?</h2>
+    <p class="sub">Which dataset category best explains which loci are significant together, and which loci are consistently significant within each group. Click a category to reorder the plot by it; click a locus to highlight its serpent.</p>
+    <div class="verdict" id="verdict"></div>
+    <div id="catBars"></div>
+    <div style="margin-top:1rem">
+      <div class="tabs" id="catTabs"></div>
+      <div id="levelTable"></div>
+    </div>
+    <div class="method" id="method"></div>
+  </div>
+</main>
+<div class="tip" id="tip"></div>
+
+<script>
+// ── genome coordinates: per-chromosome max of GRCh37/GRCh38 lengths, so either build fits ─────────────
+var CHR_ORDER = ["1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19","20","21","22","X"];
+var LEN37 = [249250621,243199373,198022430,191154276,180915260,171115067,159138663,146364022,141213431,135534747,135006516,133851895,115169878,107349540,102531392,90354753,81195210,78077248,59128983,63025520,48129895,51304566,155270560];
+var LEN38 = [248956422,242193529,198295559,190214555,181538259,170805979,159345973,145138636,138394717,133797422,135086622,133275309,114364328,107043718,101991189,90338345,83257441,80373285,58617616,64444167,46709983,50818468,156040895];
+var CHR = []; (function(){ var off=0; CHR_ORDER.forEach(function(n,i){ var len=Math.max(LEN37[i],LEN38[i]); CHR.push({name:n,start:off,len:len}); off+=len; }); })();
+var GENOME = CHR[CHR.length-1].start + CHR[CHR.length-1].len;
+function chrIndex(c){ return CHR_ORDER.indexOf(String(c||'').replace(/^chr/i,'').toUpperCase().replace(/^23$/,'X')); }
+
+var TIERS = [
+  {col:'--nonsig',  w:1.3, a:0.35, label:'p ≥ 5×10⁻³'},
+  {col:'--p-green', w:2.6, a:0.55, label:'5×10⁻³ – 5×10⁻⁵'},
+  {col:'--p-yellow',w:7,   a:0.85, label:'5×10⁻⁵ – 5×10⁻⁸'},
+  {col:'--p-red',   w:12,  a:0.88, label:'p < 5×10⁻⁸'},
+];
+var NS = 'http://www.w3.org/2000/svg';
+function el(t,a,p){ var e=document.createElementNS(NS,t); for(var k in a) e.setAttribute(k,a[k]); if(p) p.appendChild(e); return e; }
+function cssv(v){ return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
+function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function fmtP(p){ if(p===null||p===undefined||isNaN(p)) return '—'; if(p===0) return '0'; return p<1e-3 ? p.toExponential(1) : p.toPrecision(2); }
+function pct(x){ return (x==null||isNaN(x)) ? '—' : (100*x).toFixed(0)+'%'; }
+// nearest_gene can be a comma list that starts with a pseudogene or clone name ("NFU1P2, AC104453.1");
+// show the first informative symbol and keep the full list for tooltips.
+var UNINFORMATIVE = /^(A[CLPF]\d{6}|Z\d{5}|LINC\d|RNU|RN7S|RNA5|Y_RNA|MIR\d|SNOR|RPL\d|RPS\d|CTD-|RP\d+-)|P\d+$|-AS\d$/;
+function geneLabel(g){
+  var parts = String(g||'').split(/\s*,\s*/).filter(Boolean);
+  if (!parts.length) return '';
+  for (var i=0;i<parts.length;i++) if (!UNINFORMATIVE.test(parts[i])) return parts[i];
+  return parts[0];
+}
+function pretty(s){ if(!s) return '—'; if(s.length<=4) return s.toUpperCase(); return s.charAt(0).toUpperCase()+s.slice(1); }
+
+var params = new URLSearchParams(location.search);
+var jobId = params.get('job') || '';
+document.getElementById('gc-link').href = 'gene_constellation.html?job=' + encodeURIComponent(jobId);
+document.getElementById('export-link').href = '/api/locus-matrix-export?job=' + encodeURIComponent(jobId);
+
+var D = null, DS = [], LOCI = [], DISEASES = [], DIS_IDX = {};
+var state = { order:'Disease', chr:'all', minDis:1, labels:true, highlight:null, hlLabel:'', catTab:null };
+
+async function load(){
+  try {
+    var r = await fetch('/api/serpent-plot?job=' + encodeURIComponent(jobId));
+    var d = await r.json();
+    if (!r.ok || d.error) throw new Error(d.error || ('HTTP ' + r.status));
+    D = d; prepare();
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('main').style.display = '';
+    draw(); drawCategories();
+  } catch(e) {
+    document.getElementById('loading').style.display = 'none';
+    var er = document.getElementById('error'); er.style.display = 'block';
+    er.textContent = 'Could not load this run: ' + e.message + '. Finished runs are saved under output/multi_locus/<run id>/ and reload when LYNXgwas starts; if this run was deleted, interrupted, or started before runs were saved, start a new one from the home page.';
+  }
+}
+
+function prepare(){
+  DS = D.datasets.map(function(d,i){ return Object.assign({i:i}, d); });
+  DS.forEach(function(d){ if (DIS_IDX[d.disease]===undefined){ DIS_IDX[d.disease]=DISEASES.length; DISEASES.push(d.disease); } });
+  LOCI = D.loci.map(function(L){
+    var ci = chrIndex(L.chr);
+    var sig = {}; L.tier.forEach(function(t,i){ if(t===3) sig[DS[i].disease]=1; });
+    var bestP = Infinity; L.p.forEach(function(p){ if(p!=null && p<bestP) bestP=p; });
+    return Object.assign({}, L, { ci:ci, g: ci<0 ? -1 : CHR[ci].start + L.ref_pos, nDis:Object.keys(sig).length, sigDis:Object.keys(sig), bestP:bestP });
+  }).filter(function(L){ return L.g >= 0; });
+  var hdr = document.getElementById('hdr-meta');
+  hdr.innerHTML = '<b>' + DS.length + '</b> datasets · <b>' + DISEASES.length + '</b> diseases · <b>' + LOCI.length + '</b> loci' + (D.ref_panel_label ? ' · ' + esc(D.ref_panel_label) : '') + (D.name ? ' · ' + esc(D.name) : '');
+  document.getElementById('disLegend').innerHTML = DISEASES.map(function(k){ return '<span class="sw"><span class="chip" style="background:' + disColor(k) + '"></span>' + esc(pretty(k)) + '</span>'; }).join('');
+  // controls
+  var os = document.getElementById('orderSel');
+  var opts = [['Disease','Disease'],['cluster','Shared-loci clusters']];
+  D.categories.forEach(function(c){ if (c!=='Disease') opts.push([c, c]); });
+  os.innerHTML = opts.map(function(o){ return '<option value="'+esc(o[0])+'">'+esc(o[1])+'</option>'; }).join('');
+  os.onchange = function(e){ state.order = e.target.value; draw(); };
+  var cs = document.getElementById('chrSel');
+  CHR.forEach(function(c){ if (LOCI.some(function(L){ return L.ci===CHR_ORDER.indexOf(c.name); })) { var o=document.createElement('option'); o.value=c.name; o.textContent='chr'+c.name; cs.appendChild(o); } });
+  cs.onchange = function(e){ state.chr = e.target.value; draw(); };
+  var md = document.getElementById('minDis'); var maxD = Math.max(1, DISEASES.length);
+  for (var k=1;k<=Math.min(maxD,6);k++){ var o=document.createElement('option'); o.value=k; o.textContent=k; md.appendChild(o); }
+  // large runs open on the shared-loci view (significant in >= 2 diseases); every locus stays one click away
+  if (LOCI.length > 150 && DISEASES.length > 1) { state.minDis = 2; md.value = '2'; }
+  md.onchange = function(e){ state.minDis = +e.target.value; draw(); };
+  var lb = document.getElementById('labelsBtn'); lb.onclick = function(){ state.labels=!state.labels; lb.setAttribute('aria-pressed', state.labels); draw(); };
+  var tb = document.getElementById('tableBtn'); tb.onclick = function(){ var on = tb.getAttribute('aria-pressed')!=='true'; tb.setAttribute('aria-pressed',on); document.getElementById('tableWrap').style.display = on?'block':'none'; };
+  document.getElementById('hlClear').onclick = function(){ setHighlight(null,''); };
+  var init = params.get('order'); if (init && opts.some(function(o){return o[0]===init;})) { state.order=init; os.value=init; }
+}
+
+function disColor(k){ var i = DIS_IDX[k]; return 'var(--c' + (i===undefined || i>7 ? 9 : i+1) + ')'; }
+
+function setHighlight(set, label){
+  state.highlight = set; state.hlLabel = label || '';
+  var bar = document.getElementById('hlBar');
+  bar.style.display = set ? 'flex' : 'none';
+  document.getElementById('hlText').textContent = set ? ('Highlighting ' + label) : '';
+  draw();
+}
+
+// ── row layouts ────────────────────────────────────────────────────────────────────────────────
+function layoutRows(mode){
+  var byDisease = function(a,b){ return (DIS_IDX[DS[a].disease]-DIS_IDX[DS[b].disease]) || DS[a].name.localeCompare(DS[b].name); };
+  var all = DS.map(function(d){ return d.i; });
+  if (mode === 'Disease'){
+    return DISEASES.map(function(k){ return {label:pretty(k), chipDisease:k, idx: all.filter(function(i){ return DS[i].disease===k; }).sort(byDisease)}; });
+  }
+  if (mode === 'cluster'){
+    var groups = [], cur = null;
+    D.clustering.leaf_order.forEach(function(i){
+      var c = D.clustering.cluster_of[i];
+      if (!cur || cur.cid !== c){ cur = {cid:c, label: c < 0 ? 'Too few sig. loci' : 'Cluster ' + (groups.filter(function(g){ return g.cid >= 0; }).length+1), idx:[]}; groups.push(cur); }
+      cur.idx.push(i);
+    });
+    groups.forEach(function(g){ var s={}; g.idx.forEach(function(i){ s[DS[i].disease]=1; }); g.diseases = Object.keys(s).sort(function(a,b){ return DIS_IDX[a]-DIS_IDX[b]; }); });
+    return groups;
+  }
+  var levels = {}; all.forEach(function(i){ var v = (DS[i].categories||{})[mode] || ''; (levels[v] = levels[v] || []).push(i); });
+  var rank = {'Low N':0,'Mid N':1,'High N':2};
+  var keys = Object.keys(levels).sort(function(a,b){ if(a==='') return 1; if(b==='') return -1; if(rank[a]!==undefined && rank[b]!==undefined) return rank[a]-rank[b]; return a.localeCompare(b); });
+  return keys.map(function(k){ return {label: k || 'Not set', idx: levels[k].sort(byDisease)}; });
+}
+
+// ── plot ───────────────────────────────────────────────────────────────────────────────────────
+function draw(){
+  var svg = document.getElementById('viz');
+  svg.innerHTML = ''; svg.classList.toggle('dim', !!state.highlight);
+  var mode = state.order, n = DS.length;
+  var ROW = n > 70 ? 11 : n > 45 ? 14 : 17, BANDGAP = 9, TOP = 26, GENOME_H = 14, DROP = 30, RIGHT = 22;
+  var GROUP_W = 150, DEND_W = mode==='cluster' ? 110 : 0, LABEL_W = mode==='Disease' ? 150 : 175;
+  var LEFT = GROUP_W + DEND_W + LABEL_W;
+  var W = Math.max(1100, svg.parentElement.clientWidth);
+  var groups = layoutRows(mode), order = [];
+  groups.forEach(function(g){ order = order.concat(g.idx); });
+  var rowY = new Array(n), y = TOP + GENOME_H + DROP;
+  groups.forEach(function(g,gi){ if (gi) y += BANDGAP; g.idx.forEach(function(i){ rowY[i] = y; y += ROW; }); });
+  var bottom = y - ROW, H = bottom + (state.labels ? 90 : 30);
+  svg.setAttribute('width', W); svg.setAttribute('height', H); svg.setAttribute('viewBox', '0 0 '+W+' '+H);
+
+  var d0 = 0, d1 = GENOME;
+  if (state.chr !== 'all'){ var c = CHR[CHR_ORDER.indexOf(state.chr)]; d0 = c.start; d1 = c.start + c.len; }
+  var X = function(g){ return LEFT + (g - d0) / (d1 - d0) * (W - LEFT - RIGHT); };
+  var OFFPX = function(bp){ var kb = Math.max(-300, Math.min(300, bp/1000)); return kb * 14/150; };
+
+  // bands, labels
+  var gB = el('g',{},svg);
+  groups.forEach(function(grp,gi){
+    var y0 = rowY[grp.idx[0]] - ROW/2 - 2, y1 = rowY[grp.idx[grp.idx.length-1]] + ROW/2 + 2, ym = (y0+y1)/2;
+    el('rect',{x:LEFT-6,y:y0,width:W-LEFT-RIGHT+12,height:y1-y0,rx:6,fill: gi%2 ? 'var(--band-b)' : 'var(--band-a)'},gB);
+    var tx = 8;
+    if (grp.chipDisease){ el('rect',{x:8,y:ym-5,width:10,height:10,rx:2,fill:disColor(grp.chipDisease)},gB); tx = 24; }
+    var t = el('text',{x:tx,y:ym+4,'font-weight':600,style:'fill:var(--ink);font-size:12px'},gB); t.textContent = trunc(grp.label, 20);
+    if (grp.diseases) grp.diseases.slice(0,8).forEach(function(k,j){ el('rect',{x:8+j*11,y:ym+9,width:8,height:8,rx:2,fill:disColor(k)},gB); });
+    grp.idx.forEach(function(i){
+      var ds = DS[i];
+      el('line',{x1:LEFT,x2:W-RIGHT,y1:rowY[i],y2:rowY[i],stroke:'var(--row-line)','stroke-width':1},gB);
+      var lt = el('text',{x:LEFT-10,y:rowY[i]+3.5,'text-anchor':'end',style:'font-size:'+(ROW<14?9:10)+'px;fill:var(--ink-faint)'},gB);
+      lt.textContent = trunc(ds.name, mode==='Disease' ? 24 : 20) + (ds.ancestry && mode!=='Ancestry' ? ' · ' + ds.ancestry : '');
+      el('title',{},lt).textContent = ds.name + ' — ' + pretty(ds.disease) + (ds.ancestry ? ', ' + ds.ancestry : '') + (ds.sample_n ? ', N=' + ds.sample_n.toLocaleString() : '');
+      if (mode !== 'Disease') el('rect',{x:GROUP_W+DEND_W+2,y:rowY[i]-4,width:8,height:8,rx:2,fill:disColor(ds.disease)},gB);
+    });
+  });
+  if (mode === 'cluster') drawDendrogram(svg, rowY, GROUP_W, GROUP_W + DEND_W - 6);
+
+  // genome bar
+  var gG = el('g',{},svg);
+  CHR.forEach(function(c,i){
+    var x0 = X(Math.max(c.start,d0)), x1 = X(Math.min(c.start+c.len,d1));
+    if (x1 <= LEFT || x0 >= W-RIGHT || x1-x0 < 0.5) return;
+    var r = el('rect',{x:x0+0.75,y:TOP,width:Math.max(0.5,x1-x0-1.5),height:GENOME_H,rx:3,fill: i%2 ? 'var(--chr-b)' : 'var(--chr-a)',style:'cursor:pointer'},gG);
+    el('title',{},r).textContent = state.chr==='all' ? 'Zoom to chr' + c.name : 'Back to whole genome';
+    r.addEventListener('click', function(){ state.chr = state.chr==='all' ? c.name : 'all'; document.getElementById('chrSel').value = state.chr; draw(); });
+    if (x1-x0 > 14){ var t = el('text',{x:(x0+x1)/2,y:TOP-6,'text-anchor':'middle',style:'font-size:10px'},gG); t.textContent = c.name; }
+  });
+  if (state.chr !== 'all'){
+    var cc = CHR[CHR_ORDER.indexOf(state.chr)], step = cc.len > 100e6 ? 20e6 : 10e6;
+    for (var mb=0; mb<=cc.len; mb+=step){ var xx = X(cc.start+mb); el('line',{x1:xx,x2:xx,y1:TOP+GENOME_H,y2:TOP+GENOME_H+4,stroke:'var(--ink-faint)'},gG);
+      var tt = el('text',{x:xx,y:TOP+GENOME_H+14,'text-anchor':'middle',style:'font-size:9px;fill:var(--ink-faint)'},gG); tt.textContent = (mb/1e6)+' Mb'; }
+  }
+
+  // serpents
+  var defs = el('defs',{},svg), gS = el('g',{},svg);
+  var tierCol = TIERS.map(function(t){ return cssv(t.col); });
+  var visible = LOCI.filter(function(L){ return L.g >= d0 && L.g <= d1 && L.nDis >= state.minDis; });
+  visible.sort(function(a,b){ return b.bestP - a.bestP; }); // weakest first, strongest on top
+  var gid = 0;
+  visible.forEach(function(L){
+    var g = el('g',{class:'snake' + (state.highlight && state.highlight.has(L.index) ? ' on' : '')},gS);
+    var x0 = X(L.g);
+    var pts = [{x:x0, y:TOP+GENOME_H, t:0}];
+    order.forEach(function(i){ pts.push({x:x0 + OFFPX(L.off[i]), y:rowY[i], t:L.tier[i], i:i}); });
+    pts.push({x:x0, y:bottom+16, t:0});
+    // grey backbone: one path for the whole serpent
+    var dd = 'M' + pts[0].x + ',' + pts[0].y;
+    for (var k=0;k<pts.length-1;k++){ var p=pts[k], q=pts[k+1], ym=(p.y+q.y)/2; dd += ' C' + p.x + ',' + ym + ' ' + q.x + ',' + ym + ' ' + q.x + ',' + q.y; }
+    el('path',{d:dd,fill:'none',stroke:tierCol[0],'stroke-width':1.2,'stroke-opacity':0.45},g);
+    // colored ribbons only where either end is at least nominally significant
+    for (var k2=0;k2<pts.length-1;k2++){
+      var a=pts[k2], b=pts[k2+1];
+      if (a.t===0 && b.t===0) continue;
+      var wa=TIERS[a.t].w, wb=TIERS[b.t].w, ym2=(a.y+b.y)/2, id='sg'+(gid++);
+      var lg = el('linearGradient',{id:id,gradientUnits:'userSpaceOnUse',x1:0,y1:a.y,x2:0,y2:b.y},defs);
+      el('stop',{offset:0,'stop-color':tierCol[a.t],'stop-opacity':TIERS[a.t].a},lg);
+      el('stop',{offset:1,'stop-color':tierCol[b.t],'stop-opacity':TIERS[b.t].a},lg);
+      el('path',{d:'M'+(a.x-wa/2)+','+a.y+' C'+(a.x-wa/2)+','+ym2+' '+(b.x-wb/2)+','+ym2+' '+(b.x-wb/2)+','+b.y+
+                  ' L'+(b.x+wb/2)+','+b.y+' C'+(b.x+wb/2)+','+ym2+' '+(a.x+wa/2)+','+ym2+' '+(a.x+wa/2)+','+a.y+' Z', fill:'url(#'+id+')'},g);
+    }
+    // hover targets at non-grey crossings
+    pts.forEach(function(p){ if (p.i===undefined || p.t===0) return;
+      var h = el('circle',{cx:p.x,cy:p.y,r:Math.max(6,TIERS[p.t].w/2+3),fill:'transparent'},g);
+      h.addEventListener('mousemove', function(ev){ showTip(ev,L,p.i); }); h.addEventListener('mouseleave', hideTip);
+    });
+    if (!state.highlight){
+      g.addEventListener('mouseenter', function(){ svg.classList.add('dim'); g.classList.add('on'); });
+      g.addEventListener('mouseleave', function(){ svg.classList.remove('dim'); g.classList.remove('on'); });
+    }
+    L._x0 = x0; L._g = g;
+  });
+  if (state.labels){
+    var cand = visible.slice().sort(function(a,b){
+      var ha = state.highlight && state.highlight.has(a.index) ? 1 : 0, hb = state.highlight && state.highlight.has(b.index) ? 1 : 0;
+      return (hb-ha) || (b.nDis-a.nDis) || (a.bestP-b.bestP); });
+    var placed = [];
+    cand.forEach(function(L){
+      if (placed.some(function(x){ return Math.abs(x-L._x0) < 12; })) return;
+      placed.push(L._x0);
+      var t = el('text',{x:L._x0,y:bottom+28,transform:'rotate(-45 '+L._x0+' '+(bottom+28)+')','text-anchor':'end',style:'font-size:10.5px;fill:var(--'+(L.nDis>=2?'ink':'ink-soft')+')'},L._g);
+      var gi = el('tspan',{'font-style': L.gene ? 'italic' : 'normal'},t); gi.textContent = geneLabel(L.gene) || ('chr'+L.chr+':'+(L.ref_pos/1e6).toFixed(1)+'Mb');
+      if (L.nDis>=2){ var nn = el('tspan',{style:'font-size:9px;fill:var(--ink-faint)'},t); nn.textContent = ' ×'+L.nDis; }
+    });
+  }
+  buildTable(visible);
+}
+
+function drawDendrogram(svg, rowY, xL, xR){
+  var members = D.clustering.members, n = members.length, merges = D.clustering.merges;
+  if (!merges.length) return;
+  var hMax = merges[merges.length-1][2] || 1, k = D.clustering.n_clusters;
+  var g = el('g',{},svg), memo = {};
+  var X_ = function(h){ return xR - (h/hMax)*(xR-xL); };
+  function pos(node){
+    if (memo[node]) return memo[node];
+    if (node < n) return memo[node] = {x:xR, y:rowY[members[node]]};
+    var m = merges[node-n], a = pos(m[0]), b = pos(m[1]), x = X_(m[2]), above = node-n > merges.length-k;
+    el('path',{d:'M'+a.x+','+a.y+' H'+x+' V'+b.y+' H'+b.x, fill:'none', stroke: above ? 'var(--ink-faint)' : 'var(--ink-soft)', 'stroke-width': above?1:1.3, opacity: above?0.6:1},g);
+    return memo[node] = {x:x, y:(a.y+b.y)/2};
+  }
+  pos(n + merges.length - 1);
+}
+
+function trunc(s,n){ s = String(s||''); return s.length>n ? s.slice(0,n-1)+'…' : s; }
+
+var tip = document.getElementById('tip');
+function showTip(ev, L, i){
+  var ds = DS[i], t = L.tier[i];
+  tip.innerHTML = '<b><i>' + esc(geneLabel(L.gene) || '—') + '</i></b> <span class="m">chr' + esc(L.chr) + ':' + L.ref_pos.toLocaleString() + '</span><br>'
+    + (L.gene && L.gene !== geneLabel(L.gene) ? '<span class="m">nearest genes: ' + esc(L.gene) + '</span><br>' : '')
+    + esc(ds.name) + '<br><span class="m">' + esc(pretty(ds.disease)) + (ds.ancestry ? ' · ' + esc(ds.ancestry) : '') + (ds.sample_n ? ' · N=' + ds.sample_n.toLocaleString() : '') + '</span><br>'
+    + 'p = <b>' + fmtP(L.p[i]) + '</b> <span class="m">(' + TIERS[t].label + ')</span><br>'
+    + '<span class="m">lead SNP ' + esc(L.snp[i] || '—') + ', ' + (L.off[i]>=0?'+':'') + (L.off[i]/1000).toFixed(0) + ' kb from the strongest dataset\'s lead SNP</span><br>'
+    + '<span class="m">genome-wide significant in ' + L.n_gws + ' dataset(s), ' + L.nDis + ' disease(s)</span>';
+  tip.style.opacity = 1;
+  tip.style.left = Math.min(ev.clientX+14, innerWidth-310) + 'px'; tip.style.top = (ev.clientY+14) + 'px';
+}
+function hideTip(){ tip.style.opacity = 0; }
+
+function buildTable(vis){
+  var rows = vis.slice().sort(function(a,b){ return a.g-b.g; }).map(function(L){
+    return '<tr><td><i>' + esc(geneLabel(L.gene)||'—') + '</i> <span class="note">' + esc(L.gene && L.gene!==geneLabel(L.gene) ? L.gene : '') + '</span></td><td>chr' + esc(L.chr) + ':' + L.ref_pos.toLocaleString() + '</td><td>'
+      + L.sigDis.map(pretty).map(esc).join(', ') + '</td><td class="num">' + L.n_gws + '</td><td class="num">' + fmtP(L.bestP) + '</td></tr>';
+  }).join('');
+  document.getElementById('tbl').innerHTML = '<thead><tr><th>Locus (nearest gene)</th><th>Lead position</th><th>Genome-wide significant in</th><th>Datasets p&lt;5×10⁻⁸</th><th>Best p</th></tr></thead><tbody>' + rows + '</tbody>';
+}
+
+// ── category analysis ──────────────────────────────────────────────────────────────────────────
+function drawCategories(){
+  var A = D.analyses.slice();
+  var testable = A.filter(function(a){ return a.testable; }).sort(function(a,b){ return b.r2 - a.r2; });
+  var other = A.filter(function(a){ return !a.testable; });
+  var ex = D.clustering.excluded || [];
+  document.getElementById('verdict').innerHTML = verdictText(testable)
+    + (ex.length ? '<div class="note" style="margin-top:.5rem">Left out of the clustering and these tests because they have fewer than '
+      + D.clustering.min_gws_loci + ' genome-wide significant loci (they are still drawn in the plot): '
+      + ex.map(function(i){ return esc(DS[i].name); }).join(', ') + '.</div>' : '');
+  document.getElementById('catBars').innerHTML = testable.concat(other).map(function(a){
+    if (!a.testable) return '<div class="cat-row" data-cat="' + esc(a.category) + '"><div class="cat-name">' + esc(a.category) + '</div><div class="note">' + esc(a.note) + '</div><div></div></div>';
+    var sig = a.perm_p != null && a.perm_p < 0.05;
+    return '<div class="cat-row" data-cat="' + esc(a.category) + '" title="Reorder the plot by ' + esc(a.category) + '">'
+      + '<div class="cat-name">' + esc(a.category) + ' <span class="note">(' + a.n_levels + ' groups)</span></div>'
+      + '<div class="bar-track" role="img" aria-label="' + esc(a.category) + ' explains ' + pct(a.r2) + '"><div class="bar-fill' + (sig ? '' : ' ns') + '" style="width:' + Math.max(1, 100*a.r2).toFixed(1) + '%"></div></div>'
+      + '<div class="cat-stats">R² <b>' + pct(a.r2) + '</b> · p <b>' + fmtP(a.perm_p) + '</b> · ARI <b>' + (a.ari==null ? '—' : a.ari.toFixed(2)) + '</b></div></div>'
+      + (a.note ? '<div class="note" style="margin:-.2rem 0 .3rem 178px">' + esc(a.note) + '</div>' : '');
+  }).join('');
+  document.querySelectorAll('.cat-row').forEach(function(row){
+    row.onclick = function(){
+      var c = row.getAttribute('data-cat');
+      var o = document.getElementById('orderSel');
+      if ([].some.call(o.options, function(op){ return op.value===c; })) { o.value = c; state.order = c; draw(); }
+      state.catTab = c; drawLevelTable();
+      document.getElementById('viz').scrollIntoView({behavior:'smooth', block:'start'});
+    };
+  });
+  state.catTab = (testable[0] || A[0] || {}).category;
+  drawLevelTable();
+  var np = (testable[0] || {}).n_permutations || 999;
+  document.getElementById('method').innerHTML = 'How this is computed: each dataset is represented by its significance tier (0 grey … 3 red) at every locus, and datasets are compared by cosine distance. '
+    + '<b>R²</b> is the share of that variation explained by the category (PERMANOVA, ' + np + ' label permutations for <b>p</b>). '
+    + '<b>ARI</b> (adjusted Rand index; 1 = identical, 0 = chance) compares the category with the ' + D.clustering.n_clusters + ' shared-loci clusters. '
+    + 'A locus is <b>consistently significant</b> in a group when p&lt;5×10⁻⁸ in at least half (and at least 2) of its datasets, and <b>specifically</b> so: more often than in the other datasets, with a two-sided Fisher\'s exact p&lt;0.05 (not corrected for the number of loci tested). Loci significant almost everywhere, such as extended-MHC signals, are therefore not listed as group-specific. '
+    + 'Caveats: datasets of the same disease can share samples, which inflates their similarity, and significance depends on sample size, so read <b>Sample size</b> as a power control. These are exploratory summaries, not a genetic-correlation estimate.';
+}
+
+function verdictText(testable){
+  if (!testable.length) return 'None of the categories can be tested with these datasets: each needs at least two groups and at least one group with two or more datasets.';
+  var top = testable[0], sigs = testable.filter(function(a){ return a.perm_p < 0.05; });
+  if (!sigs.length) return 'No category significantly explains which loci are shared across these datasets (the strongest, <b>' + esc(top.category) + '</b>, explains ' + pct(top.r2) + ', permutation p = ' + fmtP(top.perm_p) + ').';
+  var s = '<b>' + esc(top.category) + '</b> explains the most: ' + pct(top.r2) + ' of the variation in which loci are significant across datasets (permutation p = ' + fmtP(top.perm_p) + ')';
+  if (top.ari != null) s += ', and the shared-loci clusters ' + (top.ari >= 0.6 ? 'closely follow it' : top.ari >= 0.3 ? 'partly follow it' : 'follow it only weakly') + ' (ARI ' + top.ari.toFixed(2) + ')';
+  s += '.';
+  var rest = sigs.slice(1).map(function(a){ return '<b>' + esc(a.category) + '</b> (' + pct(a.r2) + ', p = ' + fmtP(a.perm_p) + ')'; });
+  if (rest.length) s += ' Also significant: ' + rest.join(', ') + '.';
+  var ss = testable.filter(function(a){ return a.category==='Sample size'; })[0];
+  if (ss && ss.perm_p < 0.05) s += ' Because sample size also explains ' + pct(ss.r2) + ', part of this structure may reflect statistical power rather than biology.';
+  var lvl = null; (top.levels||[]).forEach(function(l){ if (!lvl || l.n_consistent_loci > lvl.n_consistent_loci) lvl = l; });
+  if (lvl && lvl.n_consistent_loci) s += ' The most consistent group is <b>' + esc(pretty(lvl.level)) + '</b>, with ' + lvl.n_consistent_loci + ' locus/loci significant in most of its datasets.';
+  return s;
+}
+
+function drawLevelTable(){
+  var A = D.analyses;
+  document.getElementById('catTabs').innerHTML = A.map(function(a){
+    return '<button class="btn" aria-pressed="' + (a.category===state.catTab) + '" data-tab="' + esc(a.category) + '">' + esc(a.category) + '</button>';
+  }).join('');
+  document.querySelectorAll('#catTabs .btn').forEach(function(b){ b.onclick = function(){ state.catTab = b.getAttribute('data-tab'); drawLevelTable(); }; });
+  document.querySelectorAll('.cat-row').forEach(function(r){ r.classList.toggle('sel', r.getAttribute('data-cat')===state.catTab); });
+  var a = A.filter(function(x){ return x.category===state.catTab; })[0];
+  if (!a){ document.getElementById('levelTable').innerHTML = ''; return; }
+  var rows = a.levels.map(function(l, li){
+    var chips = l.consistent_loci.map(function(c){
+      return '<span class="lchip" data-locus="' + c.locus_index + '" title="p<5e-8 in ' + c.n_in_sig + '/' + c.n_in + ' of this group vs ' + c.n_out_sig + '/' + c.n_out + ' elsewhere; Fisher p = ' + fmtP(c.fisher_p) + '"><i>' + esc(geneLabel(c.gene) || ('chr' + c.chr + ':' + (c.pos/1e6).toFixed(1) + 'Mb')) + '</i> <span>' + c.n_in_sig + '/' + c.n_in + '</span></span>';
+    }).join('') + (l.n_consistent_loci > l.consistent_loci.length ? '<span class="note"> +' + (l.n_consistent_loci - l.consistent_loci.length) + ' more</span>' : '');
+    return '<tr class="lvl" data-level="' + li + '"><td><b>' + esc(a.category==='Disease' ? pretty(l.level) : l.level) + '</b></td><td class="num">' + l.n_datasets + '</td><td class="num">' + (l.cohesion==null ? '—' : l.cohesion.toFixed(2)) + '</td><td class="num">' + (l.separation==null ? '—' : l.separation.toFixed(2)) + '</td><td class="num">' + l.n_consistent_loci + '</td><td>' + (chips || '<span class="note">' + (l.n_datasets < 2 ? 'single dataset' : 'none') + '</span>') + '</td></tr>';
+  }).join('');
+  document.getElementById('levelTable').innerHTML = '<table><thead><tr><th>' + esc(a.category) + '</th><th>Datasets</th><th title="1 − mean distance between datasets in this group (higher = they share more loci)">Cohesion</th><th title="Mean distance to datasets outside the group">Separation</th><th>Consistent loci</th><th>Consistently and specifically significant loci (significant / datasets in group) — click to highlight</th></tr></thead><tbody>' + rows + '</tbody></table>';
+  document.querySelectorAll('#levelTable .lchip').forEach(function(ch){
+    ch.onclick = function(ev){ ev.stopPropagation(); var li = +ch.getAttribute('data-locus'); var L = LOCI.filter(function(x){ return x.index===li; })[0];
+      setHighlight(new Set([li]), (L && L.gene ? geneLabel(L.gene) : 'locus') ); document.getElementById('viz').scrollIntoView({behavior:'smooth', block:'start'}); };
+  });
+  document.querySelectorAll('#levelTable tr.lvl').forEach(function(tr){
+    tr.onclick = function(){ var l = a.levels[+tr.getAttribute('data-level')]; if (!l.consistent_loci.length) return;
+      var o = document.getElementById('orderSel');
+      if ([].some.call(o.options, function(op){ return op.value===a.category; })) { o.value = a.category; state.order = a.category; }
+      setHighlight(new Set(l.consistent_loci.map(function(c){ return c.locus_index; })), 'loci consistently significant in ' + (a.category==='Disease' ? pretty(l.level) : l.level));
+      document.getElementById('viz').scrollIntoView({behavior:'smooth', block:'start'}); };
+  });
+}
+
+window.addEventListener('resize', function(){ clearTimeout(window._rt); window._rt = setTimeout(function(){ if (D) draw(); }, 150); });
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function(){ if (D) draw(); });
+load();
+</script>
+</body>
+</html>

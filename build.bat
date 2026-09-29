@@ -36,6 +36,7 @@ javac -encoding UTF-8 -d bin -cp "bin%LIBCP%" ^
   src\analysis\GeneConstellationResult.java ^
   src\analysis\GeneConstellationBuilder.java ^
   src\analysis\RegionConstellationBuilder.java ^
+  src\analysis\SerpentPlotBuilder.java ^
   src\analysis\GlobalSearchIndex.java ^
   src\analysis\StepManifest.java ^
   src\analysis\LocusGwasExtractor.java ^
@@ -120,6 +121,7 @@ if not exist output\assets mkdir output\assets
 copy /Y index.html output\index.html >nul 2>&1
 copy /Y viewer.html output\viewer.html >nul 2>&1
 copy /Y gene_constellation.html output\gene_constellation.html >nul 2>&1
+copy /Y serpent_plot.html output\serpent_plot.html >nul 2>&1
 copy /Y annotations.js output\annotations.js >nul 2>&1
 if exist output\annotations.js (
     rem already copied from root
