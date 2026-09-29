@@ -57,6 +57,7 @@ public class RegulatoryPeakIndex {
         d2e.put("cad", "E065");
         d2e.put("ra",  "E034");
         d2e.put("ibd", "E106");
+        d2e.put("sarco", "E096");
         DISEASE_TO_EID = Collections.unmodifiableMap(d2e);
 
         Map<String, String> e2t = new LinkedHashMap<>();
@@ -65,6 +66,7 @@ public class RegulatoryPeakIndex {
         e2t.put("E065", "Aorta");
         e2t.put("E034", "Primary T cells, peripheral blood");
         e2t.put("E106", "Sigmoid colon");
+        e2t.put("E096", "Lung");
         EID_TO_TISSUE = Collections.unmodifiableMap(e2t);
     }
 
