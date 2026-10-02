@@ -1824,6 +1824,12 @@ public class LocalServer {
                     analysisRoot, restrictToFinemapped, pipThreshold);
             } else if (toolName.equals("gwama_meta")) {
                 GwamaAdapter.prepareRun(harmonizedDir, runDir);
+            } else if (toolName.equals("magma_gene")) {
+                PluginEngine.RunResult result = runMagmaGene(cfg, targetLocus, params, jobId, runDir, harmonizedDir, matchedDir, pt);
+                analysisJobs.put(jobId, result);
+                pt.done = true;
+                pt.phase = result.ok ? "Complete" : "Error: " + result.error;
+                return result;
             }
 
             PluginEngine.RunRequest req = new PluginEngine.RunRequest();
@@ -1854,6 +1860,65 @@ public class LocalServer {
             pt.phase = "Error: " + e.getMessage();
             return errResult;
         }
+    }
+
+    /**
+     * MAGMA gene-based test on one locus. MAGMA is a native binary driven by MagmaAdapter in Java
+     * (annotate, then the gene test against the locus's matched reference panel), so it bypasses the
+     * R-script plugin path but leaves the same run folder behind: result.tsv (one row per gene, best
+     * first) and provenance.json, which is what saved-result listing and batch runs look for.
+     */
+    private PluginEngine.RunResult runMagmaGene(Config cfg, Locus locus, Map<String, String> params, String jobId,
+                                                File runDir, File harmonizedDir, File matchedDir,
+                                                ProgressTracker pt) throws Exception {
+        PluginEngine.RunResult res = new PluginEngine.RunResult();
+        res.jobId = jobId; res.tool = "magma_gene"; res.runDir = runDir.getAbsolutePath();
+        long windowKb = 10;
+        try { windowKb = Long.parseLong(params.getOrDefault("window_kb", "10")); } catch (NumberFormatException ignored) {}
+        if (cfg.gff3File == null || !new File(cfg.gff3File).isFile())
+            throw new IOException("No gene annotation (GFF3) configured for this project");
+        String magmaBin = MagmaAdapter.findMagmaBinary(SusieAdapter.appRoot());
+        pt.update("Loading gene annotation", 1, 4);
+        GffParser gff = gffFuture(new File(cfg.gff3File).getAbsolutePath()).get();
+
+        pt.update("MAGMA: assigning SNPs to genes", 2, 4);
+        long start = Math.max(0, locus.start - windowKb * 1000), end = locus.end + windowKb * 1000;
+        MagmaAdapter.AnnotateResult ann = MagmaAdapter.annotate(matchedDir, gff, runDir, locus.chr, start, end, windowKb, magmaBin);
+        if (!ann.ok) throw new IOException(ann.error);
+
+        pt.update("MAGMA: gene-based test", 3, 4);
+        MagmaAdapter.GeneAnalysisResult ga = MagmaAdapter.geneAnalysis(harmonizedDir, matchedDir, ann, runDir, cfg.sampleN, magmaBin);
+        if (!ga.ok) {
+            if (ga.logTail != null && ga.logTail.contains("analysis failed for all genes"))
+                throw new IOException("No gene at this locus has SNPs left after MAGMA's QC within " + windowKb
+                    + " kb (" + ann.nGenes + " gene(s) annotated); nothing to test");
+            throw new IOException(ga.error);
+        }
+
+        Map<String, String> nameOf = new HashMap<>();
+        for (Gene g : gff.overlapping(locus.chr.replaceFirst("^chr", ""), start, end)) nameOf.put(g.geneId, g.geneName);
+        List<MagmaAdapter.GeneResult> genes = new ArrayList<>(ga.genes);
+        genes.sort(Comparator.comparingDouble(g -> g.p));
+        int nTested = genes.size();
+        try (PrintWriter pw = new PrintWriter(new OutputStreamWriter(new FileOutputStream(new File(runDir, "result.tsv")), "UTF-8"))) {
+            pw.println("gene_id\tgene\tchr\tstart\tstop\tnsnps\tmagma_z\tmagma_p\tsignificant");
+            for (MagmaAdapter.GeneResult g : genes) {
+                String name = nameOf.getOrDefault(g.gene, g.gene);
+                // Bonferroni across the genes tested at this locus
+                boolean sig = g.p * nTested < 0.05;
+                pw.printf(Locale.ROOT, "%s\t%s\t%s\t%d\t%d\t%d\t%.4f\t%.4g\t%s%n",
+                    g.gene, name == null || name.isEmpty() ? g.gene : name, g.chr, g.start, g.stop, g.nsnps, g.zstat, g.p, sig ? "yes" : "no");
+            }
+        }
+        try (PrintWriter pw = new PrintWriter(new OutputStreamWriter(new FileOutputStream(new File(runDir, "provenance.json")), "UTF-8"))) {
+            pw.printf(Locale.ROOT, "{%n  \"job_id\": \"%s\",%n  \"tool\": \"magma_gene\",%n  \"tool_version\": \"1.10\",%n"
+                + "  \"timestamp\": %d,%n  \"params\": {\"window_kb\": \"%d\", \"sample_n\": \"%d\"},%n"
+                + "  \"snps_written\": %d,%n  \"snps_dropped_no_ref_id\": %d,%n  \"genes_tested\": %d%n}%n",
+                escJ(jobId), System.currentTimeMillis(), windowKb, cfg.sampleN, ga.snpsWritten, ga.snpsDroppedNoRefId, nTested);
+        }
+        res.ok = true;
+        res.resultRows = nTested;
+        return res;
     }
 
     // ── Saved results: read finished runs back from disk ─────────────────────
@@ -1915,6 +1980,23 @@ public class LocalServer {
         List<String> lines = Files.readAllLines(resultTsv.toPath());
         if (lines.isEmpty()) return rs;
         List<String> h = Arrays.asList(lines.get(0).split("\t", -1));
+        if (tool.equals("magma_gene")) {
+            // One row per gene, best first: lead = top gene; "sets" = genes significant after
+            // Bonferroni across the genes tested at this locus, listed (up to 5) with their p-values.
+            int iGene = h.indexOf("gene"), iP = h.indexOf("magma_p"), iN = h.indexOf("nsnps"), iSig = h.indexOf("significant");
+            for (int r = 1; r < lines.size(); r++) {
+                String[] f = lines.get(r).split("\t", -1);
+                if (f.length < h.size()) continue;
+                rs.rows++;
+                if (rs.topSnp.isEmpty()) rs.topSnp = f[iGene];
+                boolean sig = "yes".equals(f[iSig]);
+                if (sig) rs.nSets++;
+                if (rs.setLines.size() < 5)
+                    rs.setLines.add(f[iGene] + ": p " + f[iP] + ", " + f[iN] + " SNPs" + (sig ? " (significant)" : ""));
+            }
+            if (rs.rows > 0) rs.note = rs.rows + " genes tested; Bonferroni threshold " + String.format(Locale.ROOT, "%.2g", 0.05 / rs.rows);
+            return rs;
+        }
         int iSnp = h.indexOf("snp_id"), iPos = h.indexOf("pos");
         int iPip = h.indexOf(tool.startsWith("susie") ? "susie_pip" : "finemap_pip");
         int iCs = h.indexOf(tool.startsWith("susie") ? "susie_cs" : "finemap_cs");
@@ -5212,7 +5294,21 @@ public class LocalServer {
 
     private static String escJ(String s) {
         if (s == null) return "";
-        return s.replace("\\", "\\\\").replace("\"", "\\\"");
+        StringBuilder b = new StringBuilder(s.length() + 16);
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            switch (c) {
+                case '\\': b.append("\\\\"); break;
+                case '"':  b.append("\\\""); break;
+                case '\n': b.append("\\n"); break;
+                case '\r': b.append("\\r"); break;
+                case '\t': b.append("\\t"); break;
+                default:
+                    // Other control characters are not allowed raw inside a JSON string
+                    if (c < 0x20) b.append(String.format("\\u%04x", (int) c)); else b.append(c);
+            }
+        }
+        return b.toString();
     }
 
     private static String extractStr(String json, String key) {

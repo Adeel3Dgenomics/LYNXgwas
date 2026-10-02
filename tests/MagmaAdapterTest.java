@@ -23,6 +23,7 @@ public class MagmaAdapterTest {
         failures += testParseGsaOut();
         failures += testFindMagmaBinaryNotFound();
         failures += testBuildPvalFileDropsSnpWithNoRefPanelMatch();
+        failures += testMagmaOutputWindowsTxtSuffix();
 
         if (failures == 0) {
             System.out.println("PASS: all MagmaAdapter tests passed");
@@ -214,6 +215,22 @@ public class MagmaAdapterTest {
         }
         System.out.println("PASS: " + label + " (" + actual + ")");
         return 0;
+    }
+
+    /** The Windows MAGMA build writes prefix.genes.annot.txt; Linux/macOS write prefix.genes.annot. */
+    private static int testMagmaOutputWindowsTxtSuffix() throws Exception {
+        int failures = 0;
+        File dir = java.nio.file.Files.createTempDirectory("magma-out").toFile();
+        File prefix = new File(dir, "step1");
+        failures += check("missing output resolves to the plain name",
+            MagmaAdapter.magmaOutput(prefix, ".genes.annot").getName().equals("step1.genes.annot"));
+        new File(dir, "step1.genes.annot.txt").createNewFile();
+        failures += check("Windows-style .txt output is found",
+            MagmaAdapter.magmaOutput(prefix, ".genes.annot").getName().equals("step1.genes.annot.txt"));
+        new File(dir, "step1.genes.annot").createNewFile();
+        failures += check("plain name preferred when both exist",
+            MagmaAdapter.magmaOutput(prefix, ".genes.annot").getName().equals("step1.genes.annot"));
+        return failures;
     }
 
     private static int checkClose(String label, double actual, double expected, double tol) {

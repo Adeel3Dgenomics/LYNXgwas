@@ -120,6 +120,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 .fm-chip.active button{background:#7c3aed;color:#fff}
 .fm-none{color:#64748b;font-style:italic}
 .fm-legend{color:#334155;flex-basis:100%;font-size:11px;padding-top:2px}
+.magma-table{margin:4px 0 8px;padding:6px 8px;background:#faf5ff;border:1px solid #e9d5ff;border-radius:8px;font-size:11px;max-height:260px;overflow:auto}
+.magma-table .magma-cap{color:#475569;margin-bottom:4px}
+.magma-table table{border-collapse:collapse;width:100%}
+.magma-table th{text-align:left;color:#4c1d95;font-weight:600;border-bottom:1px solid #e9d5ff;padding:2px 8px 2px 0;position:sticky;top:0;background:#faf5ff}
+.magma-table td{padding:2px 8px 2px 0;color:#1e293b;font-variant-numeric:tabular-nums}
+.magma-table tr.sig td{font-weight:700}
 .fm-legend i{display:inline-block;width:9px;height:9px;border-radius:50%;margin:0 2px 0 6px;vertical-align:-1px}
 .lh-l2g .lh-l2g-score{color:#a5f3fc;font-weight:400}
 .lh-enh-toggle{color:#a5f3fc;font-weight:400;font-style:italic;cursor:pointer;margin-left:4px;text-decoration:underline dotted}
@@ -761,6 +767,7 @@ async function loadFinemapStrip(data, panelEl) {
   title.className = 'fm-title';
   title.textContent = 'Fine-mapping';
   strip.appendChild(title);
+  const magma = runs.find(r => r.tool === 'magma_gene');
   runs = runs.filter(r => FM_TOOLS[r.tool]);
   let joint = [];
   if (data.locus_index != null) {
@@ -770,13 +777,14 @@ async function loadFinemapStrip(data, panelEl) {
       if (r.ok) joint = (await r.json()).runs || [];
     } catch (e) {}
   }
-  if (!runs.length && !joint.length) {
+  if (!runs.length && !joint.length && !magma) {
     const none = document.createElement('span');
     none.className = 'fm-none';
-    none.textContent = 'no results yet \u2014 use Analyze to run SuSiE, ABF or COJO on this locus';
+    none.textContent = 'no results yet \u2014 use Analyze to run SuSiE, ABF, COJO or MAGMA on this locus';
     strip.appendChild(none);
     return;
   }
+  if (magma) strip.appendChild(magmaChip(magma, data, panelEl));
   runs.sort((a, b) => Object.keys(FM_TOOLS).indexOf(a.tool) - Object.keys(FM_TOOLS).indexOf(b.tool));
   runs.forEach(run => {
     const t = FM_TOOLS[run.tool];
@@ -808,6 +816,58 @@ async function loadFinemapStrip(data, panelEl) {
     const want = joint.find(r => r.id === MVSUSIE_PARAM);
     if (want) { mvsusieAutoShown = true; toggleJointOverlay(want, data, panelEl); }
   }
+}
+
+// ── MAGMA gene-based test: chip + ranked gene table under the strip ──
+function magmaChip(run, data, panelEl) {
+  const chip = document.createElement('span');
+  chip.className = 'fm-chip';
+  const name = document.createElement('b');
+  name.textContent = 'MAGMA';
+  const meta = document.createElement('span');
+  meta.className = 'fm-meta';
+  meta.textContent = (run.top_snp ? 'top gene ' + run.top_snp + ' · ' : '')
+    + run.n_sets + ' significant of ' + run.rows + ' gene' + (run.rows === 1 ? '' : 's');
+  chip.title = (run.note ? run.note + '\n' : '') + (run.sets || []).join('\n') + '\nRun ' + new Date(run.timestamp).toLocaleString();
+  const btn = document.createElement('button');
+  const open = () => panelEl.querySelector('.magma-table');
+  btn.textContent = open() ? 'Hide genes' : 'Show genes';
+  btn.addEventListener('click', async () => {
+    const existing = open();
+    if (existing) { existing.remove(); btn.textContent = 'Show genes'; return; }
+    try {
+      const r = await fetch(PROJECT_API + '/analysis/run-result?locus_id=' + encodeURIComponent(data.id)
+        + '&run_id=' + encodeURIComponent(run.run_id));
+      if (!r.ok) { showToast('Could not load the MAGMA result', 3000); return; }
+      const lines = (await r.text()).split(/\r?\n/).filter(Boolean);
+      const head = lines.shift().split('\t');
+      const col = n => head.indexOf(n);
+      const wrap = document.createElement('div');
+      wrap.className = 'magma-table';
+      const cap = document.createElement('div');
+      cap.className = 'magma-cap';
+      cap.textContent = 'MAGMA gene-based test (SNP-wise mean model, reference-panel LD). Genes ranked by p; '
+        + 'bold = significant after Bonferroni across the ' + lines.length + ' genes tested here.';
+      const tbl = document.createElement('table');
+      const thead = document.createElement('tr');
+      ['Gene', 'Position', 'SNPs', 'Z', 'p'].forEach(t => { const th = document.createElement('th'); th.textContent = t; thead.appendChild(th); });
+      tbl.appendChild(thead);
+      lines.forEach(l => {
+        const f = l.split('\t');
+        const tr = document.createElement('tr');
+        if (f[col('significant')] === 'yes') tr.className = 'sig';
+        const pos = 'chr' + f[col('chr')] + ':' + Number(f[col('start')]).toLocaleString() + '–' + Number(f[col('stop')]).toLocaleString();
+        [f[col('gene')], pos, f[col('nsnps')], Number(f[col('magma_z')]).toFixed(2), Number(f[col('magma_p')]).toExponential(2)]
+          .forEach(v => { const td = document.createElement('td'); td.textContent = v; tr.appendChild(td); });
+        tbl.appendChild(tr);
+      });
+      wrap.append(cap, tbl);
+      chip.closest('.fm-strip').insertAdjacentElement('afterend', wrap);
+      btn.textContent = 'Hide genes';
+    } catch (e) { showToast('Could not load the MAGMA result', 3000); }
+  });
+  chip.append(name, meta, btn);
+  return chip;
 }
 
 function fmLegend(tool) {

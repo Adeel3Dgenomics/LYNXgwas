@@ -140,6 +140,18 @@ public class MagmaAdapter {
                 + ". Place magma.exe in the bin/ folder, or resolve one via findMagmaBinary().");
     }
 
+    /**
+     * A MAGMA output file for {@code --out prefix}. The Windows build of MAGMA appends ".txt" to
+     * every output (prefix.genes.annot.txt, prefix.genes.out.txt, ...), the Linux/macOS builds do
+     * not; returns whichever exists, preferring the plain name, or the plain name if neither does.
+     */
+    static File magmaOutput(File prefix, String ext) {
+        File plain = new File(prefix.getAbsolutePath() + ext);
+        if (plain.exists()) return plain;
+        File txt = new File(prefix.getAbsolutePath() + ext + ".txt");
+        return txt.exists() ? txt : plain;
+    }
+
     // ── Step 1: --annotate ──────────────────────────────────────────────────────────────
 
     /**
@@ -222,7 +234,7 @@ public class MagmaAdapter {
         int exit = runProcess(cmd, runDir, logFile);
         result.logTail = tailOf(logFile, 60);
 
-        File annotFile = new File(prefix.getAbsolutePath() + ".genes.annot");
+        File annotFile = magmaOutput(prefix, ".genes.annot");
         if (exit != 0 || !annotFile.exists()) {
             result.ok = false;
             result.error = "MAGMA --annotate exited with code " + exit + ". Check " + logFile.getAbsolutePath()
@@ -275,8 +287,8 @@ public class MagmaAdapter {
         int exit = runProcess(cmd, runDir, logFile);
         result.logTail = tailOf(logFile, 60);
 
-        File genesOut = new File(outPrefix.getAbsolutePath() + ".genes.out");
-        File genesRaw = new File(outPrefix.getAbsolutePath() + ".genes.raw");
+        File genesOut = magmaOutput(outPrefix, ".genes.out");
+        File genesRaw = magmaOutput(outPrefix, ".genes.raw");
         if (exit != 0 || !genesOut.exists()) {
             result.ok = false;
             result.error = "MAGMA gene analysis exited with code " + exit + ". Check " + logFile.getAbsolutePath()
@@ -439,7 +451,7 @@ public class MagmaAdapter {
         int exit = runProcess(cmd, runDir, logFile);
         result.logTail = tailOf(logFile, 60);
 
-        File gsaOut = new File(outPrefix.getAbsolutePath() + ".gsa.out");
+        File gsaOut = magmaOutput(outPrefix, ".gsa.out");
         if (exit != 0 || !gsaOut.exists()) {
             result.ok = false;
             result.error = "MAGMA gene-set analysis exited with code " + exit + ". Check " + logFile.getAbsolutePath()

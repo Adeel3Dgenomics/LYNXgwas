@@ -1,0 +1,12 @@
+tool: magma_gene
+version: "1.10"
+label: "MAGMA gene-based test"
+description: "Gene-based association for every gene in the locus (MAGMA --annotate + --gene-annot, SNP-wise mean model), using the locus reference panel for LD. Ranks the locus genes by how strongly their SNPs, taken together, are associated."
+language: java
+command: "MagmaAdapter"
+requires: [harmonized_gwas, matched_ref]
+params:
+  - {name: window_kb, type: int, default: "10", label: "Gene window (kb)", description: "SNPs within this distance up- and downstream of a gene are assigned to it."}
+output_mapping:
+  - {raw: magma_p, as: magma_p, scope: per_gene, type: double}
+  - {raw: magma_z, as: magma_z, scope: per_gene, type: double}
