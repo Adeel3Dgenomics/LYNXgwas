@@ -163,22 +163,16 @@
 
     <!-- PANEL C: Gene / population-scale statistics -->
     <section class="panel">
-      <div class="panel-head"><div class="badge b-gene">C</div><h2>Gene &amp; heritability statistics</h2></div>
+      <div class="panel-head"><div class="badge b-gene">C</div><h2>Gene-level statistics</h2></div>
       <div class="step s-gene">
         <span class="k">MAGMA — gene-based test</span>
         <span class="v">SNP→gene annotation window, then a gene-level joint test and optional gene-set enrichment</span>
         <span class="cls">MagmaAdapter — new this phase</span>
       </div>
       <div class="arrow-down">↓</div>
-      <div class="step s-gene">
-        <span class="k">GCTA-GREML — heritability</span>
-        <span class="v">GRM from the reference/genotype panel, then variance-component REML (h² ± SE)</span>
-        <span class="cls">GctaGremlAdapter — new this phase</span>
-      </div>
-      <div class="arrow-down">↓</div>
       <div class="step s-danger">
-        <span class="k">Honest scope note</span>
-        <span class="v">Full individual-level GREML needs genotype+phenotype data; summary-stats-only projects report this plainly rather than fabricating h²</span>
+        <span class="k">Scope: summary statistics only</span>
+        <span class="v">Methods that need individual-level genotypes and phenotypes (e.g. GCTA-GREML heritability) are not included</span>
       </div>
     </section>
   </div>

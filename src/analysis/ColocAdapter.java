@@ -151,7 +151,7 @@ public class ColocAdapter {
         String summaryOut = new File(runDir, "coloc_summary.json").getAbsolutePath().replace("\\", "/");
 
         File rScript = new File(runDir, "coloc_run.R");
-        try (PrintWriter pw = new PrintWriter(new BufferedWriter(new FileWriter(rScript)))) {
+        try (PrintWriter pw = new PrintWriter(new BufferedWriter(new OutputStreamWriter(new FileOutputStream(rScript), java.nio.charset.StandardCharsets.UTF_8)))) {
             pw.println("#!/usr/bin/env Rscript");
             pw.println("suppressPackageStartupMessages({ library(coloc); library(data.table) })");
             pw.println();

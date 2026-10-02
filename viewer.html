@@ -108,6 +108,19 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 .lh-op-btn:hover{background:rgba(255,255,255,0.25);color:#fff}
 .lh-genes{flex:1;font-size:11px;color:#c4b5fd}
 .lh-l2g{color:#67e8f9;font-weight:600}
+/* Fine-mapping results strip (under each locus header) */
+.fm-strip{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:5px 14px;background:#f5f3ff;border-bottom:1px solid #ddd6fe;font-size:11px;color:#3730a3}
+.fm-strip .fm-title{font-weight:700;margin-right:2px}
+.fm-chip{display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid #c4b5fd;border-radius:999px;padding:2px 4px 2px 9px}
+.fm-chip b{color:#4c1d95}
+.fm-chip .fm-meta{color:#475569}
+.fm-chip button{border:none;border-radius:999px;padding:2px 8px;font-size:10px;font-weight:600;cursor:pointer;background:#ede9fe;color:#5b21b6}
+.fm-chip button:hover{background:#ddd6fe}
+.fm-chip.active{border-color:#7c3aed;box-shadow:0 0 0 1px #7c3aed}
+.fm-chip.active button{background:#7c3aed;color:#fff}
+.fm-none{color:#64748b;font-style:italic}
+.fm-legend{color:#334155;flex-basis:100%;font-size:11px;padding-top:2px}
+.fm-legend i{display:inline-block;width:9px;height:9px;border-radius:50%;margin:0 2px 0 6px;vertical-align:-1px}
 .lh-l2g .lh-l2g-score{color:#a5f3fc;font-weight:400}
 .lh-enh-toggle{color:#a5f3fc;font-weight:400;font-style:italic;cursor:pointer;margin-left:4px;text-decoration:underline dotted}
 .lh-enh-toggle:hover{color:#fff}
@@ -663,27 +676,55 @@ let pdfCancelled = false;
 // ── Analysis results overlay state ──
 let analysisOverlay = null; // { column, data: Map<snpKey, value>, min, max, method, selectedSnps }
 
+// Colours for credible sets / COJO signals (set 1, set 2, ...)
+const FM_SET_COLORS = ['#dc2626', '#7c3aed', '#0891b2', '#ea580c', '#16a34a', '#db2777', '#ca8a04', '#2563eb', '#65a30d', '#9333ea'];
+
 function applyAnalysisOverlay(resultRows, column, method) {
-  const data = new Map();
+  const data = new Map(), byPos = new Map();
   let min = Infinity, max = -Infinity;
   const selectedSnps = new Set();
+  const setOf = new Map(), setOfPos = new Map();   // snp id / position -> set key
+  const sets = [];                                  // [{key, size, lead:{id,pos,val}}] in set order
 
   resultRows.forEach(row => {
     const id = row.snp_id;
+    const pos = row.pos != null ? String(row.pos) : '';
     const val = parseFloat(row[column]);
     if (id && !isNaN(val)) {
       data.set(id, val);
+      if (pos) byPos.set(pos, val);
       if (val < min) min = val;
       if (val > max) max = val;
     }
-    // Track COJO-selected or credible set SNPs
-    if (row.cojo_selected === 'selected' || row.cojo_selected === 'TRUE' || row.cojo_selected === 'true') selectedSnps.add(id);
-    if (row.susie_cs && row.susie_cs !== 'NA') selectedSnps.add(id);
-    if (row.finemap_cs && row.finemap_cs !== 'NA') selectedSnps.add(id);
+    // Credible-set membership (SuSiE / ABF) or COJO selection
+    let key = null;
+    if (row.susie_cs && row.susie_cs !== 'NA') key = row.susie_cs;
+    else if (row.finemap_cs && row.finemap_cs !== 'NA') key = row.finemap_cs;
+    else if (['selected', 'TRUE', 'true'].includes(row.cojo_selected)) key = 'cojo:' + id;
+    if (key !== null && id) {
+      selectedSnps.add(id);
+      setOf.set(id, key);
+      if (pos) setOfPos.set(pos, key);
+      let st = sets.find(s => s.key === key);
+      if (!st) { st = { key, size: 0, lead: null, min: Infinity, max: -Infinity }; sets.push(st); }
+      st.size++;
+      if (!isNaN(val)) { st.min = Math.min(st.min, val); st.max = Math.max(st.max, val); }
+      const score = column.includes('pip') ? val : -val;   // highest PIP, or lowest conditional p
+      if (!st.lead || (!isNaN(score) && score > st.lead.score)) st.lead = { id, pos: Number(pos), val, score };
+    }
   });
 
-  analysisOverlay = { column, data, min, max, method, selectedSnps };
+  analysisOverlay = { column, data, byPos, min, max, method, selectedSnps, setOf, setOfPos, sets };
   renderViewport(false);
+}
+
+/** Index (0-based) of the credible set / COJO signal this SNP belongs to, or -1. */
+function analysisSetIndex(snpId, snpPos) {
+  if (!analysisOverlay) return -1;
+  let key = analysisOverlay.setOf.get(snpId);
+  if (key === undefined && snpPos != null) key = analysisOverlay.setOfPos.get(String(snpPos));
+  if (key === undefined) return -1;
+  return analysisOverlay.sets.findIndex(s => s.key === key);
 }
 
 function clearAnalysisOverlay() {
@@ -691,34 +732,213 @@ function clearAnalysisOverlay() {
   renderViewport(false);
 }
 
+// ── Saved fine-mapping results per locus (SuSiE / ABF / COJO) ──
+const FM_TOOLS = {
+  susie_finemapping: { label: 'SuSiE', column: 'susie_pip', unit: 'credible set' },
+  finemap:           { label: 'ABF',   column: 'finemap_pip', unit: 'credible set' },
+  cojo_conditional:  { label: 'COJO',  column: 'cojo_pC', unit: 'independent signal' }
+};
+let fmActive = null;   // { locusId, runId } of the result currently drawn on the plot
+
+function fmPlural(n, unit) { return n + ' ' + unit + (n === 1 ? '' : 's'); }
+
+async function loadFinemapStrip(data, panelEl) {
+  if (!PROJECT_API || !data || !data.id || !panelEl) return;
+  let strip = panelEl.querySelector('.fm-strip');
+  if (!strip) {
+    strip = document.createElement('div');
+    strip.className = 'fm-strip';
+    panelEl.querySelector('.locus-header').insertAdjacentElement('afterend', strip);
+  }
+  strip.dataset.locusId = data.id;
+  let runs = [];
+  try {
+    const r = await fetch(PROJECT_API + '/analysis/latest?locus_id=' + encodeURIComponent(data.id));
+    if (r.ok) runs = (await r.json()).runs || [];
+  } catch (e) {}
+  strip.textContent = '';
+  const title = document.createElement('span');
+  title.className = 'fm-title';
+  title.textContent = 'Fine-mapping';
+  strip.appendChild(title);
+  runs = runs.filter(r => FM_TOOLS[r.tool]);
+  let joint = [];
+  if (data.locus_index != null) {
+    try {
+      const r = await fetch(SERVER + '/api/mvsusie-for-dataset?project=' + encodeURIComponent(PROJECT_ID)
+        + '&locus_index=' + encodeURIComponent(data.locus_index));
+      if (r.ok) joint = (await r.json()).runs || [];
+    } catch (e) {}
+  }
+  if (!runs.length && !joint.length) {
+    const none = document.createElement('span');
+    none.className = 'fm-none';
+    none.textContent = 'no results yet \u2014 use Analyze to run SuSiE, ABF or COJO on this locus';
+    strip.appendChild(none);
+    return;
+  }
+  runs.sort((a, b) => Object.keys(FM_TOOLS).indexOf(a.tool) - Object.keys(FM_TOOLS).indexOf(b.tool));
+  runs.forEach(run => {
+    const t = FM_TOOLS[run.tool];
+    const chip = document.createElement('span');
+    chip.className = 'fm-chip' + (fmActive && fmActive.runId === run.run_id ? ' active' : '');
+    const name = document.createElement('b');
+    name.textContent = t.label;
+    const meta = document.createElement('span');
+    meta.className = 'fm-meta';
+    let txt = fmPlural(run.n_sets, t.unit);
+    if (run.top_snp) txt += ' \u00b7 lead ' + run.top_snp + (run.top_pip != null ? ' (PIP ' + run.top_pip.toFixed(2) + ')' : '');
+    if (run.reliability && run.reliability !== 'ok') {
+      txt += ' · ⚠ ' + (run.reliability === 'likely_artifact' ? 'unreliable' : 'check');
+      meta.style.color = '#b45309';
+    }
+    meta.textContent = txt;
+    chip.title = (run.note ? run.note + '\n' : '') + (run.sets || []).join('\n') + (run.sets && run.sets.length ? '\n' : '')
+      + 'Run ' + new Date(run.timestamp).toLocaleString();
+    const btn = document.createElement('button');
+    btn.textContent = fmActive && fmActive.runId === run.run_id ? 'Hide' : 'Show on plot';
+    btn.addEventListener('click', () => toggleFinemapOverlay(run, data, panelEl));
+    chip.append(name, meta, btn);
+    strip.appendChild(chip);
+  });
+  joint.forEach(run => strip.appendChild(jointChip(run, data, panelEl)));
+  if (fmActive && fmActive.locusId === data.id) strip.appendChild(fmLegend(fmActive.tool));
+  // Deep link from the Serpent Plot: ?mvsusie=<run id> draws that joint run on arrival
+  if (MVSUSIE_PARAM && !mvsusieAutoShown) {
+    const want = joint.find(r => r.id === MVSUSIE_PARAM);
+    if (want) { mvsusieAutoShown = true; toggleJointOverlay(want, data, panelEl); }
+  }
+}
+
+function fmLegend(tool) {
+  const lg = document.createElement('span');
+  lg.className = 'fm-legend';
+  const isCojo = FM_TOOLS[tool] && FM_TOOLS[tool].column === 'cojo_pC';
+  const sets = (analysisOverlay && analysisOverlay.sets) || [];
+  lg.append('On the plot: ');
+  if (!sets.length) {
+    lg.append(isCojo ? 'no SNP selected by COJO' : 'no credible set at this locus');
+  }
+  sets.forEach((st, i) => {
+    const dot = document.createElement('i');
+    dot.style.background = FM_SET_COLORS[i % FM_SET_COLORS.length];
+    const what = isCojo ? 'signal ' + (i + 1) + ': ' + st.lead.id
+      : 'set ' + st.key + ': ' + st.size + ' SNP' + (st.size === 1 ? '' : 's') + ', lead ' + st.lead.id;
+    lg.append(dot, what + (i < sets.length - 1 ? ';' : ''));
+  });
+  lg.append(' \u00b7 other SNPs greyed' + (isCojo ? '' : ' (orange = PIP > 0.1 outside a set)'));
+  return lg;
+}
+
+async function toggleFinemapOverlay(run, data, panelEl) {
+  if (fmActive && fmActive.runId === run.run_id) {
+    fmActive = null;
+    clearAnalysisOverlay();
+    loadFinemapStrip(data, panelEl);
+    return;
+  }
+  try {
+    const r = await fetch(PROJECT_API + '/analysis/run-result?locus_id=' + encodeURIComponent(data.id)
+      + '&run_id=' + encodeURIComponent(run.run_id));
+    if (!r.ok) { showToast('Could not load that result', 3000); return; }
+    const lines = (await r.text()).split(/\r?\n/).filter(Boolean);
+    const head = lines.shift().split('\t');
+    const rows = lines.map(l => { const f = l.split('\t'); const o = {}; head.forEach((h, i) => o[h] = f[i]); return o; });
+    fmActive = { locusId: data.id, runId: run.run_id, tool: run.tool };
+    applyAnalysisOverlay(rows, FM_TOOLS[run.tool].column, FM_TOOLS[run.tool].label);
+    document.querySelectorAll('.fm-strip').forEach(st => {
+      const d = [...locusCache.values()].find(x => x && x.id === st.dataset.locusId);
+      const p = st.closest('.locus-panel');
+      if (d && p) loadFinemapStrip(d, p);
+    });
+  } catch (e) { showToast('Could not load that result', 3000); }
+}
+
+// ── Joint fine-mapping (mvSuSiE) runs that pooled this dataset's locus ──
+const MVSUSIE_PARAM = new URLSearchParams(window.location.search).get('mvsusie');
+let mvsusieAutoShown = false;
+
+function jointChip(run, data, panelEl) {
+  const chip = document.createElement('span');
+  const key = 'mv:' + run.id;
+  chip.className = 'fm-chip' + (fmActive && fmActive.runId === key ? ' active' : '');
+  const name = document.createElement('b');
+  name.textContent = 'Joint (mvSuSiE)';
+  const meta = document.createElement('span');
+  meta.className = 'fm-meta';
+  meta.textContent = (run.mode === 'within' ? 'within ' + run.disease : 'across diseases') + ' · ' + run.n_datasets + ' datasets · '
+    + fmPlural(run.n_sets, 'credible set') + (run.lead_snp ? ' · lead ' + run.lead_snp + (run.lead_pip != null ? ' (PIP ' + run.lead_pip.toFixed(2) + ')' : '') : '');
+  chip.title = 'Fine-mapped jointly with: ' + Object.keys(run.datasets || {}).join(', ') + '\nRun ' + new Date(run.created).toLocaleString();
+  const btn = document.createElement('button');
+  btn.textContent = fmActive && fmActive.runId === key ? 'Hide' : 'Show on plot';
+  btn.addEventListener('click', () => toggleJointOverlay(run, data, panelEl));
+  chip.append(name, meta, btn);
+  return chip;
+}
+
+async function toggleJointOverlay(run, data, panelEl) {
+  const key = 'mv:' + run.id;
+  if (fmActive && fmActive.runId === key) {
+    fmActive = null;
+    clearAnalysisOverlay();
+    loadFinemapStrip(data, panelEl);
+    return;
+  }
+  try {
+    const r = await fetch(SERVER + '/api/mvsusie-result?id=' + encodeURIComponent(run.id));
+    if (!r.ok) { showToast('Could not load that joint result', 3000); return; }
+    const res = await r.json();
+    if (!res.result) { showToast('That joint run has no result', 3000); return; }
+    // Same overlay as SuSiE: PIP-sized dots, one colour and band per joint credible set
+    const rows = new Map();
+    const sp = res.result.snp_pips || { id: [], pos: [], pip: [] };
+    sp.pos.forEach((pos, i) => rows.set(String(pos), { snp_id: sp.id[i], pos: pos, mvsusie_pip: sp.pip[i], susie_cs: 'NA' }));
+    (res.result.credible_sets || []).forEach(c => (c.snps || []).forEach(s => {
+      const row = rows.get(String(s.pos)) || { snp_id: s.id, pos: s.pos, mvsusie_pip: s.pip };
+      row.susie_cs = String(c.set);
+      rows.set(String(s.pos), row);
+    }));
+    fmActive = { locusId: data.id, runId: key, tool: 'mvsusie' };
+    applyAnalysisOverlay([...rows.values()], 'mvsusie_pip', 'mvSuSiE (joint)');
+    document.querySelectorAll('.fm-strip').forEach(st => {
+      const d = [...locusCache.values()].find(x => x && x.id === st.dataset.locusId);
+      const p = st.closest('.locus-panel');
+      if (d && p) loadFinemapStrip(d, p);
+    });
+  } catch (e) { showToast('Could not load that joint result', 3000); }
+}
+
+/** Re-read the strip for a locus after a run finishes (called from the Analyze dialog). */
+function refreshFinemapForLocusId(locusId) {
+  const d = [...locusCache.values()].find(x => x && x.id === locusId);
+  const p = d ? document.getElementById('panel-' + d.locus_index) : null;
+  if (d && p) loadFinemapStrip(d, p);
+}
+
 function getAnalysisColor(snpId, snpPos) {
   if (!analysisOverlay) return null;
-  // Try matching by ID directly, or by position-based key
+  // Members of a credible set / COJO signals: one strong colour per set
+  const si = analysisSetIndex(snpId, snpPos);
+  if (si >= 0) return FM_SET_COLORS[si % FM_SET_COLORS.length];
+  // Match by ID, then by position (rsID vs chr:pos naming)
   let val = analysisOverlay.data.get(snpId);
-  if (val === undefined) {
-    // Try matching by iterating (fallback for rsID vs stable ID mismatch)
-    for (const [k, v] of analysisOverlay.data) {
-      if (k === snpId || k.includes(':' + snpPos + ':')) { val = v; break; }
-    }
-  }
-  if (val === undefined) return null;
+  if (val === undefined && snpPos != null) val = analysisOverlay.byPos.get(String(snpPos));
+  if (val === undefined) return '#e5e7eb';   // not analysed (e.g. outside the fine-mapping window)
 
   const { min, max, column } = analysisOverlay;
-  // PIP columns: 0-1 scale, green gradient
+  // PIP columns: everything outside a set is greyed, with a hint of orange where PIP is non-trivial
   if (column.includes('pip') || column.includes('PIP')) {
     const t = Math.max(0, Math.min(1, val));
-    if (t > 0.9) return '#d73027';
-    if (t > 0.5) return '#fc8d59';
-    if (t > 0.1) return '#fee08b';
-    return '#d9ef8b';
+    if (t > 0.5) return '#f97316';
+    if (t > 0.1) return '#fdba74';
+    return '#d4d4d8';
   }
-  // P-value columns: -log10 scale, red gradient
+  // Conditional p-value columns (COJO): grey unless still significant after conditioning
   if (column.includes('_p') || column.includes('_P')) {
     const nlp = val > 0 && val <= 1 ? -Math.log10(val) : val;
-    if (nlp > 7.3) return '#d73027';
-    if (nlp > 5) return '#fc8d59';
-    if (nlp > 3) return '#fee08b';
-    return '#91bfdb';
+    if (nlp > 7.3) return '#f97316';
+    if (nlp > 5) return '#fdba74';
+    return '#d4d4d8';
   }
   // Boolean/selected: binary
   if (column.includes('selected')) {
@@ -731,9 +951,18 @@ function getAnalysisColor(snpId, snpPos) {
   return `rgb(${r},80,${b})`;
 }
 
-function isAnalysisSelected(snpId) {
-  if (!analysisOverlay) return false;
-  return analysisOverlay.selectedSnps.has(snpId);
+function isAnalysisSelected(snpId, snpPos) {
+  return analysisSetIndex(snpId, snpPos) >= 0;
+}
+
+/** Dot radius under the fine-mapping overlay: area proportional to PIP (sqrt scale), 2.5-12 px. */
+function analysisRadius(s) {
+  const inSet = isAnalysisSelected(s.id, s.pos);
+  if (!analysisOverlay.column.includes('pip')) return inSet ? 6.5 : 3;
+  let v = analysisOverlay.data.get(s.id);
+  if (v === undefined) v = analysisOverlay.byPos.get(String(s.pos));
+  if (v === undefined || isNaN(v)) return 2.5;
+  return 2.5 + 9.5 * Math.sqrt(Math.max(0, Math.min(1, v)));
 }
 
 // Handle r2 field name change (old JSON: "r2", new JSON: "r2_with_index")
@@ -1266,6 +1495,7 @@ function fillPanel(data, panelEl) {
   }
   loadNoveltyBadge(data.locus_index, panelEl);
   loadL2GInfo(data.locus_index, panelEl);
+  loadFinemapStrip(data, panelEl);
 
   // Annotation badges + mini-bars in locus header
   if (window.ANNOT && window.ANNOT.config) {
@@ -1438,9 +1668,14 @@ function fillPanel(data, panelEl) {
 
     // ── C: Manhattan (shifted down by annotH) ──
     const mhTop = curY + MARGIN.top;
-    const yMax = hasSnps
+    let yMax = hasSnps
       ? Math.max(GW_SIG + 2, d3.max(data.gwas_snps, s => s.neg_log10_p) + 1)
       : GW_SIG + 3;
+    if (analysisOverlay && hasSnps) {
+      // Room above the strongest SNP for its enlarged dot, ring and the set labels stacked above it
+      const pad = Math.min(90, 36 + 13 * Math.max(0, analysisOverlay.sets.length - 1));
+      yMax = yMax * PLOT_H / (PLOT_H - pad);
+    }
     yScale = d3.scaleLinear().domain([0, yMax]).range([mhTop + PLOT_H, mhTop]);
 
     const gMH = svg.append('g').attr('class', 'mh-group');
@@ -1892,14 +2127,16 @@ function renderManhattan(g, data, xScale, yScale) {
     .join('circle')
     .attr('class', s => 'snp-circle' + (isExonic(s.pos, _exons) ? ' snp-exonic' : ''))
     .attr('cx', s => xScale(s.pos)).attr('cy', s => yScale(s.neg_log10_p))
-    .attr('r', s => isAnalysisSelected(s.id) ? 6 : 3.5)
+    .attr('r', s => analysisOverlay ? analysisRadius(s) : 3.5)
     .attr('fill', s => getAnalysisColor(s.id, s.pos) || ldColor(snpR2(s)))
-    .attr('stroke', s => isAnalysisSelected(s.id) ? '#000' : '#fff')
-    .attr('stroke-width', s => isAnalysisSelected(s.id) ? 1.5 : .4)
-    .attr('opacity',.92)
+    .attr('stroke', s => isAnalysisSelected(s.id, s.pos) ? '#111' : '#fff')
+    .attr('stroke-width', s => isAnalysisSelected(s.id, s.pos) ? 1.3 : .4)
+    .attr('opacity', s => !analysisOverlay ? .92 : (isAnalysisSelected(s.id, s.pos) ? 1 : .55))
     .on('mouseover',(ev,s) => showTip(tip,ev,s))
     .on('mousemove',(ev)   => moveTip(tip,ev))
     .on('mouseout', ()     => hideTip(tip));
+  // Fine-mapping overlay: draw credible-set members on top of the faded rest
+  if (analysisOverlay) g.selectAll('.snp-circle').filter(s => isAnalysisSelected(s.id, s.pos)).raise();
 
   // Top SNP — purple diamond, 1.5× larger
   const top = snps.find(s => s.id === topId);
@@ -1912,7 +2149,15 @@ function renderManhattan(g, data, xScale, yScale) {
       .on('mouseover',(ev,s) => showTip(tip,ev,s))
       .on('mousemove',(ev)   => moveTip(tip,ev))
       .on('mouseout', ()     => hideTip(tip));
+    // Top SNP inside a credible set: ring it in that set's colour
+    const tsi = analysisSetIndex(top.id, top.pos);
+    if (tsi >= 0)
+      g.append('circle').attr('class', 'fm-top-ring').attr('cx', tx).attr('cy', ty).attr('r', r + 4)
+        .attr('fill', 'none').attr('stroke', FM_SET_COLORS[tsi % FM_SET_COLORS.length]).attr('stroke-width', 2.5)
+        .style('pointer-events', 'none');
   }
+
+  drawFmGroups(g, snps, xScale, yScale);
 
   // Apply annotation channel overlays
   if (window.ANNOT && window.ANNOT.activeChannels &&
@@ -2853,6 +3098,74 @@ function resetConnectors(plotWrap) {
 // ═══════════════════════════════════════════════════════════════
 // Zoom redraw
 // ═══════════════════════════════════════════════════════════════
+/**
+ * Fine-mapping overlay decorations, redrawn from scratch for the current x-scale (so they follow
+ * zoom and pan): a yellow band behind each credible set / COJO signal, its label, and the side list.
+ */
+function drawFmGroups(g, snps, xScale, yScale) {
+  g.selectAll('.fm-group-band, .fm-group-label, .fm-group-list').remove();
+  const x1 = xScale.range()[0], x2 = xScale.range()[1];
+  // Fine-mapping overlay: a yellow band behind each group of likely causal SNPs, a label above
+  // it ("Set 1: 9 SNPs (PIP 0.01-0.26)"), and a side list of all groups in the plot corner.
+  if (!analysisOverlay || !analysisOverlay.sets.length) return;
+  {
+    const isPip = analysisOverlay.column.includes('pip');
+    const fmt = v => (v >= 0.995 ? v.toFixed(2) : v < 0.01 ? v.toExponential(0) : v.toFixed(2));
+    const yTop = Math.min(...yScale.range());
+    const groupText = (st, i) => {
+      const isCojo = String(st.key).startsWith('cojo:');
+      if (isCojo) return 'Signal ' + (i + 1) + ': ' + st.lead.id;
+      return 'Set ' + st.key + ': ' + st.size + ' SNP' + (st.size === 1 ? '' : 's')
+        + (isPip && isFinite(st.min) ? ' (PIP ' + (st.size === 1 ? fmt(st.max) : fmt(st.min) + '–' + fmt(st.max)) + ')' : '');
+    };
+    const placed = [];   // label boxes already drawn, to stack overlapping labels upwards
+    // The side list (drawn below) sits in the top-left corner: labels must not slide under it
+    const listLines = analysisOverlay.sets.map((st, i) => groupText(st, i) + (st.lead && !String(st.key).startsWith('cojo:') ? ', lead ' + st.lead.id : ''));
+    const listBox = { x: x1 + 6, y: yTop + 4, w: Math.max(...listLines.map(t => t.length)) * 6 + 26, h: 14 * listLines.length + 20 };
+    analysisOverlay.sets.forEach((st, i) => {
+      // Only the members currently in view (zoomed in, part of a set can be off-screen)
+      const members = snps.filter(s => analysisSetIndex(s.id, s.pos) === i && xScale(s.pos) >= x1 && xScale(s.pos) <= x2);
+      if (!members.length) return;
+      const color = FM_SET_COLORS[i % FM_SET_COLORS.length];
+      const xs = members.map(s => xScale(s.pos)), ys = members.map(s => yScale(s.neg_log10_p));
+      const bx1 = Math.max(x1, Math.min(...xs) - 9), bx2 = Math.min(x2, Math.max(...xs) + 9);
+      const by1 = Math.max(yTop, Math.min(...ys) - 12), by2 = Math.max(...ys) + 12;
+      // Band behind the group's points (inserted before the first SNP circle so it stays underneath)
+      g.insert('rect', '.snp-circle').attr('class', 'fm-group-band')
+        .attr('x', bx1).attr('y', by1).attr('width', Math.max(bx2 - bx1, 18)).attr('height', by2 - by1)
+        .attr('rx', 6).attr('fill', '#fde047').attr('fill-opacity', 0.35)
+        .attr('stroke', '#eab308').attr('stroke-width', 1.2).style('pointer-events', 'none');
+      // Label above the group, moved up if it would overlap an earlier one
+      const text = groupText(st, i);
+      const w = text.length * 6.2;
+      let cx = Math.max(x1 + w / 2, Math.min(x2 - w / 2, (bx1 + bx2) / 2));
+      let ly = Math.max(yTop + 10, by1 - 5);
+      while (placed.some(b => Math.abs(b.y - ly) < 13 && Math.abs(b.x - cx) < (b.w + w) / 2)) ly -= 13;
+      if (ly > listBox.y - 2 && ly - 11 < listBox.y + listBox.h && cx - w / 2 < listBox.x + listBox.w + 6)
+        cx = Math.min(x2 - w / 2, listBox.x + listBox.w + 8 + w / 2);
+      placed.push({ x: cx, y: ly, w });
+      g.append('text').attr('class', 'fm-group-label').attr('x', cx).attr('y', ly).attr('text-anchor', 'middle')
+        .attr('font-size', 11).attr('font-weight', 700).attr('fill', color)
+        .attr('stroke', '#fff').attr('stroke-width', 3).attr('paint-order', 'stroke')
+        .style('pointer-events', 'none').text(text);
+    });
+    // Side list: one line per group, top-left of the plot
+    const list = g.append('g').attr('class', 'fm-group-list').style('pointer-events', 'none');
+    const lines = analysisOverlay.sets.map((st, i) => groupText(st, i) + (st.lead && !String(st.key).startsWith('cojo:') ? ', lead ' + st.lead.id : ''));
+    const lw = Math.max(...lines.map(t => t.length)) * 6 + 26, lh = 14 * lines.length + 20;
+    list.append('rect').attr('x', x1 + 6).attr('y', yTop + 4).attr('width', lw).attr('height', lh)
+      .attr('rx', 5).attr('fill', '#fff').attr('fill-opacity', 0.92).attr('stroke', '#e2e8f0');
+    list.append('text').attr('x', x1 + 14).attr('y', yTop + 17).attr('font-size', 10.5).attr('font-weight', 700)
+      .attr('fill', '#334155').text(analysisOverlay.method + ' — ' + (isPip ? 'dot size ∝ PIP' : 'independent signals'));
+    lines.forEach((t, i) => {
+      list.append('circle').attr('cx', x1 + 17).attr('cy', yTop + 29 + i * 14).attr('r', 4)
+        .attr('fill', FM_SET_COLORS[i % FM_SET_COLORS.length]).attr('stroke', '#111').attr('stroke-width', .8);
+      list.append('text').attr('x', x1 + 26).attr('y', yTop + 33 + i * 14).attr('font-size', 10.5).attr('fill', '#1e293b').text(t);
+    });
+  }
+
+}
+
 function redrawOnZoom(svg, data, newX, yScale, geneRows, visGenes, doGenes, doLd,
                        evidenceRowDefs, doEvidence, regMarks, doRegTrack) {
   const x1 = newX.range()[0], x2 = newX.range()[1];
@@ -2865,7 +3178,11 @@ function redrawOnZoom(svg, data, newX, yScale, geneRows, visGenes, doGenes, doLd
     if (!s) return;
     const tx = newX(s.pos), ty = yScale(s.neg_log10_p), r = 8;
     d3.select(this).attr('d', `M${tx},${ty-r} L${tx+r},${ty} L${tx},${ty+r} L${tx-r},${ty}Z`);
+    svg.selectAll('.fm-top-ring').attr('cx', tx);
   });
+  // Credible-set bands, labels and the side list follow the zoom
+  const firstDot = svg.select('.snp-circle').node();
+  if (analysisOverlay && firstDot) drawFmGroups(d3.select(firstDot.parentNode), data.gwas_snps || [], newX, yScale);
 
   // Locus boundary highlight
   const lr = svg.select('.locus-region');
@@ -4225,6 +4542,7 @@ async function showAnalysisDialog(entry) {
             fillEl.style.width = '100%';
             if (p.ok) {
               showToast(t.label + ' completed for ' + locusName, 4000);
+              refreshFinemapForLocusId(locusId);
               // Build the result file path for the annotation wizard
               const resultFilePath = new File(
                 [PROJECT_API + '/analysis/job/' + job_id + '/result'],

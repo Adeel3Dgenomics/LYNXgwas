@@ -74,10 +74,15 @@ public class LocusGwasExtractor {
                 result.error = "PLINK binary not found";
                 return result;
             }
-            refCount = extractRefRegion(plinkBin, config.refPanelPath, locus, baseDir);
+            PlinkRunner.Result plink = new PlinkRunner.Result();
+            refCount = extractRefRegion(plinkBin, config.refPanelPath, locus, baseDir, plink);
             result.refVariantCount = refCount;
             if (refCount == 0) {
-                result.error = "No ref panel variants in locus region";
+                // PLINK exits 12 "All variants excluded" when the panel simply has nothing there (e.g. chrX in an autosome-only panel)
+                boolean emptyRegion = plink.ok() || plink.outputTail.contains("All variants excluded");
+                result.error = emptyRegion
+                    ? "No ref panel variants in locus region (chr" + locus.chr + ":" + locus.paddedStart + "-" + locus.paddedEnd + ")"
+                    : "PLINK failed extracting the ref panel region (" + plink.reason() + ")";
                 return result;
             }
         }
@@ -217,11 +222,13 @@ public class LocusGwasExtractor {
     }
 
     private static int extractRefRegion(String plinkBin, String refPanelPath,
-                                         Locus locus, File baseDir) throws IOException {
+                                         Locus locus, File baseDir,
+                                         PlinkRunner.Result plinkOut) throws IOException {
         String prefix = new File(baseDir, "ref_region").getAbsolutePath();
+        // A stale subset from an earlier run must not be counted if this run fails
+        for (String ext : new String[]{".bed", ".bim", ".fam"}) new File(prefix + ext).delete();
 
-        List<String> cmd = Arrays.asList(
-            plinkBin,
+        List<String> args = Arrays.asList(
             "--bfile",   refPanelPath,
             "--chr",     locus.chr,
             "--from-bp", String.valueOf(locus.paddedStart),
@@ -231,16 +238,9 @@ public class LocusGwasExtractor {
             "--silent"
         );
 
-        try {
-            Process proc = new ProcessBuilder(cmd).redirectErrorStream(true).start();
-            try (BufferedReader br = new BufferedReader(new InputStreamReader(proc.getInputStream()))) {
-                while (br.readLine() != null) { /* drain */ }
-            }
-            proc.waitFor();
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return 0;
-        }
+        PlinkRunner.Result r = PlinkRunner.run(plinkBin, args, PlinkRunner.FULL_PANEL_MB);
+        plinkOut.exitCode = r.exitCode;
+        plinkOut.outputTail = r.outputTail;
 
         // Count variants from .bim
         File bimFile = new File(prefix + ".bim");

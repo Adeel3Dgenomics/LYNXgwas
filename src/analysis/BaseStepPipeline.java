@@ -148,12 +148,10 @@ public class BaseStepPipeline {
                 try {
                     String bfile = new File(matchedDir, "matched_ref").getAbsolutePath();
                     String freqPrefix = new File(matchedDir, "ref_freq_tmp").getAbsolutePath();
-                    ProcessBuilder pb = new ProcessBuilder(plinkBin,
-                        "--bfile", bfile, "--freq", "--out", freqPrefix, "--silent");
-                    pb.redirectErrorStream(true);
-                    Process proc = pb.start();
-                    proc.getInputStream().transferTo(java.io.OutputStream.nullOutputStream());
-                    proc.waitFor(120, java.util.concurrent.TimeUnit.SECONDS);
+                    PlinkRunner.Result freqRun = PlinkRunner.run(plinkBin,
+                        Arrays.asList("--bfile", bfile, "--freq", "--out", freqPrefix, "--silent"),
+                        PlinkRunner.SUBSET_MB);
+                    if (!freqRun.ok()) log.add("  PLINK --freq failed: " + freqRun.reason());
 
                     File plinkFrq = new File(freqPrefix + ".frq");
                     if (plinkFrq.exists()) {

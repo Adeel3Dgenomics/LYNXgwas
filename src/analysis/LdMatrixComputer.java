@@ -112,18 +112,14 @@ public class LdMatrixComputer {
         String fullBfile = new File(matchedDir, "matched_ref").getAbsolutePath();
         String windowBfile = new File(ldDir, "_window_ref").getAbsolutePath();
 
-        List<String> extractCmd = Arrays.asList(
-            plinkBin, "--bfile", fullBfile,
+        List<String> extractArgs = Arrays.asList(
+            "--bfile", fullBfile,
             "--extract", extractFile.getAbsolutePath(),
             "--make-bed", "--out", windowBfile, "--silent"
         );
-        try {
-            Process proc = new ProcessBuilder(extractCmd).redirectErrorStream(true).start();
-            try (BufferedReader drain = new BufferedReader(new InputStreamReader(proc.getInputStream()))) {
-                while (drain.readLine() != null) {}
-            }
-            proc.waitFor();
-        } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+        PlinkRunner.Result windowRun = PlinkRunner.run(plinkBin, extractArgs, PlinkRunner.SUBSET_MB);
+        if (!windowRun.ok())
+            System.err.printf("[LdMatrix] window subset failed: %s%n", windowRun.reason());
 
         // ── Write SNP order for window ──
         try (PrintWriter pw = new PrintWriter(new FileWriter(new File(ldDir, "ld_snp_order.txt")))) {
@@ -179,23 +175,16 @@ public class LdMatrixComputer {
                                           String plinkFlag, String shape) throws IOException {
         String tmpPrefix = new File(ldDir, "_plink_" + name).getAbsolutePath();
 
-        List<String> cmd = Arrays.asList(
-            plinkBin,
+        List<String> args = Arrays.asList(
             "--bfile", bfilePrefix,
             plinkFlag, shape,
             "--out", tmpPrefix,
             "--silent"
         );
 
-        try {
-            Process proc = new ProcessBuilder(cmd).redirectErrorStream(true).start();
-            try (BufferedReader br = new BufferedReader(new InputStreamReader(proc.getInputStream()))) {
-                while (br.readLine() != null) {}
-            }
-            int exit = proc.waitFor();
-            if (exit != 0) return false;
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
+        PlinkRunner.Result plink = PlinkRunner.run(plinkBin, args, PlinkRunner.SUBSET_MB);
+        if (!plink.ok()) {
+            System.err.printf("[LdMatrix] %s matrix failed: %s%n", name, plink.reason());
             return false;
         }
 
@@ -229,8 +218,7 @@ public class LdMatrixComputer {
         String tmpPrefix = new File(ldDir, "_plink_dprime").getAbsolutePath();
         int window = Math.min(snpCount, 500);
 
-        List<String> cmd = Arrays.asList(
-            plinkBin,
+        List<String> args = Arrays.asList(
             "--bfile", bfilePrefix,
             "--r2", "dprime",
             "--ld-window", String.valueOf(window),
@@ -240,15 +228,9 @@ public class LdMatrixComputer {
             "--silent"
         );
 
-        try {
-            Process proc = new ProcessBuilder(cmd).redirectErrorStream(true).start();
-            try (BufferedReader br = new BufferedReader(new InputStreamReader(proc.getInputStream()))) {
-                while (br.readLine() != null) {}
-            }
-            int exit = proc.waitFor();
-            if (exit != 0) return false;
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
+        PlinkRunner.Result plink = PlinkRunner.run(plinkBin, args, PlinkRunner.SUBSET_MB);
+        if (!plink.ok()) {
+            System.err.printf("[LdMatrix] D' failed: %s%n", plink.reason());
             return false;
         }
 

@@ -2992,6 +2992,7 @@ async function openLocusAnalysis(projectId) {
   // Buttons
   html += '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:1rem">'
     + '<button class="btn btn-secondary" onclick="openProjectAnalysis(\'' + esc(projectId) + '\')">Back</button>'
+    + '<button class="btn btn-secondary" id="run-all-btn" title="Run this tool on every locus whose inputs are built (skips the MHC and loci already done)">Run on all loci</button>'
     + '<button class="btn btn-primary" style="background:#059669" id="run-tool-btn">Run</button></div>';
 
   contentEl.innerHTML = html;
@@ -3026,8 +3027,66 @@ async function openLocusAnalysis(projectId) {
     ph += '</div>';
     paramsDiv.innerHTML = ph;
   }
+  function updateRunAllVisibility() {
+    var t = tools[+toolSelect.value];
+    // coloc and GWAMA compare datasets, so a per-dataset batch makes no sense for them
+    document.getElementById('run-all-btn').style.display = (t.tool === 'coloc' || t.tool === 'gwama_meta') ? 'none' : '';
+  }
   renderParams(0);
-  toolSelect.addEventListener('change', function() { renderParams(+toolSelect.value); });
+  updateRunAllVisibility();
+  toolSelect.addEventListener('change', function() { renderParams(+toolSelect.value); updateRunAllVisibility(); });
+
+  // Batch: same tool + parameters on every ready locus of this project
+  document.getElementById('run-all-btn').addEventListener('click', async function() {
+    var t = tools[+toolSelect.value];
+    var allBtn = document.getElementById('run-all-btn');
+    var statusEl = document.getElementById('run-tool-status');
+    var progressEl = document.getElementById('run-tool-progress');
+    var fillEl = document.getElementById('run-tool-fill');
+    if (allBtn.dataset.running === '1') {   // the button reads "Cancel" while a batch runs
+      await fetch(API + '/api/project/' + encodeURIComponent(projectId) + '/analysis/run-all-cancel?tool=' + encodeURIComponent(t.tool), { method: 'POST' });
+      allBtn.disabled = true;
+      return;
+    }
+    var body = { tool: t.tool, only_missing: 'true', parallel: '2' };
+    paramsDiv.querySelectorAll('[data-param]').forEach(function(el) {
+      body[el.dataset.param] = el.type === 'checkbox' ? String(el.checked) : el.value;
+    });
+    allBtn.disabled = true;
+    var res = await fetch(API + '/api/project/' + encodeURIComponent(projectId) + '/analysis/run-all', {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
+    var d = await res.json().catch(function() { return {}; });
+    if (!res.ok) { statusEl.textContent = 'Error: ' + (d.error || 'could not start'); allBtn.disabled = false; return; }
+    progressEl.style.display = '';
+    allBtn.textContent = 'Cancel';
+    allBtn.dataset.running = '1';
+    allBtn.disabled = false;
+    var poll = setInterval(async function() {
+      try {
+        var r = await fetch(API + '/api/project/' + encodeURIComponent(projectId) + '/analysis/run-all-progress?tool=' + encodeURIComponent(t.tool));
+        if (!r.ok) return;
+        var b = await r.json();
+        var pct = b.total ? Math.round(100 * b.done / b.total) : 100;
+        fillEl.style.width = pct + '%';
+        statusEl.textContent = (t.label || t.tool) + ': ' + b.done + ' / ' + b.total + ' loci'
+          + ' (' + b.ok + ' ok' + (b.failed ? ', ' + b.failed + ' failed' : '') + ', ' + b.skipped + ' skipped)'
+          + (b.current ? ' - now ' + b.current : '');
+        if (b.finished) {
+          clearInterval(poll);
+          fillEl.style.width = '100%';
+          statusEl.innerHTML = '<span style="color:' + (b.failed ? '#b45309' : '#059669') + ';font-weight:600">'
+            + esc((t.label || t.tool) + (b.cancelled ? ' cancelled: ' : ' finished: ') + b.ok + ' loci done, ' + b.failed + ' failed, '
+            + b.skipped + ' skipped (not ready, MHC, or already done)') + '</span>'
+            + (b.errors.length ? '<details style="margin-top:4px"><summary>Failures</summary><div style="max-height:140px;overflow:auto;font-size:0.75rem">'
+               + b.errors.map(esc).join('<br>') + '</div></details>' : '')
+            + ' Open the <a href="viewer.html?project=' + encodeURIComponent(projectId) + '" style="color:#4f46e5">Viewer</a> to see the results.';
+          allBtn.textContent = 'Run on all loci';
+          allBtn.dataset.running = '0';
+          allBtn.disabled = false;
+        }
+      } catch (e) {}
+    }, 2000);
+  });
 
   // Run button
   document.getElementById('run-tool-btn').addEventListener('click', async function() {

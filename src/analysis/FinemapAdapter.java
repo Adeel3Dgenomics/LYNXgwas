@@ -86,10 +86,10 @@ public class FinemapAdapter {
         File gwasFile = new File(harmonizedDir, "harmonized_gwas.tsv");
         int count = 0;
 
-        try (BufferedReader br = new BufferedReader(new FileReader(gwasFile));
-             PrintWriter pw = new PrintWriter(new BufferedWriter(new FileWriter(zFile)))) {
-
-            pw.println("rsid chromosome position allele1 allele2 maf beta se");
+        // z rows keyed by their index in the LD window, so the z-file follows LD order and the LD
+        // matrix can be cut down to exactly these SNPs (SNPs without beta/se are dropped from both).
+        TreeMap<Integer, String> zRows = new TreeMap<>();
+        try (BufferedReader br = new BufferedReader(new FileReader(gwasFile))) {
             String header = br.readLine();
             String line;
             while ((line = br.readLine()) != null) {
@@ -116,21 +116,43 @@ public class FinemapAdapter {
                     if (rf != null) freq = rf;
                 }
 
-                pw.printf("%s %s %s %s %s %.4f %s %s%n",
-                    useId, chr, pos, ea, nea, freq, beta, se);
-                count++;
+                int ldIdx = posLookup.get(chr + ":" + pos);
+                if (zRows.containsKey(ldIdx)) continue;   // duplicate position: keep the first row
+                zRows.put(ldIdx, String.format(Locale.ROOT, "%s %s %s %s %s %.4f %s %s",
+                    useId, chr, pos, ea, nea, freq, beta, se));
             }
         }
+        try (PrintWriter pw = new PrintWriter(new BufferedWriter(new FileWriter(zFile)))) {
+            pw.println("rsid chromosome position allele1 allele2 maf beta se");
+            for (String row : zRows.values()) pw.println(row);
+        }
+        count = zRows.size();
+        if (count < 2)
+            throw new IOException("Only " + count + " SNP(s) with an effect size and standard error in this locus window: "
+                + "the summary statistics are too sparse here to fine-map");
 
-        // Copy LD r matrix as space-delimited (FINEMAP expects space-delimited)
+        // LD r matrix restricted to the z-file's SNPs, space-delimited (FINEMAP format)
         File ldRFile = new File(ldDir, "ld_r.matrix");
         File ldOut = new File(runDir, "finemap.ld");
         if (ldRFile.exists()) {
+            int[] keep = zRows.keySet().stream().mapToInt(Integer::intValue).toArray();
+            Set<Integer> keepSet = zRows.keySet();
             try (BufferedReader br = new BufferedReader(new FileReader(ldRFile));
                  PrintWriter pw = new PrintWriter(new BufferedWriter(new FileWriter(ldOut)))) {
                 String line;
+                int row = 0;
                 while ((line = br.readLine()) != null) {
-                    pw.println(line.trim().replaceAll("\t", " "));
+                    if (line.trim().isEmpty()) continue;
+                    if (keepSet.contains(row)) {
+                        String[] v = line.trim().split("\\s+");
+                        StringBuilder sb = new StringBuilder();
+                        for (int k = 0; k < keep.length; k++) {
+                            if (k > 0) sb.append(' ');
+                            sb.append(keep[k] < v.length ? v[keep[k]] : "NA");
+                        }
+                        pw.println(sb);
+                    }
+                    row++;
                 }
             }
         }
@@ -156,7 +178,7 @@ public class FinemapAdapter {
         String outTsv = new File(runDir, "result.tsv").getAbsolutePath().replace("\\", "/");
         String manifestPath = new File(runDir, "result.manifest.json").getAbsolutePath().replace("\\", "/");
 
-        try (PrintWriter pw = new PrintWriter(new BufferedWriter(new FileWriter(rScript)))) {
+        try (PrintWriter pw = new PrintWriter(new BufferedWriter(new OutputStreamWriter(new FileOutputStream(rScript), java.nio.charset.StandardCharsets.UTF_8)))) {
             pw.println("#!/usr/bin/env Rscript");
             pw.println("suppressPackageStartupMessages({ library(data.table) })");
             pw.println();
@@ -179,9 +201,8 @@ public class FinemapAdapter {
             pw.println();
 
             // Regularize LD
-            pw.println("lambda <- 0.1");
-            pw.println("ld_reg <- ld_matrix * (1-lambda) + diag(n) * lambda");
-            pw.println("ld_inv <- tryCatch(solve(ld_reg), error=function(e) MASS::ginv(ld_reg))");
+            // Wakefield ABF assumes one causal variant per locus, so LD does not enter the posterior.
+            // (The LD matrix is still written for inspection; it was previously inverted and never used.)
             pw.println();
 
             // Compute approximate PIPs via ABF (Approximate Bayes Factor)
@@ -202,8 +223,9 @@ public class FinemapAdapter {
             pw.println("ord <- order(pip, decreasing=TRUE)");
             pw.println("cs <- rep(NA_integer_, n)");
             pw.println("cum <- cumsum(pip[ord])");
-            pw.println("in_cs <- which(cum <= 0.95)");
-            pw.println("if (length(in_cs) > 0) cs[ord[c(in_cs, max(in_cs)+1)]] <- 1L");
+            // Smallest set of top SNPs whose PIPs reach 95% (a single SNP when its own PIP is >= 0.95)
+            pw.println("n_cs <- which(cum >= 0.95)[1]; if (is.na(n_cs)) n_cs <- length(ord)");
+            pw.println("cs[ord[seq_len(n_cs)]] <- 1L");
             pw.println();
 
             // Write result

@@ -5,7 +5,7 @@ import java.util.*;
 /**
  * Standalone regression test (no external test framework — this project has none) for
  * CojoAdapter v2.1's Java-side input generation: the GCTA-binary-not-found guard (shared
- * GctaBinaryResolver, same as GctaGremlAdapterTest), the required ref_freq.tsv guard, the
+ * GctaBinaryResolver), the required ref_freq.tsv guard, the
  * sample-size guard (global N or per-SNP N), and the per-SNP audit trail covering all six
  * documented fixes' Java-side halves:
  *   Fix 1 — allele/beta/freq orientation verified per SNP (kept vs freq_flipped vs dropped)

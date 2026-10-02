@@ -24,7 +24,7 @@ public class FinemapAdapterTest {
         int failures = 0;
         failures += testPrepareRunOrientsRefFrequencyAndFiltersRows();
         failures += testPrepareRunThrowsWhenSampleNZero();
-        failures += testZFileOrderFollowsGwasFileIterationOrderNotLdSnpOrderIndex();
+        failures += testZFileFollowsLdOrderAndLdIsSubset();
 
         if (failures == 0) {
             System.out.println("PASS: all FinemapAdapter tests passed");
@@ -186,23 +186,13 @@ public class FinemapAdapterTest {
     }
 
     /**
-     * DOCUMENTS CURRENT BEHAVIOR — flagged as an uncertain correctness risk in the final report,
-     * not fixed here (per this task's instruction to document rather than guess when unsure).
-     *
-     * finemap.z rows are written by iterating harmonized_gwas.tsv in ITS OWN file order and
-     * simply skipping rows whose chr:pos isn't in ld_snp_order.txt (a set-membership check via
-     * posLookup). Nothing re-sorts the kept rows into ld_snp_order.txt's own order before writing
-     * them to finemap.z. FINEMAP (and this adapter's own run_finemap.R ABF fallback) both assume
-     * finemap.z row i lines up positionally with finemap.ld row/column i. In this pipeline the
-     * two files are expected to already agree (both are ultimately position-sorted upstream —
-     * ld_snp_order.txt from a position-sorted BIM window, harmonized_gwas.tsv from a
-     * position-filtered GWAS stream) — but nothing in FinemapAdapter itself enforces or verifies
-     * that agreement. This test constructs a harmonized_gwas.tsv deliberately out of position
-     * order (as could happen with a not-perfectly-sorted input GWAS file) and shows that
-     * finemap.z comes out in GWAS-file order, not ld_snp_order.txt order — i.e. confirms the
-     * ordering is NOT independently guaranteed by this method.
+     * finemap.z must line up row-for-row with finemap.ld. The harmonized GWAS here lists SNPs in
+     * the reverse of ld_snp_order.txt, and one SNP lacks beta/se: the z-file must follow LD order
+     * and the LD matrix must be cut down to exactly the SNPs in the z-file. (Previously the z-file
+     * followed GWAS-file order and the full-window LD was copied, so z-scores could pair with the
+     * wrong LD rows and the matrix could be larger than the z-file.)
      */
-    private static int testZFileOrderFollowsGwasFileIterationOrderNotLdSnpOrderIndex() throws Exception {
+    private static int testZFileFollowsLdOrderAndLdIsSubset() throws Exception {
         Path dir = Files.createTempDirectory("finemap-order-test");
         File harmonizedDir = new File(dir.toFile(), "harmonized");
         File ldDir = new File(dir.toFile(), "ld");
@@ -225,17 +215,20 @@ public class FinemapAdapterTest {
         // this is the order FINEMAP's LD matrix rows/columns will be in.
         try (PrintWriter pw = new PrintWriter(new FileWriter(new File(ldDir, "ld_snp_order.txt")))) {
             pw.println("1:1000000:A:G");
+            pw.println("1:1500000:A:G");
             pw.println("1:2000000:A:G");
         }
         try (PrintWriter pw = new PrintWriter(new FileWriter(new File(ldDir, "ld_r.matrix")))) {
-            pw.println("1.0\t0.5");
-            pw.println("0.5\t1.0");
+            pw.println("1.0\t0.7\t0.5");
+            pw.println("0.7\t1.0\t0.6");
+            pw.println("0.5\t0.6\t1.0");
         }
         // harmonized_gwas.tsv deliberately lists the HIGHER position (2000000) BEFORE the lower
         // one (1000000) — the reverse of ld_snp_order.txt.
         try (PrintWriter pw = new PrintWriter(new FileWriter(new File(harmonizedDir, "harmonized_gwas.tsv")))) {
             pw.println("snp_id\tchr\tpos\tea\tnea\tpvalue\tbeta\tse\tor\tn\tmaf\tinfo\trsid\tvarid");
             pw.println("snpHigh\t1\t2000000\tA\tG\t0.001\t0.5\t0.05\t1.6\t1000\t0.3\t0.9\trsH\tvH");
+            pw.println("snpMid\t1\t1500000\tA\tG\t0.5\tNA\tNA\tNA\t1000\t0.3\t0.9\trsM\tvM");
             pw.println("snpLow\t1\t1000000\tA\tG\t0.002\t0.2\t0.04\t1.2\t1000\t0.3\t0.9\trsL\tvL");
         }
 
@@ -244,15 +237,14 @@ public class FinemapAdapterTest {
         List<String> lines = Files.readAllLines(new File(runDir, "finemap.z").toPath());
         int failures = 0;
         failures += checkEq("finemap.z line count (header + 2 rows)", lines.size(), 3);
-        boolean firstRowIsHighPos = lines.get(1).startsWith("refid_2 "); // refid_2 = pos 2000000
-        failures += check("CURRENT BEHAVIOR (documented, not asserted-safe): finemap.z's first "
-            + "data row is refid_2 (position 2000000), matching harmonized_gwas.tsv's own row "
-            + "order — NOT re-sorted to ld_snp_order.txt's position order, where position "
-            + "1000000 (refid_1) comes first. If finemap.ld's row/column order is taken from "
-            + "ld_snp_order.txt (position-ascending) while finemap.z is NOT re-sorted to match, "
-            + "FINEMAP would silently pair each SNP's z-score with the WRONG row/column of the "
-            + "LD matrix whenever the two input files disagree on order: " + lines.get(1),
-            firstRowIsHighPos);
+        failures += check("finemap.z follows LD order: row 1 is refid_1 (pos 1000000): " + lines.get(1),
+            lines.get(1).startsWith("refid_1 "));
+        failures += check("finemap.z follows LD order: row 2 is refid_2 (pos 2000000): " + lines.get(2),
+            lines.get(2).startsWith("refid_2 "));
+        List<String> ld = Files.readAllLines(new File(runDir, "finemap.ld").toPath());
+        failures += checkEq("finemap.ld has one row per z-file SNP (the SNP without beta/se is dropped)", ld.size(), 2);
+        failures += check("finemap.ld keeps the right cells (r = 0.5 between the two kept SNPs): " + ld,
+            ld.size() == 2 && ld.get(0).trim().equals("1.0 0.5") && ld.get(1).trim().equals("0.5 1.0"));
 
         deleteRecursive(dir.toFile());
         return failures;

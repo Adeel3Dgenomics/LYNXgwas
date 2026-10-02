@@ -522,6 +522,86 @@ public class SerpentPlotBuilder {
         return ca;
     }
 
+    // ── locus detail (click on a serpent) ────────────────────────────────────────────────────
+
+    /** Nearest gene to a position: returns {name, distanceBp} or null when nothing is annotated nearby. */
+    public interface GeneLookup { Object[] nearest(String chr, long pos); }
+
+    /**
+     * Per-dataset lead SNPs for one locus, as shown when the user clicks a serpent: lead SNP id,
+     * position, alleles, OR with 95% CI, p-value, tier, offset from the strongest lead SNP, and the
+     * nearest gene to that lead SNP. Rows are sorted by p-value. The OR is the reported OR when the
+     * dataset has one, otherwise exp(beta); the CI is exp(ln OR +/- 1.96 SE) when an SE exists.
+     * The header's gene list is the nearest genes of all lead SNPs, deduplicated, in the order of the
+     * strongest dataset first, with how many datasets' lead SNPs point to each.
+     */
+    public static String locusDetailJson(MultiLocusResult mlr, int locusIndex, GeneLookup genes) {
+        MultiLocusResult.LocusRow row = null;
+        for (MultiLocusResult.LocusRow r : mlr.loci) if (r.index == locusIndex) { row = r; break; }
+        if (row == null) return null;
+        MultiLocusResult.DatasetLocusStat bestCell = row.cells.get(row.overallBestDatasetId);
+        long refPos = bestCell != null && bestCell.bestPos > 0 ? bestCell.bestPos : (row.start + row.end) / 2;
+
+        class R { MultiLocusResult.DatasetInfo d; MultiLocusResult.DatasetLocusStat s; double or, lo, hi; String gene = ""; long dist = -1; }
+        List<R> rows = new ArrayList<>();
+        for (MultiLocusResult.DatasetInfo d : mlr.datasets) {
+            MultiLocusResult.DatasetLocusStat s = row.cells.get(d.id);
+            if (s == null || s.bestPos <= 0 || Double.isNaN(s.bestP)) continue;
+            R x = new R(); x.d = d; x.s = s;
+            double ln;
+            if (!Double.isNaN(s.or) && s.or > 0) ln = Math.log(s.or);
+            else ln = s.beta;
+            x.or = Double.isNaN(ln) ? Double.NaN : Math.exp(ln);
+            x.lo = x.hi = Double.NaN;
+            if (!Double.isNaN(ln) && !Double.isNaN(s.se) && s.se > 0) { x.lo = Math.exp(ln - 1.959964 * s.se); x.hi = Math.exp(ln + 1.959964 * s.se); }
+            String chr = s.bestChr == null || s.bestChr.isEmpty() ? row.chr : s.bestChr;
+            Object[] g = genes == null ? null : genes.nearest(chr, s.bestPos);
+            if (g != null) { x.gene = String.valueOf(g[0]); x.dist = ((Number) g[1]).longValue(); }
+            rows.add(x);
+        }
+        rows.sort(Comparator.comparingDouble(x -> x.s.bestP));
+
+        Map<String, Integer> geneCount = new LinkedHashMap<>();
+        Map<String, Long> geneMinDist = new HashMap<>();
+        for (R x : rows) if (!x.gene.isEmpty()) {
+            geneCount.merge(x.gene, 1, Integer::sum);
+            geneMinDist.merge(x.gene, x.dist, Math::min);
+        }
+
+        StringBuilder j = new StringBuilder(4096);
+        j.append("{\"locus\":{\"index\":").append(row.index).append(",");
+        kv(j, "chr", row.chr).append(",\"start\":").append(row.start).append(",\"end\":").append(row.end)
+            .append(",\"ref_pos\":").append(refPos).append(",");
+        kv(j, "locus_nearest_genes", row.nearestGene == null ? "" : row.nearestGene).append(",");
+        kv(j, "best_dataset_id", row.overallBestDatasetId).append(",");
+        int gws = 0; for (R x : rows) if (x.s.bestP < 5e-8) gws++;
+        j.append("\"n_datasets\":").append(rows.size()).append(",\"n_gws\":").append(gws).append("},\"genes\":[");
+        int k = 0;
+        for (Map.Entry<String, Integer> e : geneCount.entrySet()) {
+            if (k++ > 0) j.append(",");
+            j.append("{"); kv(j, "gene", e.getKey()).append(",\"n_lead_snps\":").append(e.getValue())
+             .append(",\"min_distance\":").append(geneMinDist.get(e.getKey())).append("}");
+        }
+        j.append("],\"rows\":[");
+        for (int i = 0; i < rows.size(); i++) {
+            R x = rows.get(i);
+            if (i > 0) j.append(",");
+            j.append("{"); kv(j, "dataset_id", x.d.id).append(","); kv(j, "dataset", x.d.name).append(",");
+            kv(j, "disease", GeneConstellationBuilder.diseaseGroupOf(x.d.id, x.d.diseaseName)).append(",");
+            kv(j, "ancestry", normalizeAncestry(x.d.ancestry)).append(",");
+            kv(j, "snp", x.s.bestSnpId).append(",");
+            kv(j, "chr", x.s.bestChr == null || x.s.bestChr.isEmpty() ? row.chr : x.s.bestChr).append(",");
+            j.append("\"pos\":").append(x.s.bestPos).append(",\"offset\":").append(x.s.bestPos - refPos).append(",");
+            kv(j, "ea", x.s.ea).append(","); kv(j, "nea", x.s.nea).append(",");
+            j.append("\"p\":").append(num(x.s.bestP)).append(",\"tier\":").append(tierOf(x.s.bestP))
+             .append(",\"or\":").append(num(x.or)).append(",\"or_lo\":").append(num(x.lo)).append(",\"or_hi\":").append(num(x.hi))
+             .append(",\"or_from_beta\":").append(Double.isNaN(x.s.or) || x.s.or <= 0).append(",");
+            kv(j, "nearest_gene", x.gene).append(",\"gene_distance\":").append(x.dist).append("}");
+        }
+        j.append("]}");
+        return j.toString();
+    }
+
     // ── JSON ─────────────────────────────────────────────────────────────────────────────────
 
     public static String toJson(Result r) {

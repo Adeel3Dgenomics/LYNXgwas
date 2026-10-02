@@ -172,6 +172,34 @@ public class SerpentPlotBuilderTest {
             check("locus significant in every dataset is not reported as group-specific", !everywhereListed);
         }
 
+        // 8. locus detail (click on a serpent): per-dataset lead SNPs, OR/CI, dedup nearest genes
+        {
+            MultiLocusResult mlr = syntheticCorpus();
+            MultiLocusResult.DatasetLocusStat s0 = mlr.loci.get(0).cells.get("aaa-ds0");
+            s0.or = 1.5; s0.se = 0.1;                    // reported OR
+            MultiLocusResult.DatasetLocusStat s1 = mlr.loci.get(0).cells.get("aaa-ds1");
+            s1.beta = Math.log(2.0); s1.se = 0.2;        // OR must come from exp(beta)
+            // fake gene annotation: GENE_A before 1,103,000, GENE_B after
+            SerpentPlotBuilder.GeneLookup lookup = (chr, pos) -> pos < 1_103_000 ? new Object[]{"GENE_A", 0L} : new Object[]{"GENE_B", pos - 1_103_000};
+            String js = SerpentPlotBuilder.locusDetailJson(mlr, 0, lookup);
+            Map<String, Object> o = MiniJson.asObject(MiniJson.parse(js));
+            List<Object> rows = MiniJson.asArray(o.get("rows"));
+            check("detail has one row per dataset (" + rows.size() + ")", rows.size() == 12);
+            Map<String, Object> r0 = MiniJson.asObject(rows.get(0));
+            check("rows sorted by p (first is aaa-ds0)", "aaa-ds0".equals(r0.get("dataset_id")));
+            close("reported OR kept", ((Number) r0.get("or")).doubleValue(), 1.5, 1e-12);
+            close("CI lower = exp(ln1.5 - 1.96*0.1)", ((Number) r0.get("or_lo")).doubleValue(), Math.exp(Math.log(1.5) - 1.959964 * 0.1), 1e-9);
+            Map<String, Object> r1 = null;
+            for (Object x : rows) { Map<String, Object> m = MiniJson.asObject(x); if ("aaa-ds1".equals(m.get("dataset_id"))) r1 = m; }
+            close("OR from beta = exp(beta)", ((Number) r1.get("or")).doubleValue(), 2.0, 1e-12);
+            check("or_from_beta flagged", Boolean.TRUE.equals(r1.get("or_from_beta")));
+            List<Object> genes = MiniJson.asArray(o.get("genes"));
+            Set<String> names = new LinkedHashSet<>();
+            for (Object g : genes) names.add(String.valueOf(MiniJson.asObject(g).get("gene")));
+            check("genes deduplicated (" + names + ")", genes.size() == names.size() && names.equals(new LinkedHashSet<>(Arrays.asList("GENE_A", "GENE_B"))));
+            check("unknown locus returns null", SerpentPlotBuilder.locusDetailJson(mlr, 999, lookup) == null);
+        }
+
         if (failures == 0) System.out.println("PASS: all SerpentPlotBuilder tests passed");
         else { System.out.println("FAIL: " + failures + " SerpentPlotBuilder check(s) failed"); System.exit(1); }
     }

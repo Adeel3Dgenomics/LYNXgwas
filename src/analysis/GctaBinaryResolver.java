@@ -3,9 +3,9 @@ import java.io.File;
 import java.io.IOException;
 
 /**
- * Shared GCTA binary resolution, used by both CojoAdapter (--cojo-slct conditional analysis)
- * and GctaGremlAdapter (--make-grm / --reml heritability). Extracted out of CojoAdapter so the
- * two adapters agree on where GCTA lives instead of each hand-rolling its own check.
+ * GCTA binary resolution for CojoAdapter (--cojo-slct conditional analysis on GWAS summary
+ * statistics + a reference panel). (GCTA-GREML, which needs individual-level genotypes and
+ * phenotypes, was removed: LYNXgwas runs only methods that work from summary statistics.)
  *
  * Two entry points, matching the two ways callers currently hand in a GCTA path:
  *
@@ -24,8 +24,8 @@ public class GctaBinaryResolver {
 
     /**
      * Verifies an explicit GCTA path, exactly as CojoAdapter has always done. Kept as its own
-     * method (rather than inlined in CojoAdapter) so GctaGremlAdapter can reuse the identical
-     * check/error text without duplicating it.
+     * method (rather than inlined in CojoAdapter) so any future GCTA-based summary-statistics tool
+     * reuses the identical check/error text.
      */
     public static File verify(String gctaBin) throws IOException {
         File gctaFile = new File(gctaBin);

@@ -49,10 +49,11 @@ javac -encoding UTF-8 -d bin -cp "bin%LIBCP%" ^
   src\analysis\OutputContractValidator.java ^
   src\analysis\ToolDescriptor.java ^
   src\analysis\PluginEngine.java ^
+  src\analysis\ToolLocator.java ^
+  src\analysis\PlinkRunner.java ^
   src\analysis\SnakemakeSubmitter.java ^
   src\analysis\GctaBinaryResolver.java ^
   src\analysis\CojoAdapter.java ^
-  src\analysis\GctaGremlAdapter.java ^
   src\analysis\MagmaAdapter.java ^
   src\analysis\SusieAdapter.java ^
   src\analysis\FinemapAdapter.java ^

@@ -88,7 +88,7 @@ public class SusieAdapterTest {
         failures += check("susie_input.tsv exists", inputTsv.exists());
         List<String> lines = Files.readAllLines(inputTsv.toPath());
         failures += checkEq("susie_input.tsv line count (header + 3 kept rows)", lines.size(), 4);
-        failures += checkEq("header", lines.get(0), "SNP\tBP\tA1\tA2\tBETA\tSE\tP");
+        failures += checkEq("header", lines.get(0), "SNP\tBP\tA1\tA2\tBETA\tSE\tP\tN");
 
         Map<String, String[]> rows = new LinkedHashMap<>();
         for (int i = 1; i < lines.size(); i++) {
@@ -106,6 +106,8 @@ public class SusieAdapterTest {
             failures += checkClose("refid_1 (gwasA) BETA", Double.parseDouble(rA[4]), 0.5, 1e-9);
             failures += checkClose("refid_1 (gwasA) SE", Double.parseDouble(rA[5]), 0.05, 1e-9);
             failures += checkClose("refid_1 (gwasA) P", Double.parseDouble(rA[6]), 0.001, 1e-9);
+            // No per-SNP N column in the harmonized file: written as NA, and the R script uses sampleN
+            failures += checkEq("refid_1 (gwasA) N is NA without a per-SNP N column", rA[7], "NA");
         }
         String[] rB = rows.get("refid_2");
         if (rB != null) {

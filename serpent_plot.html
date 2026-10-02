@@ -104,7 +104,45 @@
   .tabs{display:flex;gap:.35rem;flex-wrap:wrap;margin:.2rem 0 .6rem}
   .method{font-size:.74rem;color:var(--ink-faint);margin-top:.8rem;max-width:1100px}
   #tableWrap{max-height:460px;overflow:auto;display:none;margin-top:.8rem}
+  .snake{cursor:pointer}
+  #drawer{position:fixed;top:0;right:0;height:100vh;width:min(1100px,96vw);background:var(--surface);border-left:1px solid var(--border);
+          box-shadow:-10px 0 34px rgba(0,0,0,.18);transform:translateX(105%);transition:transform .18s ease;z-index:30;display:flex;flex-direction:column}
+  #drawer.open{transform:none}
+  #drawer .dh{padding:1rem 1.2rem .8rem;border-bottom:1px solid var(--border);display:flex;gap:1rem;align-items:flex-start}
+  #drawer .dh h3{font-family:var(--font-display);font-size:1.25rem;margin:0 0 .25rem;font-weight:600}
+  #drawer .dh .span{font-family:var(--font-mono);font-size:.8rem;color:var(--ink-soft)}
+  #drawer .dh .genes{margin-top:.45rem;display:flex;flex-wrap:wrap;gap:.3rem}
+  #drawer .gchip{border:1px solid var(--border);border-radius:999px;padding:.08rem .55rem;font-size:.78rem;background:var(--surface-2)}
+  #drawer .gchip i{font-style:italic;font-weight:600}
+  #drawer .gchip span{color:var(--ink-faint);font-family:var(--font-mono);font-size:.7rem}
+  #drawer .dx{margin-left:auto;display:flex;gap:.4rem;align-items:center}
+  #drawer .db{overflow:auto;padding:.4rem 1.2rem 1.2rem;flex:1}
+  #drawer td.snp{font-family:var(--font-mono);font-size:.76rem}
+  #drawer td.num,#drawer td.snp{white-space:nowrap}
+  #drawer .dot{display:inline-block;width:10px;height:10px;border-radius:50%;vertical-align:-1px}
+  #drawer tr.gws td{font-weight:600}
+  #drawer .muted{color:var(--ink-faint)}
   .hl-bar{display:none;align-items:center;gap:.6rem;font-size:.8rem;color:var(--ink-soft);margin-bottom:.5rem}
+  /* Joint fine-mapping (mvSuSiE) panel in the locus drawer */
+  .joint{margin-top:1.2rem;border-top:1px solid var(--border);padding-top:.9rem}
+  .joint h4{margin:0 0 .3rem;font-family:var(--font-display);font-size:1.05rem}
+  .joint .ctl{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:.5rem 0}
+  .joint select{font:inherit;padding:.25rem .4rem;border:1px solid var(--border);border-radius:6px;background:var(--surface)}
+  .joint .status{font-size:.82rem;color:var(--ink-soft);margin:.3rem 0}
+  .joint .summary{font-size:.84rem;margin:.4rem 0 .6rem}
+  .joint .jdot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:.35rem;vertical-align:0}
+  .joint .gainwrap{display:flex;gap:1rem;align-items:flex-start;flex-wrap:wrap;margin-top:.4rem}
+  .joint .gaintbl{flex:1;min-width:260px;overflow-x:auto}
+  .jb{margin:.2rem 0 .8rem;padding:.7rem .8rem;border:1px solid var(--border);border-radius:10px;background:var(--surface-2)}
+  .jb .ctl{display:flex;flex-wrap:wrap;gap:.6rem;align-items:center}
+  .jb select{font:inherit;padding:.25rem .4rem;border:1px solid var(--border);border-radius:6px;background:var(--surface);max-width:100%}
+  .jb .status{font-size:.84rem;margin:.4rem 0 .2rem}
+  .jbprog{height:6px;border-radius:3px;background:var(--border);overflow:hidden;margin-top:.5rem}
+  .jbprog div{height:100%;width:0;background:var(--accent);transition:width .4s}
+  .joint .jchip{display:inline-block;white-space:nowrap;border:1px solid var(--border);border-radius:999px;padding:0 .45rem;margin:.08rem;font-size:.74rem;background:var(--surface-2)}
+  .joint .excl li{font-size:.8rem;color:var(--ink-soft)}
+  .joint table.corr td{font-family:var(--font-mono);font-size:.74rem;text-align:center;padding:.15rem .35rem}
+  .joint table.corr th{font-size:.7rem;font-weight:600;max-width:9ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 </style>
 </head>
 <body>
@@ -121,15 +159,33 @@
 
 <main id="main" style="display:none">
   <div class="card">
-    <p class="sub">Each locus drops a serpent from its genomic position through every dataset. At each crossing, color and thickness show that dataset's significance, and sideways drift shows how far its lead SNP sits from the strongest dataset's lead SNP. Loci shared across diseases appear as long, thick red serpents.</p>
+    <p class="sub">Each locus drops a serpent from its genomic position through every dataset. At each crossing, color and thickness show that dataset's significance, and sideways drift shows how far its lead SNP sits from the strongest dataset's lead SNP. Loci shared across diseases appear as long, thick red serpents. Click a serpent to see each dataset's lead SNP, OR and p-value.</p>
     <div class="controls">
       <label>Row order <select id="orderSel"></select></label>
       <label>Chromosome <select id="chrSel"><option value="all">Whole genome</option></select></label>
       <label>Show loci significant (p&lt;5×10⁻⁸) in ≥ <select id="minDis"></select> disease(s)</label>
       <button class="btn" id="labelsBtn" aria-pressed="true">Gene labels</button>
       <button class="btn" id="tableBtn" aria-pressed="false">Table view</button>
+      <button class="btn" id="jbBtn" aria-pressed="false" title="Run mvSuSiE joint fine-mapping on every aligned locus">Joint fine-mapping: all loci</button>
+    </div>
+    <div class="jb" id="jbPanel" hidden>
+      <div class="ctl">
+        <label>Pool <select id="jbMode">
+          <option value="within">within each disease (every locus with ≥ 2 significant datasets of a disease)</option>
+          <option value="cross">across diseases (loci significant in ≥ 2 diseases; colocalising datasets only)</option>
+        </select></label>
+        <label><input type="checkbox" id="jbMissing" checked> skip loci already fine-mapped</label>
+        <button class="btn" id="jbStart">Start</button>
+        <button class="btn" id="jbCancel" hidden>Cancel</button>
+        <a class="btn" id="jbDownload" href="#" download>Download table (TSV)</a>
+      </div>
+      <div class="jbprog" hidden><div id="jbBar"></div></div>
+      <div class="status" id="jbStatus"></div>
+      <div class="note" id="jbSummary"></div>
+      <div class="note">One row per joint credible set: its size, PIP range, lead SNP, the datasets it is active in, and the smallest credible set any single dataset gives for the same lead SNP. Open a locus to see its result, compare single-dataset and joint PIPs, or draw it on a regional plot.</div>
     </div>
     <div class="hl-bar" id="hlBar"><span id="hlText"></span><button class="btn" id="hlClear">Clear highlight</button></div>
+    <div class="note" id="laneNote" style="margin:.2rem 0 .3rem"></div>
     <div class="scroll"><svg id="viz" role="img" aria-label="Locus Serpent Plot"></svg></div>
     <div class="legend">
       <div>
@@ -160,6 +216,21 @@
   </div>
 </main>
 <div class="tip" id="tip"></div>
+<aside id="drawer" aria-label="Locus details" aria-hidden="true">
+  <div class="dh">
+    <div style="min-width:0">
+      <h3 id="dTitle">Locus</h3>
+      <div class="span" id="dSpan"></div>
+      <div class="genes" id="dGenes"></div>
+      <div class="note" id="dNote" style="margin-top:.35rem"></div>
+    </div>
+    <div class="dx">
+      <button class="btn" id="dCsv">Download CSV</button>
+      <button class="btn" id="dClose" aria-label="Close">Close</button>
+    </div>
+  </div>
+  <div class="db" id="dBody">Loading…</div>
+</aside>
 
 <script>
 // ── genome coordinates: per-chromosome max of GRCh37/GRCh38 lengths, so either build fits ─────────────
@@ -209,7 +280,9 @@ async function load(){
     D = d; prepare();
     document.getElementById('loading').style.display = 'none';
     document.getElementById('main').style.display = '';
-    draw(); drawCategories();
+    draw(); drawCategories(); initJointBatch();
+    var li = params.get('locus');
+    if (li !== null) { var L0 = LOCI.filter(function(x){ return String(x.index) === li; })[0]; if (L0) openLocus(L0); }
   } catch(e) {
     document.getElementById('loading').style.display = 'none';
     var er = document.getElementById('error'); er.style.display = 'block';
@@ -343,12 +416,19 @@ function draw(){
   var defs = el('defs',{},svg), gS = el('g',{},svg);
   var tierCol = TIERS.map(function(t){ return cssv(t.col); });
   var visible = LOCI.filter(function(L){ return L.g >= d0 && L.g <= d1 && L.nDis >= state.minDis; });
+  // Lanes: neighbouring serpents are pushed apart just enough that their sideways drift never
+  // crosses (nearby loci, e.g. 5 Mb apart at chromosome zoom, would otherwise intertwine). Each
+  // serpent still starts at its true genomic position on the chromosome bar and bends into its lane.
+  var separated = layoutLanes(visible, X, OFFPX, order, LEFT, W - RIGHT);
+  var lnote = document.getElementById('laneNote');
+  if (lnote) lnote.textContent = separated ? 'Nearby serpents are moved apart just enough not to cross; each starts at its true position on the chromosome bar.'
+                                           : 'Nearby loci can overlap at this zoom: pick a chromosome to separate them.';
   visible.sort(function(a,b){ return b.bestP - a.bestP; }); // weakest first, strongest on top
   var gid = 0;
   visible.forEach(function(L){
     var g = el('g',{class:'snake' + (state.highlight && state.highlight.has(L.index) ? ' on' : '')},gS);
-    var x0 = X(L.g);
-    var pts = [{x:x0, y:TOP+GENOME_H, t:0}];
+    var x0 = L._lane;
+    var pts = [{x:X(L.g), y:TOP+GENOME_H, t:0}];
     order.forEach(function(i){ pts.push({x:x0 + OFFPX(L.off[i]), y:rowY[i], t:L.tier[i], i:i}); });
     pts.push({x:x0, y:bottom+16, t:0});
     // grey backbone: one path for the whole serpent
@@ -375,6 +455,7 @@ function draw(){
       g.addEventListener('mouseenter', function(){ svg.classList.add('dim'); g.classList.add('on'); });
       g.addEventListener('mouseleave', function(){ svg.classList.remove('dim'); g.classList.remove('on'); });
     }
+    g.addEventListener('click', function(ev){ ev.stopPropagation(); openLocus(L); });
     L._x0 = x0; L._g = g;
   });
   if (state.labels){
@@ -391,6 +472,50 @@ function draw(){
     });
   }
   buildTable(visible);
+}
+
+/**
+ * Sets L._lane for each visible serpent: as close as possible to its genomic x (least squares)
+ * while consecutive serpents keep their reach (drift + ribbon half-width) from overlapping. Blocks
+ * of colliding serpents are merged and centred on their desired positions; if everything cannot fit,
+ * the gaps shrink proportionally.
+ */
+function layoutLanes(list, X, OFFPX, order, xMin, xMax){
+  var items = list.slice().sort(function(a,b){ return a.g - b.g; });
+  items.forEach(function(L){
+    var lo = -1, hi = 1;
+    order.forEach(function(i){ var w = TIERS[L.tier[i]].w/2, o = OFFPX(L.off[i]); lo = Math.min(lo, o - w); hi = Math.max(hi, o + w); });
+    L._lo = lo; L._hi = hi; L._want = X(L.g);
+  });
+  var GAP = 3, need = [];
+  for (var k = 1; k < items.length; k++) need.push(items[k-1]._hi - items[k]._lo + GAP);
+  var total = need.reduce(function(a,b){ return a+b; }, 0), span = xMax - xMin;
+  var shrink = total > span ? span / total : 1;
+  // Too crowded to separate without dragging serpents far from their loci (e.g. whole genome):
+  // keep true positions there; zooming to a chromosome gives room to separate them.
+  if (shrink < 0.6) { items.forEach(function(L){ L._lane = L._want; }); return false; }
+  var blocks = [];
+  items.forEach(function(L, k){
+    var b = {items:[L], off:[0], pos:L._want};
+    blocks.push(b);
+    while (blocks.length > 1){
+      var A = blocks[blocks.length-2], B = blocks[blocks.length-1];
+      var gap = need[items.indexOf(B.items[0]) - 1] * shrink;
+      var aEnd = A.pos + A.off[A.off.length-1];
+      if (B.pos - aEnd >= gap) break;
+      var base = A.off[A.off.length-1] + gap;
+      B.items.forEach(function(it, j){ A.items.push(it); A.off.push(base + B.off[j]); });
+      var sum = 0; A.items.forEach(function(it, j){ sum += it._want - A.off[j]; });
+      A.pos = sum / A.items.length;
+      blocks.pop();
+    }
+  });
+  blocks.forEach(function(b){
+    var width = b.off[b.off.length-1];
+    var pos = Math.max(xMin, Math.min(xMax - width, b.pos));
+    b.items.forEach(function(it, j){ it._lane = pos + b.off[j]; });
+  });
+  return true;
 }
 
 function drawDendrogram(svg, rowY, xL, xR){
@@ -515,6 +640,324 @@ function drawLevelTable(){
       document.getElementById('viz').scrollIntoView({behavior:'smooth', block:'start'}); };
   });
 }
+
+// ── locus drawer (click on a serpent) ──────────────────────────────────────────────────────────
+var drawerRows = [], drawerLocus = null;
+function fmtOR(r){
+  if (r.or == null) return '<span class="muted">—</span>';
+  var ci = (r.or_lo != null && r.or_hi != null) ? ' <span class="muted">(' + r.or_lo.toFixed(2) + '–' + r.or_hi.toFixed(2) + ')</span>' : '';
+  return '<span title="' + (r.or_from_beta ? 'exp(beta), from the dataset beta' : 'reported odds ratio') + '">' + r.or.toFixed(3) + ci + '</span>';
+}
+function fmtDist(d){ if (d == null || d < 0) return ''; if (d === 0) return 'in gene'; return d < 1000 ? d + ' bp' : (d/1000).toFixed(d < 10000 ? 1 : 0) + ' kb'; }
+async function openLocus(L){
+  var dr = document.getElementById('drawer');
+  dr.classList.add('open'); dr.setAttribute('aria-hidden','false');
+  document.getElementById('dTitle').innerHTML = '<i>' + esc(geneLabel(L.gene) || ('chr' + L.chr)) + '</i> locus';
+  document.getElementById('dSpan').textContent = 'chr' + L.chr + ':' + L.start.toLocaleString() + '–' + L.end.toLocaleString();
+  document.getElementById('dGenes').innerHTML = ''; document.getElementById('dNote').textContent = '';
+  document.getElementById('dBody').textContent = 'Loading lead SNPs… (the first click after starting LYNXgwas can take a little while to load the gene annotation)';
+  setHighlight(new Set([L.index]), geneLabel(L.gene) || 'locus');
+  try {
+    var r = await fetch('/api/serpent-locus?job=' + encodeURIComponent(jobId) + '&locus=' + L.index);
+    var d = await r.json();
+    if (!r.ok || d.error) throw new Error(d.error || ('HTTP ' + r.status));
+    drawerLocus = d; drawerRows = d.rows;
+    var lc = d.locus, span = lc.end - lc.start;
+    document.getElementById('dSpan').textContent = 'chr' + lc.chr + ':' + lc.start.toLocaleString() + '–' + lc.end.toLocaleString()
+      + ' (' + (span >= 1000 ? (span/1000).toFixed(0) + ' kb' : span + ' bp') + ') · strongest lead SNP at ' + lc.ref_pos.toLocaleString()
+      + ' · p<5×10⁻⁸ in ' + lc.n_gws + ' of ' + lc.n_datasets + ' datasets';
+    document.getElementById('dGenes').innerHTML = d.genes.length
+      ? '<span class="note" style="align-self:center">Nearest genes to the lead SNPs:</span>' + d.genes.map(function(g){
+          return '<span class="gchip" title="nearest gene for ' + g.n_lead_snps + ' dataset(s); closest lead SNP ' + (fmtDist(g.min_distance) || '') + '"><i>' + esc(g.gene) + '</i> <span>×' + g.n_lead_snps + '</span></span>'; }).join('')
+      : '<span class="note">No annotated gene within 1 Mb of the lead SNPs.</span>';
+    document.getElementById('dNote').textContent = 'Positions GRCh37. OR = reported odds ratio, or exp(β) where a dataset reports β (hover an OR to see which; also in the CSV); 95% CI from the SE. Each OR is for the effect allele of that dataset (EA/NEA column). Nearest gene = closest protein-coding gene within 1 Mb of each lead SNP.';
+    var rows = d.rows.map(function(x){
+      var col = TIERS[x.tier].col;
+      return '<tr class="' + (x.tier===3?'gws':'') + '"><td><span class="dot" style="background:var(' + col + ')" title="' + TIERS[x.tier].label + '"></span></td>'
+        + '<td>' + esc(x.dataset) + '</td><td>' + esc(pretty(x.disease)) + '</td><td>' + esc(x.ancestry || '') + '</td>'
+        + '<td class="snp">' + esc(x.snp || '—') + '</td><td class="num">' + esc(x.chr) + ':' + x.pos.toLocaleString() + '</td>'
+        + '<td class="num">' + (x.offset>=0?'+':'') + (x.offset/1000).toFixed(1) + ' kb</td>'
+        + '<td class="snp">' + esc((x.ea||'?').toUpperCase() + '/' + (x.nea||'?').toUpperCase()) + '</td>'
+        + '<td class="num">' + fmtOR(x) + '</td><td class="num">' + fmtP(x.p) + '</td>'
+        + '<td><i>' + esc(x.nearest_gene || '—') + '</i> <span class="muted">' + esc(fmtDist(x.gene_distance)) + '</span></td></tr>';
+    }).join('');
+    document.getElementById('dBody').innerHTML = '<table><thead><tr><th></th><th>Dataset</th><th>Disease</th><th>Ancestry</th><th>Lead SNP</th><th>Position</th>'
+      + '<th title="Offset from the strongest dataset\'s lead SNP">Offset</th><th title="Effect / other allele">EA/NEA</th><th>OR (95% CI)</th><th>p</th><th>Nearest gene</th></tr></thead><tbody>' + rows + '</tbody></table>';
+    renderJointPanel(L, d);
+  } catch(e) {
+    document.getElementById('dBody').textContent = 'Could not load this locus: ' + e.message;
+  }
+}
+// ── Joint fine-mapping (mvSuSiE) ───────────────────────────────────────────────────────────────
+// Fine-maps the datasets significant at this locus together. Within one disease by default; across
+// diseases only datasets whose own SuSiE credible sets overlap are pooled. The server excludes
+// datasets flagged for LD mismatch and reports why each dataset was left out. Every run is saved:
+// reopening the locus shows the latest one, and any saved run can be drawn on a dataset's regional plot.
+var jointLocus = null;
+
+function renderJointPanel(L, d){
+  jointLocus = L;
+  var counts = {};
+  d.rows.forEach(function(r){ if (r.p != null && r.p < 5e-8) counts[r.disease] = (counts[r.disease] || 0) + 1; });
+  var diseases = Object.keys(counts).sort(function(a, b){ return counts[b] - counts[a]; });
+  var box = document.createElement('div');
+  box.className = 'joint';
+  var opts = diseases.filter(function(k){ return counts[k] >= 2; }).map(function(k){
+    return '<option value="within:' + esc(k) + '">Within ' + esc(pretty(k)) + ' (' + counts[k] + ' significant datasets)</option>'; }).join('');
+  if (diseases.length >= 2) opts += '<option value="cross:">Across diseases (only datasets whose credible sets overlap)</option>';
+  box.innerHTML = '<h4>Joint fine-mapping (mvSuSiE)</h4>'
+    + '<div class="note">Fine-maps the significant datasets together to sharpen the causal-variant call. Overlapping samples between datasets are measured and accounted for; datasets flagged for an LD mismatch are left out.</div>'
+    + (opts ? '<div class="ctl"><select id="jMode">' + opts + '</select><button class="btn" id="jRun">Run</button>'
+              + '<span id="jSavedWrap" style="display:none">Saved: <select id="jSaved"></select></span></div>'
+            : '<div class="status">Needs at least two datasets significant at this locus.</div>')
+    + '<div class="status" id="jStatus"></div><div id="jOut"></div>';
+  document.getElementById('dBody').appendChild(box);
+  var btn = document.getElementById('jRun');
+  if (btn) btn.onclick = function(){ runJoint(L); };
+  if (opts) loadSavedJoint(L, null);
+}
+
+/** Lists the saved joint runs of this locus and shows one (the newest, or {@code showId}). */
+async function loadSavedJoint(L, showId){
+  var runs = [];
+  try {
+    var r = await fetch('/api/mvsusie-latest?job=' + encodeURIComponent(jobId) + '&locus=' + encodeURIComponent(L.index));
+    if (r.ok) runs = (await r.json()).runs || [];
+  } catch (e) {}
+  if (jointLocus !== L) return;
+  var wrap = document.getElementById('jSavedWrap'), sel = document.getElementById('jSaved');
+  if (!wrap || !runs.length) return;
+  sel.innerHTML = runs.map(function(s){
+    var what = s.mode === 'within' ? 'within ' + pretty(s.disease) : 'across diseases';
+    var res = s.status === 'done' ? s.n_sets + ' set' + (s.n_sets === 1 ? '' : 's') : 'failed';
+    return '<option value="' + esc(s.id) + '">' + esc(what + ' · ' + res + ' · ' + new Date(s.created).toLocaleString()) + '</option>';
+  }).join('');
+  wrap.style.display = '';
+  sel.onchange = function(){ showSavedJoint(sel.value); };
+  var pick = showId || runs[0].id;
+  sel.value = pick;
+  var mode = document.getElementById('jMode'), run = runs.filter(function(s){ return s.id === pick; })[0];
+  if (run && mode) {
+    var v = run.mode + ':' + (run.mode === 'within' ? run.disease : '');
+    if ([].some.call(mode.options, function(o){ return o.value === v; })) mode.value = v;
+  }
+  showSavedJoint(pick);
+}
+
+async function showSavedJoint(id){
+  var st = document.getElementById('jStatus'), out = document.getElementById('jOut');
+  try {
+    var r = await fetch('/api/mvsusie-result?id=' + encodeURIComponent(id));
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    var res = await r.json();
+    res.id = id;
+    if (!res.result) { st.textContent = 'This run could not fine-map jointly: ' + (res.error || 'unknown error'); out.innerHTML = jointExcluded(res.selection); return; }
+    st.textContent = '';
+    out.innerHTML = jointResult(res);
+    wireJointResult(res);
+  } catch (e) { st.textContent = 'Could not load the saved run: ' + e.message; }
+}
+
+async function runJoint(L){
+  var sel = document.getElementById('jMode').value.split(':');
+  var st = document.getElementById('jStatus'), out = document.getElementById('jOut'), btn = document.getElementById('jRun');
+  btn.disabled = true; out.innerHTML = ''; st.textContent = 'Starting…';
+  try {
+    var r = await fetch('/api/mvsusie-run', { method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ job: jobId, locus: String(L.index), mode: sel[0], disease: sel[1] || '' }) });
+    var j = await r.json();
+    if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+    var p;
+    while (true) {
+      await new Promise(function(res){ setTimeout(res, 2000); });
+      p = await (await fetch('/api/mvsusie-progress?id=' + encodeURIComponent(j.id))).json();
+      st.textContent = p.phase + ' (' + p.elapsed_s + ' s)';
+      if (p.status !== 'running') break;
+    }
+    await new Promise(function(res){ setTimeout(res, 300); });
+    if (jointLocus === L) loadSavedJoint(L, j.id);
+  } catch (e) {
+    st.textContent = 'Could not run: ' + e.message;
+  } finally { btn.disabled = false; }
+}
+
+function jointExcluded(sel){
+  var ex = ((sel && sel.excluded) || []).concat([]);
+  if (!ex.length) return '';
+  return '<div class="note" style="margin-top:.5rem">Left out:</div><ul class="excl">' + ex.map(function(e){
+    return '<li><b>' + esc(e.dataset) + '</b>: ' + esc(e.reason) + '</li>'; }).join('') + '</ul>';
+}
+
+function jointResult(res){
+  var R = res.result, S = res.selection, M = res.meta || {}, sets = R.credible_sets || [];
+  var cmp = M.single_set_size_at_lead || [];
+  var h = '<div class="summary"><b>' + R.datasets.length + ' datasets</b> (' + (S.mode === 'within' ? 'within ' + esc(pretty(S.disease)) : 'across colocalising diseases') + ')'
+    + ' · ' + R.n_snps + ' shared SNPs · <b>' + sets.length + ' credible set' + (sets.length === 1 ? '' : 's') + '</b>'
+    + ' · max PIP ' + R.max_pip.toFixed(2) + '<br><span class="muted">LD: ' + esc(R.ld_source) + ' · regularisation ' + R.ld_regularisation
+    + (R.snps_removed_ld_check ? ' · ' + R.snps_removed_ld_check + ' SNPs removed by the LD consistency check' : '') + ' · ' + R.seconds + ' s'
+    + (M.created ? ' · run ' + esc(new Date(M.created).toLocaleString()) : '') + '</span></div>';
+  // Show on a dataset's regional plot
+  var dsl = (M.datasets || []);
+  if (dsl.length) h += '<div class="ctl">Show on the regional plot of <select id="jPlotDs">'
+    + dsl.map(function(x){ return '<option value="' + esc(x.id) + '|' + x.locus_index + '">' + esc(x.id) + '</option>'; }).join('')
+    + '</select><button class="btn" id="jPlot">Show on plot</button></div>';
+  if (sets.length) {
+    h += '<table><thead><tr><th>Set</th><th>SNPs</th><th>PIP range</th><th>Lead SNP</th><th title="Datasets in which this credible set has an effect (local false sign rate < 0.05)">Active in</th>'
+      + '<th title="Smallest credible set holding the same lead SNP when each dataset is fine-mapped alone (SuSiE)">Alone</th><th title="Smallest |r| between SNPs in the set">Purity</th></tr></thead><tbody>'
+      + sets.map(function(c, i){
+        var active = (c.active_in || []).length ? c.active_in.map(function(a){ return '<span class="jchip">' + esc(a) + '</span>'; }).join('')
+                                                 : '<span class="muted">none at lfsr &lt; 0.05</span>';
+        var alone = '—', best = null, who = '';
+        if (cmp[i]) Object.keys(cmp[i]).forEach(function(k){ var v = cmp[i][k]; if (v != null && (best == null || v < best)) { best = v; who = k; } });
+        if (best != null) alone = '<span title="' + esc(who) + '">' + best + ' SNP' + (best === 1 ? '' : 's') + '</span>';
+        else if (cmp[i]) alone = '<span class="muted" title="No single-dataset credible set contains this lead SNP">not found</span>';
+        return '<tr><td><span class="jdot" style="background:' + JSET_COLORS[i % JSET_COLORS.length] + '"></span>' + c.set + '</td><td class="num">' + c.size + '</td><td class="num">' + c.pip_min.toFixed(2) + '–' + c.pip_max.toFixed(2) + '</td>'
+          + '<td class="snp">' + esc(c.lead_snp) + ' <span class="muted">(' + c.lead_pip.toFixed(2) + ')</span></td><td>' + active + '</td>'
+          + '<td class="num">' + alone + '</td><td class="num">' + (c.min_abs_corr == null ? '—' : c.min_abs_corr.toFixed(2)) + '</td></tr>';
+      }).join('') + '</tbody></table>';
+  } else {
+    h += '<div class="note">No credible set reached 95% coverage jointly.</div>';
+  }
+  h += jointGainPanel(R, M);
+  // Between-dataset correlation of null z-scores = sample overlap
+  var ds = R.datasets, V = R.null_correlation;
+  h += '<div class="note" style="margin-top:.7rem">Correlation between datasets at SNPs with no signal (' + esc(R.null_correlation_source || 'null SNPs') + '; at least ' + R.n_null_snps + ' SNPs per pair). High values mean overlapping samples, which mvSuSiE accounts for.</div>'
+    + '<table class="corr"><thead><tr><th></th>' + ds.map(function(x){ return '<th title="' + esc(x) + '">' + esc(x) + '</th>'; }).join('') + '</tr></thead><tbody>'
+    + V.map(function(row, i){ return '<tr><th title="' + esc(ds[i]) + '">' + esc(ds[i]) + '</th>' + row.map(function(v, k){
+        var a = Math.abs(v), bg = i === k ? 'transparent' : a > 0.5 ? 'rgba(234,88,12,' + (0.15 + 0.5 * a).toFixed(2) + ')' : a > 0.2 ? 'rgba(234,179,8,0.25)' : 'transparent';
+        return '<td style="background:' + bg + '">' + (i === k ? '—' : v.toFixed(2)) + '</td>'; }).join('') + '</tr>'; }).join('')
+    + '</tbody></table>';
+  return h + jointExcluded({ excluded: (S.excluded || []).concat(R.excluded || []) });
+}
+
+var JSET_COLORS = ['#dc2626', '#7c3aed', '#0891b2', '#ea580c', '#16a34a', '#db2777', '#ca8a04', '#2563eb', '#65a30d', '#9333ea'];
+
+/**
+ * Single-dataset vs joint PIP: a scatter (x = highest PIP any pooled dataset gives the SNP when
+ * fine-mapped alone, y = joint PIP; points above the diagonal gained from pooling) and, for the SNPs
+ * in joint credible sets, each dataset's own PIP beside the joint one.
+ */
+function jointGainPanel(R, M){
+  var single = M.single_pips || {}, dsIds = Object.keys(single).filter(function(d){ return (R.datasets || []).indexOf(d) >= 0; });
+  if (!dsIds.length || !R.snp_pips) return '';
+  var joint = {}, ids = {}, setOf = {};
+  (R.snp_pips.pos || []).forEach(function(p, i){ joint[p] = R.snp_pips.pip[i]; ids[p] = R.snp_pips.id[i]; });
+  (R.credible_sets || []).forEach(function(c, si){ (c.snps || []).forEach(function(s){ setOf[s.pos] = si; ids[s.pos] = s.id; if (joint[s.pos] == null) joint[s.pos] = s.pip; }); });
+  var all = {};
+  Object.keys(joint).forEach(function(p){ all[p] = 1; });
+  dsIds.forEach(function(d){ Object.keys(single[d]).forEach(function(p){ all[p] = 1; }); });
+  var pts = Object.keys(all).map(function(p){
+    var best = 0, who = '';
+    dsIds.forEach(function(d){ var v = single[d][p]; if (v != null && v > best) { best = v; who = d; } });
+    return { pos: p, x: best, who: who, y: joint[p] || 0, set: setOf[p] };
+  }).filter(function(q){ return q.x >= 0.01 || q.y >= 0.01; });
+  if (!pts.length) return '';
+  var S = 210, P = 30, sx = function(v){ return P + v * (S - P - 8); }, sy = function(v){ return S - P - v * (S - P - 8); };
+  var svg = '<svg width="' + S + '" height="' + S + '" role="img" aria-label="Single-dataset versus joint PIP">'
+    + '<rect x="' + P + '" y="8" width="' + (S - P - 8) + '" height="' + (S - P - 8) + '" fill="none" stroke="var(--border)"/>'
+    + '<line x1="' + sx(0) + '" y1="' + sy(0) + '" x2="' + sx(1) + '" y2="' + sy(1) + '" stroke="var(--ink-faint)" stroke-dasharray="3 3"/>'
+    + [0, 0.5, 1].map(function(t){ return '<text x="' + sx(t) + '" y="' + (S - P + 12) + '" text-anchor="middle" font-size="9" fill="var(--ink-faint)">' + t + '</text>'
+        + '<text x="' + (P - 4) + '" y="' + (sy(t) + 3) + '" text-anchor="end" font-size="9" fill="var(--ink-faint)">' + t + '</text>'; }).join('')
+    + '<text x="' + (P + (S - P - 8) / 2) + '" y="' + (S - 4) + '" text-anchor="middle" font-size="10" fill="var(--ink-soft)">best single-dataset PIP</text>'
+    + '<text transform="rotate(-90 10 ' + (S / 2) + ')" x="10" y="' + (S / 2) + '" text-anchor="middle" font-size="10" fill="var(--ink-soft)">joint PIP</text>'
+    + pts.sort(function(a, b){ return (a.set != null) - (b.set != null); }).map(function(q){
+        var col = q.set != null ? JSET_COLORS[q.set % JSET_COLORS.length] : '#a1a1aa';
+        return '<circle cx="' + sx(q.x).toFixed(1) + '" cy="' + sy(q.y).toFixed(1) + '" r="' + (q.set != null ? 4 : 2.6) + '" fill="' + col + '" fill-opacity="' + (q.set != null ? 0.9 : 0.55) + '">'
+          + '<title>' + esc((ids[q.pos] || q.pos) + ': joint ' + q.y.toFixed(2) + ', alone ' + q.x.toFixed(2) + (q.who ? ' (' + q.who + ')' : '')) + '</title></circle>';
+      }).join('') + '</svg>';
+  // Members of joint credible sets: joint PIP next to each dataset's own PIP
+  var members = pts.filter(function(q){ return q.set != null; }).sort(function(a, b){ return (a.set - b.set) || (b.y - a.y); }).slice(0, 15);
+  var heat = function(v){ return v == null ? '<td class="num muted">—</td>' : '<td class="num" style="background:rgba(220,38,38,' + (0.08 + 0.6 * v).toFixed(2) + ')">' + v.toFixed(2) + '</td>'; };
+  var tbl = members.length ? '<table class="corr gain"><thead><tr><th>SNP</th><th>Set</th><th>Joint</th>' + dsIds.map(function(d){ return '<th title="' + esc(d) + '">' + esc(d) + '</th>'; }).join('') + '</tr></thead><tbody>'
+    + members.map(function(q){ return '<tr><th>' + esc(ids[q.pos] || q.pos) + '</th><td>' + (q.set + 1) + '</td>' + heat(q.y)
+        + dsIds.map(function(d){ var v = single[d][q.pos]; return heat(v == null ? null : v); }).join('') + '</tr>'; }).join('') + '</tbody></table>' : '';
+  var gained = pts.filter(function(q){ return q.y - q.x >= 0.2; }).length, lost = pts.filter(function(q){ return q.x - q.y >= 0.2; }).length;
+  return '<div class="note" style="margin-top:.8rem"><b>Gain from pooling.</b> Each dot is a SNP: above the diagonal, joint fine-mapping is more confident than any dataset alone (' + gained
+    + ' SNPs gained ≥ 0.2 PIP, ' + lost + ' lost ≥ 0.2). The table compares joint PIPs with each dataset\'s own SuSiE PIPs (— = below 0.001 or not in that dataset).</div>'
+    + '<div class="gainwrap">' + svg + '<div class="gaintbl">' + tbl + '</div></div>';
+}
+
+function wireJointResult(res){
+  var b = document.getElementById('jPlot');
+  if (!b) return;
+  b.onclick = function(){
+    var v = document.getElementById('jPlotDs').value.split('|');
+    window.open('viewer.html?project=' + encodeURIComponent(v[0]) + '&locus=' + encodeURIComponent(v[1]) + '&mvsusie=' + encodeURIComponent(res.id), '_blank');
+  };
+}
+
+// ── Joint fine-mapping over every aligned locus (batch) ─────────────────────────────────────────
+function initJointBatch(){
+  var btn = document.getElementById('jbBtn'), panel = document.getElementById('jbPanel');
+  if (!btn) return;
+  btn.onclick = function(){ panel.hidden = !panel.hidden; btn.setAttribute('aria-pressed', String(!panel.hidden)); if (!panel.hidden) refreshJointSummary(); };
+  document.getElementById('jbStart').onclick = startJointBatch;
+  document.getElementById('jbCancel').onclick = async function(){
+    await fetch('/api/mvsusie-run-all-cancel', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ job: jobId }) });
+  };
+  document.getElementById('jbDownload').href = '/api/mvsusie-summary?job=' + encodeURIComponent(jobId) + '&format=tsv';
+  pollJointBatch(true);
+}
+
+async function startJointBatch(){
+  var st = document.getElementById('jbStatus');
+  try {
+    var r = await fetch('/api/mvsusie-run-all', { method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ job: jobId, mode: document.getElementById('jbMode').value,
+                             only_missing: document.getElementById('jbMissing').checked ? 'true' : 'false' }) });
+    var j = await r.json();
+    if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+    pollJointBatch(false);
+  } catch (e) { st.textContent = 'Could not start: ' + e.message; }
+}
+
+var jbTimer = null;
+async function pollJointBatch(initial){
+  clearTimeout(jbTimer);
+  var st = document.getElementById('jbStatus'), start = document.getElementById('jbStart'), cancel = document.getElementById('jbCancel'), bar = document.getElementById('jbBar');
+  var p;
+  try { p = await (await fetch('/api/mvsusie-run-all-progress?job=' + encodeURIComponent(jobId))).json(); } catch (e) { return; }
+  var running = p.total != null && !p.finished;
+  start.disabled = running; cancel.hidden = !running;
+  if (p.total == null) { if (!initial) st.textContent = ''; return; }
+  bar.style.width = (p.total ? 100 * p.done / p.total : 100).toFixed(1) + '%';
+  bar.parentElement.hidden = false;
+  st.textContent = (running ? 'Running ' : p.cancelled ? 'Cancelled after ' : 'Finished: ') + p.done + ' / ' + p.total
+    + ' (' + (p.mode === 'within' ? 'within each disease' : 'across diseases') + ') · ' + p.ok + ' fine-mapped, ' + p.failed + ' could not be, ' + p.skipped + ' already saved'
+    + (running && p.current ? ' · now: ' + p.current : '') + ' · ' + Math.round(p.elapsed_s / 60) + ' min';
+  if (running) jbTimer = setTimeout(function(){ pollJointBatch(false); }, 3000);
+  else refreshJointSummary();
+}
+
+async function refreshJointSummary(){
+  try {
+    var s = await (await fetch('/api/mvsusie-summary?job=' + encodeURIComponent(jobId))).json();
+    document.getElementById('jbSummary').textContent = s.units
+      ? 'Saved: ' + s.ok + ' locus/disease combinations fine-mapped jointly (' + s.single_signal_units + ' resolved to a single credible set, '
+        + s.credible_sets + ' credible sets in total); ' + s.failed + ' could not be fine-mapped jointly.'
+      : 'No joint fine-mapping saved for this run yet.';
+  } catch (e) {}
+}
+
+function closeDrawer(){
+  var dr = document.getElementById('drawer'); dr.classList.remove('open'); dr.setAttribute('aria-hidden','true');
+  setHighlight(null, '');
+}
+document.getElementById('dClose').onclick = closeDrawer;
+document.addEventListener('keydown', function(e){ if (e.key === 'Escape' && document.getElementById('drawer').classList.contains('open')) closeDrawer(); });
+document.getElementById('dCsv').onclick = function(){
+  if (!drawerLocus) return;
+  var head = ['dataset','disease','ancestry','lead_snp','chr','pos_grch37','offset_bp','effect_allele','other_allele','or','or_ci_low','or_ci_high','or_from_beta','p','nearest_gene','nearest_gene_distance_bp'];
+  var q = function(v){ v = v == null ? '' : String(v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g,'""') + '"' : v; };
+  var lines = [head.join(',')].concat(drawerRows.map(function(x){
+    return [x.dataset, x.disease, x.ancestry, x.snp, x.chr, x.pos, x.offset, x.ea, x.nea, x.or, x.or_lo, x.or_hi, x.or_from_beta, x.p, x.nearest_gene, x.gene_distance].map(q).join(',');
+  }));
+  var lc = drawerLocus.locus;
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([lines.join('\n')], {type:'text/csv'}));
+  a.download = 'serpent_locus_chr' + lc.chr + '_' + lc.start + '_' + lc.end + '.csv';
+  document.body.appendChild(a); a.click(); a.remove();
+};
 
 window.addEventListener('resize', function(){ clearTimeout(window._rt); window._rt = setTimeout(function(){ if (D) draw(); }, 150); });
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function(){ if (D) draw(); });

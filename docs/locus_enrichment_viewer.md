@@ -132,7 +132,7 @@ Deferred questions (revisit when their features come into scope):
   on whether the evidence column is categorical or numeric) against that imported evidence — not a
   full ontology-term enrichment pipeline. The evidence renders as an additional track beneath the
   existing Manhattan/gene track in `viewer.html`, and results export alongside the other new
-  statistical sheets (ANOVA, MAGMA, GCTA-GREML) in the `.xlsx` export. This answers this doc's
+  statistical sheets (ANOVA, MAGMA) in the `.xlsx` export. This answers this doc's
   original "compute vs. import" question for the shipped feature; the multi-tab, cross-dataset
   "Locus Enrichment Viewer" this doc otherwise describes (§3, §4's non-Gene-Enrichment tabs) is
   unaffected and remains open future work, not built in this pass.

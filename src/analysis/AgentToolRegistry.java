@@ -90,7 +90,7 @@ public class AgentToolRegistry {
             params(req("project_id", "string", "The project's id."))));
         tools.add(fn("list_analysis_tools",
             "List the fine-mapping/analysis tools available to run on a locus (SuSiE, FINEMAP-style, GCTA-COJO, " +
-            "colocalization, GWAMA, MAGMA, GCTA-GREML), with their parameters.",
+            "colocalization, GWAMA, MAGMA), with their parameters.",
             params()));
         tools.add(fn("run_analysis_tool",
             "Run one analysis tool (see list_analysis_tools for valid tool names and parameters) on one locus of " +

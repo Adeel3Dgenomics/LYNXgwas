@@ -97,7 +97,6 @@ your own GWAS summary statistics and walk through the setup wizard.
 - **GWAMA** — meta-analysis pass-through
 - **SuSiEx** — cross-ancestry joint fine-mapping across multiple LYNXgwas projects at once
 - **MAGMA** — gene-based and gene-set association
-- **GCTA-GREML** — SNP-heritability estimation from per-individual genotypes
 
 **Cross-dataset & regulatory**
 - **Gene/Region Constellation** — compare the same gene or genomic region across many GWAS datasets

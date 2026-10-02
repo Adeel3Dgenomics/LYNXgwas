@@ -193,6 +193,453 @@
       "novelty": null,
       "recurrence": 1,
       "last_touched": "2026-09-18T16:00:38+00:00"
+    },
+    {
+      "kind": "precaution",
+      "title": "Unlifted genome build silently drops GWAS loci instead of erroring",
+      "summary": "A summary-stats dataset left on hg18 in a GRCh37 pipeline (GRCh37 LD reference, GRCh37 GFF3) processed 'successfully' but found only 3 loci; after liftover to GRCh37 the same data gave 8 loci matching the published paper.",
+      "detail": "Position-matched joins against the reference panel just lose SNPs, so there's no crash, only fewer and weaker loci. Check genome.build for every input before cross-dataset comparisons, and lift with a chain file (pyliftover), keeping only unique same-chromosome mappings and complementing alleles on '-' strand hits.",
+      "domain": "statistical genetics / GWAS pipelines",
+      "tags": [
+        "liftover",
+        "genome-build",
+        "GWAS",
+        "summary-statistics",
+        "QC"
+      ],
+      "trigger": "combining GWAS summary stats from different studies or eras (hg18/GRCh37/GRCh38) into one pipeline",
+      "origin": "collaborative",
+      "attachments": [],
+      "snippet": null,
+      "id": "idea_0006",
+      "state": "seed",
+      "provenance": [
+        {
+          "project": "LYNXgwas",
+          "session": "041b96b9-0ee2-40ac-9347-2847a1fd196b",
+          "ts": "2026-09-28T20:57:34+00:00"
+        }
+      ],
+      "growth_log": [
+        {
+          "session": "041b96b9-0ee2-40ac-9347-2847a1fd196b",
+          "ts": "2026-09-28T20:57:34+00:00",
+          "event": "seeded",
+          "note": "first captured"
+        }
+      ],
+      "edges": [],
+      "embedding": [],
+      "novelty": null,
+      "recurrence": 1,
+      "last_touched": "2026-09-28T20:57:34+00:00"
+    },
+    {
+      "kind": "technique",
+      "title": "Fast parallel liftover of 50M-row METAL output with pyliftover",
+      "summary": "Stream the table in 2M-row pandas chunks through a multiprocessing Pool (each worker loads the chain once in its initializer). About 280 s for 52M variants on 12 workers.",
+      "detail": "Per chunk: drop unwanted single-cohort variants via the METAL Direction column (e.g. '??x' = only the 3rd cohort), convert chr:pos to 0-based for convert_coordinate, keep len(result)==1 and same chrom, complement alleles on '-' strand, then do a global dedup on chrom:pos:alleles keeping the min p. Infer the Direction column's cohort order from the METAL Weight column (= that cohort's N when only one cohort is present).",
+      "domain": "statistical genetics / GWAS pipelines",
+      "tags": [
+        "liftover",
+        "METAL",
+        "pyliftover",
+        "multiprocessing",
+        "pandas"
+      ],
+      "trigger": null,
+      "origin": "ai",
+      "attachments": [],
+      "snippet": "with Pool(12, initializer=init) as pool:\n    for res, st in pool.imap(work, pd.read_csv(SRC, sep='\t', chunksize=2_000_000)): parts.append(res)",
+      "id": "idea_0007",
+      "state": "seed",
+      "provenance": [
+        {
+          "project": "LYNXgwas",
+          "session": "041b96b9-0ee2-40ac-9347-2847a1fd196b",
+          "ts": "2026-09-28T20:57:34+00:00"
+        }
+      ],
+      "growth_log": [
+        {
+          "session": "041b96b9-0ee2-40ac-9347-2847a1fd196b",
+          "ts": "2026-09-28T20:57:34+00:00",
+          "event": "seeded",
+          "note": "first captured"
+        }
+      ],
+      "edges": [],
+      "embedding": [],
+      "novelty": null,
+      "recurrence": 1,
+      "last_touched": "2026-09-28T20:57:34+00:00"
+    },
+    {
+      "kind": "precaution",
+      "title": "Windows PowerShell 5.1 Get-Content/Set-Content silently mojibakes UTF-8 files",
+      "summary": "Editing a BOM-less UTF-8 file with (Get-Content -Raw) -replace ... | Set-Content -Encoding utf8 reads it as cp1252, so every non-ASCII character (—, ×, ⁻, ≥) was turned into mojibake (â€” etc.) across a whole HTML page.",
+      "detail": "Fix: re-encode each char as cp1252 (map chars undefined in cp1252, like U+0081, back to their single byte), then decode as UTF-8. Prevention: never round-trip UTF-8 source through PowerShell 5.1 cmdlets; use Python with explicit encoding='utf-8' or the Edit tool.",
+      "domain": "tooling / Windows",
+      "tags": [
+        "powershell",
+        "encoding",
+        "utf-8",
+        "mojibake",
+        "windows"
+      ],
+      "trigger": "making a quick text replacement in a UTF-8 file from PowerShell on Windows",
+      "origin": "ai",
+      "attachments": [],
+      "snippet": null,
+      "id": "idea_0008",
+      "state": "seed",
+      "provenance": [
+        {
+          "project": "LYNXgwas",
+          "session": "041b96b9-0ee2-40ac-9347-2847a1fd196b",
+          "ts": "2026-09-28T22:49:00+00:00"
+        }
+      ],
+      "growth_log": [
+        {
+          "session": "041b96b9-0ee2-40ac-9347-2847a1fd196b",
+          "ts": "2026-09-28T22:49:00+00:00",
+          "event": "seeded",
+          "note": "first captured"
+        }
+      ],
+      "edges": [],
+      "embedding": [],
+      "novelty": null,
+      "recurrence": 1,
+      "last_touched": "2026-09-28T22:49:00+00:00"
+    },
+    {
+      "kind": "insight",
+      "title": "Sparse-profile outliers hijack hierarchical-cluster count selection",
+      "summary": "Clustering GWAS datasets by locus-significance profiles: datasets with ~0 significant loci sit at cosine distance ~1 from everything, so the silhouette picks K=2 (outlier vs rest) and a fixed-K cut spends clusters on singletons. Excluding datasets with <3 genome-wide significant loci (still displayed and reported) took ARI vs disease from 0.00 to 0.70 on a 31-dataset corpus.",
+      "detail": "Check a cluster-count rule on the real matrix in scipy/sklearn before hard-coding it. A synthetic test with injected zero-signal outliers caught the first rule failing.",
+      "domain": "statistical genetics / clustering",
+      "tags": [
+        "clustering",
+        "silhouette",
+        "UPGMA",
+        "outliers",
+        "GWAS",
+        "PERMANOVA"
+      ],
+      "trigger": null,
+      "origin": "ai",
+      "attachments": [],
+      "snippet": null,
+      "id": "idea_0009",
+      "state": "seed",
+      "provenance": [
+        {
+          "project": "LYNXgwas",
+          "session": "041b96b9-0ee2-40ac-9347-2847a1fd196b",
+          "ts": "2026-09-28T22:49:00+00:00"
+        }
+      ],
+      "growth_log": [
+        {
+          "session": "041b96b9-0ee2-40ac-9347-2847a1fd196b",
+          "ts": "2026-09-28T22:49:00+00:00",
+          "event": "seeded",
+          "note": "first captured"
+        }
+      ],
+      "edges": [],
+      "embedding": [],
+      "novelty": null,
+      "recurrence": 1,
+      "last_touched": "2026-09-28T22:49:00+00:00"
+    },
+    {
+      "kind": "precaution",
+      "title": "PLINK 1.9 reserves half of RAM per process: parallel runs silently OOM and look like 'no variants'",
+      "summary": "Without --memory, every PLINK 1.9 process reserves ~50% of physical RAM. Running several in parallel (plus a JVM heap) makes some exit with 'Error: Out of memory' before writing output; code that discards PLINK output then reports a misleading downstream error (e.g. 'No ref panel variants in locus region', 'matched_ref.bim not found').",
+      "detail": "Seen in LYNXgwas base build: 6 parallel locus builds on a 32 GB machine with a 12 GB JVM -> ~240/1637 loci failed; the same loci succeeded serially. Scanning a 46M-variant reference .bim with --chr/--from-bp needs ~3 GB (2 GB fails, 3 GB works). Fix: pass explicit --memory (4096 for full-panel scans, 2048 for small subsets) and --threads 1, gate concurrent PLINK memory with a shared semaphore budget (physical RAM - JVM max heap - reserve), and keep PLINK's output tail for error messages. Also: PLINK exit 12 'All variants excluded' just means the region is empty in the panel (e.g. chrX in an autosome-only panel). And make step caches verify their actual output files exist, not just a manifest, or a failed run's manifest poisons reruns.",
+      "domain": "gwas/plink",
+      "tags": [
+        "plink",
+        "memory",
+        "parallelism",
+        "OOM",
+        "silent-failure",
+        "reference-panel",
+        "cache"
+      ],
+      "trigger": "Running many PLINK 1.9 jobs concurrently (threads/snakemake/parallel loci) and a subset of them fail with empty/missing outputs or 'no variants' errors that disappear when rerun serially",
+      "origin": "ai",
+      "attachments": [],
+      "snippet": null,
+      "id": "idea_0010",
+      "state": "seed",
+      "provenance": [
+        {
+          "project": "LYNXgwas",
+          "session": "2772516e-1063-4297-9864-a99b379c118c",
+          "ts": "2026-09-29T22:55:53+00:00"
+        }
+      ],
+      "growth_log": [
+        {
+          "session": "2772516e-1063-4297-9864-a99b379c118c",
+          "ts": "2026-09-29T22:55:53+00:00",
+          "event": "seeded",
+          "note": "first captured"
+        }
+      ],
+      "edges": [],
+      "embedding": [],
+      "novelty": null,
+      "recurrence": 1,
+      "last_touched": "2026-09-29T22:55:53+00:00"
+    },
+    {
+      "kind": "precaution",
+      "title": "bigsnpr::snp_cor is windowed (500 SNPs) by default: invalid LD for SuSiE on wide loci, and nearPD takes tens of minutes",
+      "summary": "snp_cor(Gna, ind.col) only correlates SNPs within size=500 positions and stores 0 elsewhere. For fine-mapping windows >500 SNPs the result is not a valid correlation matrix (hundreds of negative eigenvalues, min ~ -15), so a nearPD repair runs ~20 s per iteration for up to 100 iterations, and distant-pair LD is wrong. Pass size=length(ind.col) to get the full matrix (PSD; 3 s for 2,400 SNPs; SuSiE then 3 s).",
+      "detail": "Found running SuSiE on 1,600 GWAS loci through LYNXgwas: 3 min/locus with 3 in parallel; profiling showed susie_rss itself is 0.4 s and nearPD the bottleneck. Also: identify monomorphic SNPs by snp_MAF(G, ind.col) == 0 (NaN row counting fails with a windowed/sparse matrix), use ncores=1 when running loci in parallel, and judge credible-set purity on the unshrunk LD (shrinking R by lambda scales correlations by 1-lambda and drops sets just above min_abs_corr=0.5).",
+      "domain": "gwas/fine-mapping",
+      "tags": [
+        "susieR",
+        "bigsnpr",
+        "snp_cor",
+        "LD",
+        "nearPD",
+        "fine-mapping",
+        "performance",
+        "credible-set-purity"
+      ],
+      "trigger": "SuSiE-RSS with a bigsnpr LD matrix is very slow, needs nearPD, reports many negative eigenvalues, or loses credible sets on wide loci",
+      "origin": "ai",
+      "attachments": [],
+      "snippet": null,
+      "id": "idea_0011",
+      "state": "seed",
+      "provenance": [
+        {
+          "project": "LYNXgwas",
+          "session": "2772516e-1063-4297-9864-a99b379c118c",
+          "ts": "2026-09-30T21:48:35+00:00"
+        }
+      ],
+      "growth_log": [
+        {
+          "session": "2772516e-1063-4297-9864-a99b379c118c",
+          "ts": "2026-09-30T21:48:35+00:00",
+          "event": "seeded",
+          "note": "first captured"
+        }
+      ],
+      "edges": [],
+      "embedding": [],
+      "novelty": null,
+      "recurrence": 1,
+      "last_touched": "2026-09-30T21:48:35+00:00"
+    },
+    {
+      "kind": "precaution",
+      "title": "Build scripts that rm -rf their output dir must refuse when it holds a live deployment (settings, junctions to data)",
+      "summary": "A packaging script that recreated dist/<name> with rm -rf wiped a test deployment living in that folder (server.properties, junctions to 21 GB of datasets). Git Bash rm -rf removed the junctions without following them, so the data survived, but that is not guaranteed across tools. Guard: abort if the output folder contains live config or non-empty data dirs.",
+      "detail": "lynxgwas-server/scripts/package-server.sh now exits 3 when $OUT/server.properties exists or $OUT/app/projects is non-empty. Keep live deployments outside build output dirs; keep server state (accounts, keys) outside the package too (data.dir), which is why accounts survived.",
+      "domain": "devops/packaging",
+      "tags": [
+        "rm -rf",
+        "build-script",
+        "junction",
+        "symlink",
+        "deployment",
+        "data-loss"
+      ],
+      "trigger": "A build/package script deletes and recreates an output directory that someone may also run the app from",
+      "origin": "ai",
+      "attachments": [],
+      "snippet": null,
+      "id": "idea_0012",
+      "state": "seed",
+      "provenance": [
+        {
+          "project": "LYNXgwas",
+          "session": "2772516e-1063-4297-9864-a99b379c118c",
+          "ts": "2026-09-30T21:48:35+00:00"
+        }
+      ],
+      "growth_log": [
+        {
+          "session": "2772516e-1063-4297-9864-a99b379c118c",
+          "ts": "2026-09-30T21:48:35+00:00",
+          "event": "seeded",
+          "note": "first captured"
+        }
+      ],
+      "edges": [],
+      "embedding": [],
+      "novelty": null,
+      "recurrence": 1,
+      "last_touched": "2026-09-30T21:48:35+00:00"
+    },
+    {
+      "kind": "precaution",
+      "title": "Estimate mvSuSiE residual (sample-overlap) correlation from genome-wide null SNPs, not the locus window",
+      "summary": "Null-z correlation computed from |z|<2 SNPs inside a strong locus window is inflated by shared true signal leaking via LD (e.g. CAD pairs 0.6-0.86 vs 0.36-0.58 genome-wide; cross-disease 0.1-0.4 vs ~0). Feeding that V to mvsusie_rss splits one shared signal into many dataset-specific single-SNP credible sets (ATXN2/SH2B3: 10 sets -> 1 set led by rs3184504 active in all 10 datasets after the fix). Also: requiring SNPs null in ALL K datasets leaves too few SNPs (44 for K=10) and silently falls back to identity, hiding overlap.",
+      "detail": "Fix: per dataset, thin the full GWAS file deterministically (pos %% 53 == 7, ~2%), orient z to a strand-collapsed alphabetical allele, drop palindromic, cache; estimate V pairwise over SNPs on other chromosomes with |z|<2 in both, require >=1000 SNPs per pair.",
+      "domain": "statistical genetics",
+      "tags": [
+        "mvSuSiE",
+        "fine-mapping",
+        "sample overlap",
+        "residual correlation",
+        "multi-trait"
+      ],
+      "trigger": "building the residual_variance / V matrix for mvSuSiE, MTAG, or any multi-GWAS joint model",
+      "origin": "ai",
+      "attachments": [],
+      "snippet": null,
+      "id": "idea_0013",
+      "state": "seed",
+      "provenance": [
+        {
+          "project": "LYNXgwas",
+          "session": "2772516e",
+          "ts": "2026-10-01T17:49:15+00:00"
+        }
+      ],
+      "growth_log": [
+        {
+          "session": "2772516e",
+          "ts": "2026-10-01T17:49:15+00:00",
+          "event": "seeded",
+          "note": "first captured"
+        }
+      ],
+      "edges": [],
+      "embedding": [],
+      "novelty": null,
+      "recurrence": 1,
+      "last_touched": "2026-10-01T17:49:15+00:00"
+    },
+    {
+      "kind": "precaution",
+      "title": "Git Bash: /tmp paths inside a ;-separated Java classpath are not translated",
+      "summary": "MSYS converts a standalone /tmp/x argument (javac -d /tmp/x works) but not one embedded in \"/tmp/x;bin;lib/*\", so java silently falls through to stale classes later on the classpath (old test classes in bin/ ran and 'passed'). Use $(cygpath -w /tmp/x) in the classpath.",
+      "detail": null,
+      "domain": "windows tooling",
+      "tags": [
+        "git-bash",
+        "msys",
+        "java",
+        "classpath",
+        "testing"
+      ],
+      "trigger": "running java with a mixed classpath from Git Bash on Windows",
+      "origin": "ai",
+      "attachments": [],
+      "snippet": null,
+      "id": "idea_0014",
+      "state": "seed",
+      "provenance": [
+        {
+          "project": "LYNXgwas",
+          "session": "2772516e",
+          "ts": "2026-10-01T17:49:15+00:00"
+        }
+      ],
+      "growth_log": [
+        {
+          "session": "2772516e",
+          "ts": "2026-10-01T17:49:15+00:00",
+          "event": "seeded",
+          "note": "first captured"
+        }
+      ],
+      "edges": [],
+      "embedding": [],
+      "novelty": null,
+      "recurrence": 1,
+      "last_touched": "2026-10-01T17:49:15+00:00"
+    },
+    {
+      "kind": "technique",
+      "title": "Separate crowded 1-D tracks (serpents, labels) with least-squares block merging, and fall back when too crowded",
+      "summary": "Sort items by true x; each item has its own left/right reach (e.g. max sideways drift + half ribbon width). Required gap between neighbours = right reach of left + left reach of right + margin. Push items into blocks: when a new block collides with the previous, merge and place the merged block at the mean of (desired x - offset within block), repeat while collisions remain; clamp blocks to the axis. Draw each item from its true position on the axis and let it bend into its lane. If the total required width exceeds ~1/0.6 of the axis, skip the layout entirely: spreading everything evenly creates long diagonal leaders that are worse than overlap; tell the user to zoom instead.",
+      "detail": null,
+      "domain": "data visualization",
+      "tags": [
+        "layout",
+        "label placement",
+        "d3",
+        "svg",
+        "collision"
+      ],
+      "trigger": null,
+      "origin": "collaborative",
+      "attachments": [],
+      "snippet": null,
+      "id": "idea_0015",
+      "state": "seed",
+      "provenance": [
+        {
+          "project": "LYNXgwas",
+          "session": "2772516e",
+          "ts": "2026-10-01T19:57:21+00:00"
+        }
+      ],
+      "growth_log": [
+        {
+          "session": "2772516e",
+          "ts": "2026-10-01T19:57:21+00:00",
+          "event": "seeded",
+          "note": "first captured"
+        }
+      ],
+      "edges": [],
+      "embedding": [],
+      "novelty": null,
+      "recurrence": 1,
+      "last_touched": "2026-10-01T19:57:21+00:00"
+    },
+    {
+      "kind": "precaution",
+      "title": "Bash tool heredocs can collapse \\ before Python sees it: put edit scripts with escapes in files",
+      "summary": "In this environment a python heredoc (<<'EOF') string containing — or \\\" reached Python as — -> a real em-dash, so an exact-match replace silently failed to match (assert count==1 caught it). For edits whose search/replace text contains backslashes (JS unicode escapes, Java string escapes), write the edit script with the Write tool and use raw strings, then run it.",
+      "detail": null,
+      "domain": "tooling",
+      "tags": [
+        "bash",
+        "heredoc",
+        "escaping",
+        "python",
+        "code-editing"
+      ],
+      "trigger": "scripted find/replace edits whose text contains backslashes",
+      "origin": "ai",
+      "attachments": [],
+      "snippet": null,
+      "id": "idea_0016",
+      "state": "seed",
+      "provenance": [
+        {
+          "project": "LYNXgwas",
+          "session": "2772516e",
+          "ts": "2026-10-01T19:57:21+00:00"
+        }
+      ],
+      "growth_log": [
+        {
+          "session": "2772516e",
+          "ts": "2026-10-01T19:57:21+00:00",
+          "event": "seeded",
+          "note": "first captured"
+        }
+      ],
+      "edges": [],
+      "embedding": [],
+      "novelty": null,
+      "recurrence": 1,
+      "last_touched": "2026-10-01T19:57:21+00:00"
     }
   ]
 }

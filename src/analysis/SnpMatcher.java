@@ -39,7 +39,9 @@ public class SnpMatcher {
 
         StepManifest existing = StepManifest.read(matchedDir, "matched");
         if (existing != null && existing.isCurrent(inputHash)) {
-            if (new File(matchedDir, "matched_gwas.tsv").exists()) {
+            // matched_ref.bim too: an earlier run could write the manifest while its PLINK subset failed
+            if (new File(matchedDir, "matched_gwas.tsv").exists()
+                    && (PlinkSubsetter.findPlink(config) == null || new File(matchedDir, "matched_ref.bim").exists())) {
                 result.ok = true;
                 return result;
             }
@@ -130,26 +132,23 @@ public class SnpMatcher {
             String refPrefix = new File(baseDir, "ref_region").getAbsolutePath();
             String outPrefix = new File(matchedDir, "matched_ref").getAbsolutePath();
 
-            List<String> cmd = Arrays.asList(
-                plinkBin,
+            for (String ext : new String[]{".bed", ".bim", ".fam"}) new File(outPrefix + ext).delete();
+            List<String> args = Arrays.asList(
                 "--bfile", refPrefix,
                 "--extract", extractFile.getAbsolutePath(),
                 "--make-bed",
                 "--out", outPrefix,
                 "--silent"
             );
-            try {
-                Process proc = new ProcessBuilder(cmd).redirectErrorStream(true).start();
-                try (BufferedReader drain = new BufferedReader(new InputStreamReader(proc.getInputStream()))) {
-                    while (drain.readLine() != null) {}
-                }
-                proc.waitFor();
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
+            PlinkRunner.Result plink = PlinkRunner.run(plinkBin, args, PlinkRunner.SUBSET_MB);
 
             new File(outPrefix + ".log").delete();
             new File(outPrefix + ".nosex").delete();
+            if (!new File(outPrefix + ".bim").exists()) {
+                extractFile.delete();
+                result.error = "PLINK failed subsetting matched ref variants (" + plink.reason() + ")";
+                return result;
+            }
         }
         extractFile.delete();
 

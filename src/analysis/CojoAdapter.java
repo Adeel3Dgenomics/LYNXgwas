@@ -19,7 +19,7 @@ public class CojoAdapter {
                                   int sampleN, double pCutoff, double collinear,
                                   String gctaBin) throws IOException {
 
-        // ── Verify GCTA binary (shared with GctaGremlAdapter — see GctaBinaryResolver) ──
+        // ── Verify GCTA binary (see GctaBinaryResolver) ──
         File gctaFile = GctaBinaryResolver.verify(gctaBin);
 
         runDir.mkdirs();
@@ -268,7 +268,7 @@ public class CojoAdapter {
         String cojoPrefix = new File(runDir, "cojo").getAbsolutePath().replace("\\", "/");
 
         File rScript = new File(runDir, "run_cojo.R");
-        try (PrintWriter pw = new PrintWriter(new BufferedWriter(new FileWriter(rScript)))) {
+        try (PrintWriter pw = new PrintWriter(new BufferedWriter(new OutputStreamWriter(new FileOutputStream(rScript), java.nio.charset.StandardCharsets.UTF_8)))) {
             pw.println("#!/usr/bin/env Rscript");
             pw.printf("gcta_bin <- '%s'%n", gctaAbsolute);
             pw.printf("ma_file <- '%s'%n", maPath);
@@ -301,7 +301,7 @@ public class CojoAdapter {
             // LD-consistency warning
             pw.println("if (ld_consistency_verdict == 'high_warn') {");
             pw.println("  cat(sprintf('WARNING: LD-GWAS consistency = %s (%d SNPs flagged)\\n', ld_consistency_verdict, ld_consistency_flagged))");
-            pw.println("  cat('  Joint estimates assume LD panel matches GWAS population — cross-ancestry mismatch may produce artifacts.\\n')");
+            pw.println("  cat('  Joint estimates assume LD panel matches GWAS population - cross-ancestry mismatch may produce artifacts.\\n')");
             pw.println("}");
             pw.println();
 
@@ -310,7 +310,10 @@ public class CojoAdapter {
             pw.println("cojo_args <- c('--bfile', bfile_prefix, '--cojo-file', ma_file, '--cojo-slct',");
             pw.println("  '--cojo-p', format(p_cutoff, scientific=TRUE), '--cojo-collinear', as.character(collinear_thr), '--out', out_prefix)");
             pw.println("cat(sprintf('Command: %s %s\\n', gcta_bin, paste(cojo_args, collapse=' ')))");
-            pw.println("cojo_out <- system2(gcta_bin, args=cojo_args, stdout=TRUE, stderr=TRUE)");
+            // Stepwise selection can run away in dense regions whose reference LD doesn't match the GWAS
+            // (it keeps "finding" signals, each step slower); cap it and report it as unreliable.
+            pw.println("cojo_timeout <- 300");
+            pw.println("cojo_out <- system2(gcta_bin, args=cojo_args, stdout=TRUE, stderr=TRUE, timeout=cojo_timeout)");
             pw.println("cojo_exit <- attr(cojo_out, 'status'); if (is.null(cojo_exit)) cojo_exit <- 0L");
             pw.println("writeLines(cojo_out, paste0(out_prefix, '_stdout.log'))");
             pw.println("cat(paste(cojo_out, collapse='\\n'), '\\n')");
@@ -351,8 +354,8 @@ public class CojoAdapter {
             pw.println("      bad_freq <- jma[jma$freq_diff > 0.15, , drop=FALSE]");
             pw.println("      if (nrow(bad_freq) > 0) freq_discrepancies <- bad_freq[, c('SNP','freq','freq_geno','freq_diff')]");
             pw.println("    }");
-            pw.println("  } else { cat('Header-only .jma.cojo — 0 signals\\n') }");
-            pw.println("} else { cat(if (cojo_exit==0) 'No .jma.cojo — 0 signals\\n' else sprintf('GCTA exited %d\\n', cojo_exit)) }");
+            pw.println("  } else { cat('Header-only .jma.cojo - 0 signals\\n') }");
+            pw.println("} else { cat(if (cojo_exit==0) 'No .jma.cojo - 0 signals\\n' else sprintf('GCTA exited %d\\n', cojo_exit)) }");
             pw.println();
 
             // ═══ Step 2: --cojo-cond on selected set → pC for ALL SNPs ═══
@@ -364,7 +367,7 @@ public class CojoAdapter {
             pw.println("  cond_prefix <- paste0(out_prefix, '_final_cond')");
             pw.println("  cond_args <- c('--bfile', bfile_prefix, '--cojo-file', ma_file,");
             pw.println("    '--cojo-cond', cond_snp_file, '--out', cond_prefix)");
-            pw.println("  cond_out <- system2(gcta_bin, args=cond_args, stdout=TRUE, stderr=TRUE)");
+            pw.println("  cond_out <- system2(gcta_bin, args=cond_args, stdout=TRUE, stderr=TRUE, timeout=cojo_timeout)");
             pw.println("  cond_exit <- attr(cond_out, 'status'); if (is.null(cond_exit)) cond_exit <- 0L");
             pw.println("  cma_file <- paste0(cond_prefix, '.cma.cojo')");
             pw.println("  if (file.exists(cma_file)) {");
@@ -405,7 +408,7 @@ public class CojoAdapter {
             pw.println("if (!locus_fully_explained && length(non_sel_pC) > 0) {");
             pw.println("  res_idx <- which(result$cojo_selected != 'selected' & !is.na(result$cojo_pC) & result$cojo_pC < p_cutoff)");
             pw.println("  residual_snps <- result$snp_id[res_idx]");
-            pw.println("  cat(sprintf('WARNING: Locus NOT fully explained — %d SNPs still significant after conditioning (min pC = %.2e)\\n', length(residual_snps), max_residual_pC))");
+            pw.println("  cat(sprintf('WARNING: Locus NOT fully explained - %d SNPs still significant after conditioning (min pC = %.2e)\\n', length(residual_snps), max_residual_pC))");
             pw.println("} else if (n_selected > 0) {");
             pw.println("  cat(sprintf('Locus fully explained: all conditional p >= %.0e (min pC = %.2e)\\n', p_cutoff, max_residual_pC))");
             pw.println("}");
@@ -447,9 +450,16 @@ public class CojoAdapter {
             pw.println("}");
             pw.println("if (ld_consistency_verdict == 'high_warn' && n_artifact_snps > 0) {");
             pw.println("  cojo_reliability <- 'likely_artifact'");
-            pw.println("  reliability_reasons <- c(reliability_reasons, 'LD-GWAS consistency = high_warn + artifact flags — reference panel ancestry may not match GWAS')");
+            pw.println("  reliability_reasons <- c(reliability_reasons, 'LD-GWAS consistency = high_warn + artifact flags - reference panel ancestry may not match GWAS')");
             pw.println("}");
             pw.println("if (nrow(freq_discrepancies) > 0) reliability_reasons <- c(reliability_reasons, sprintf('%d freq discrepancies', nrow(freq_discrepancies)))");
+            pw.println("if (cojo_exit == 124) {");
+            pw.println("  cojo_reliability <- 'likely_artifact'");
+            pw.println("  reliability_reasons <- c(reliability_reasons, sprintf('GCTA stopped after %d s: stepwise selection did not converge (runaway selection; reference LD likely does not match the GWAS in this region)', cojo_timeout))");
+            pw.println("} else if (n_selected > 20) {");
+            pw.println("  cojo_reliability <- 'likely_artifact'");
+            pw.println("  reliability_reasons <- c(reliability_reasons, sprintf('%d independent signals is implausible for one locus (reference LD mismatch)', n_selected))");
+            pw.println("}");
             pw.println("cat(sprintf('Reliability: %s\\n', cojo_reliability))");
             pw.println("if (length(reliability_reasons) > 0) cat(paste('  Reasons:', paste(reliability_reasons, collapse='; '), '\\n'))");
             pw.println("if (n_artifact_snps > 0) {");
@@ -462,12 +472,12 @@ public class CojoAdapter {
             pw.println("safe_fallback_used <- FALSE");
             pw.println("safe_n_selected <- n_selected");
             pw.println("safe_selected_snps <- selected_snps");
-            pw.println("if (cojo_reliability == 'likely_artifact' && collinear_thr > 0.5) {");
-            pw.println("  cat('\\n=== ARTIFACT DETECTED — running safe fallback with collinear=0.5 ===\\n')");
+            pw.println("if (cojo_reliability == 'likely_artifact' && collinear_thr > 0.5 && cojo_exit != 124) {");
+            pw.println("  cat('\\n=== ARTIFACT DETECTED - running safe fallback with collinear=0.5 ===\\n')");
             pw.println("  safe_prefix <- paste0(out_prefix, '_safe')");
             pw.println("  safe_args <- c('--bfile', bfile_prefix, '--cojo-file', ma_file, '--cojo-slct',");
             pw.println("    '--cojo-p', format(p_cutoff, scientific=TRUE), '--cojo-collinear', '0.5', '--out', safe_prefix)");
-            pw.println("  safe_out <- system2(gcta_bin, args=safe_args, stdout=TRUE, stderr=TRUE)");
+            pw.println("  safe_out <- system2(gcta_bin, args=safe_args, stdout=TRUE, stderr=TRUE, timeout=cojo_timeout)");
             pw.println("  safe_jma <- paste0(safe_prefix, '.jma.cojo')");
             pw.println("  if (file.exists(safe_jma) && file.info(safe_jma)$size > 0) {");
             pw.println("    safe_jma_data <- tryCatch(read.table(safe_jma, header=TRUE, stringsAsFactors=FALSE), error=function(e) data.frame())");
@@ -511,7 +521,7 @@ public class CojoAdapter {
             pw.println("      n_selected <- safe_n_selected; selected_snps <- safe_selected_snps");
             pw.println("      cat(sprintf('Safe fallback: %d signal(s), max|bJ/b|=%.1f\\n', safe_n_selected,");
             pw.println("        max(abs(safe_jma_data$bJ / safe_jma_data$b), na.rm=TRUE)))");
-            pw.println("      reliability_reasons <- c(reliability_reasons, sprintf('safe fallback used (collinear=0.5): %d signal(s) — original had artifacts', safe_n_selected))");
+            pw.println("      reliability_reasons <- c(reliability_reasons, sprintf('safe fallback used (collinear=0.5): %d signal(s) - original had artifacts', safe_n_selected))");
             pw.println("    }");
             pw.println("  }");
             pw.println("}");

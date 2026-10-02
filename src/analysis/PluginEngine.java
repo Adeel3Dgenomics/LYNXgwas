@@ -206,19 +206,38 @@ public class PluginEngine {
             PlinkSubsetter.findPlink(config) : "plink");
         cmd = cmd.replace("{n_samples}", String.valueOf(0)); // from dataset meta
 
-        // User parameters
+        // User parameters (defaults filled in), with program paths made absolute: tools run inside their
+        // own run folder, so a relative "bin/gcta64.exe" or a bare "GWAMA" would not resolve there.
+        Map<String, String> eff = new LinkedHashMap<>();
         for (ToolDescriptor.Param p : td.params) {
             String val = params.getOrDefault(p.name, p.defaultValue);
-            if (val != null) cmd = cmd.replace("{" + p.name + "}", val);
+            if (val != null) eff.put(p.name, val);
         }
-
-        // Global config paths (e.g. {gcta_path})
-        // These come from global config or user params
-        for (Map.Entry<String, String> e : params.entrySet()) {
+        for (Map.Entry<String, String> e : params.entrySet()) eff.putIfAbsent(e.getKey(), e.getValue());
+        for (Map.Entry<String, String> e : eff.entrySet()) {
+            if (e.getKey().endsWith("_path") && e.getValue() != null) e.setValue(resolveProgramPath(e.getValue()));
+        }
+        for (Map.Entry<String, String> e : eff.entrySet()) {
             cmd = cmd.replace("{" + e.getKey() + "}", e.getValue());
         }
 
         return cmd;
+    }
+
+    /** A bare program name (e.g. "GWAMA") is looked up in bin/ then PATH; an existing relative path is made absolute. */
+    static String resolveProgramPath(String v) {
+        if (v.isEmpty()) return v;
+        File f = new File(v);
+        if (f.isAbsolute()) return v;
+        if (f.isFile()) return f.getAbsolutePath();
+        if (!v.contains("/") && !v.contains("\\")) {
+            String found = ToolLocator.binary(new File("."), v);
+            if (found != null) return found;
+        } else {
+            String found = ToolLocator.binary(new File("."), f.getName());
+            if (found != null) return found;
+        }
+        return v;
     }
 
     private static int executeCommand(String language, String command,
@@ -227,12 +246,12 @@ public class PluginEngine {
 
         switch (language != null ? language : "binary") {
             case "R":
-                cmdList.add("Rscript");
+                cmdList.add(ToolLocator.rscript());
                 // If command is source('path/to/script.R'), extract the path and run directly
                 if (command.startsWith("source('") && command.endsWith("')")) {
                     String scriptPath = command.substring(8, command.length() - 2);
                     cmdList.clear();
-                    cmdList.add("Rscript");
+                    cmdList.add(ToolLocator.rscript());
                     cmdList.add(scriptPath);
                 } else {
                     cmdList.add("-e");

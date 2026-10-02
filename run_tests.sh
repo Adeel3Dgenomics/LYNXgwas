@@ -30,7 +30,6 @@ javac -encoding UTF-8 -d bin -cp "bin$LIBCP" \
   tests/SnakemakeSubmitterTest.java \
   tests/AnovaUtilTest.java \
   tests/MagmaAdapterTest.java \
-  tests/GctaGremlAdapterTest.java \
   tests/SusieAdapterTest.java \
   tests/FinemapAdapterTest.java \
   tests/CojoAdapterTest.java \
@@ -40,6 +39,8 @@ javac -encoding UTF-8 -d bin -cp "bin$LIBCP" \
   tests/GeneConstellationBuilderTest.java \
   tests/RegionConstellationBuilderTest.java \
   tests/SerpentPlotBuilderTest.java \
+  tests/ToolLocatorTest.java \
+  tests/PlinkRunnerTest.java \
   tests/MultiLocusResultPersistenceTest.java \
   tests/GlobalSearchIndexTest.java \
   tests/RegulatoryPeakIndexTest.java \
@@ -90,9 +91,6 @@ echo
 echo "--- MagmaAdapterTest ---"
 java -cp "bin$LIBCP" MagmaAdapterTest || FAILED=1
 
-echo
-echo "--- GctaGremlAdapterTest ---"
-java -cp "bin$LIBCP" GctaGremlAdapterTest || FAILED=1
 
 echo
 echo "--- SusieAdapterTest ---"
@@ -129,6 +127,12 @@ java -cp "bin$LIBCP" RegionConstellationBuilderTest || FAILED=1
 echo
 echo "--- MultiLocusResultPersistenceTest ---"
 java -cp "bin$LIBCP" MultiLocusResultPersistenceTest || FAILED=1
+
+echo
+echo "--- ToolLocatorTest ---"
+java -cp "bin$LIBCP" ToolLocatorTest || FAILED=1
+echo "--- PlinkRunnerTest ---"
+java -cp "bin$LIBCP" PlinkRunnerTest || FAILED=1
 
 echo
 echo "--- SerpentPlotBuilderTest ---"

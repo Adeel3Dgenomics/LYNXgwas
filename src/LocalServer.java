@@ -229,9 +229,19 @@ public class LocalServer {
         http.createContext("/api/gene-constellation",    this::geneConstellation);
         http.createContext("/api/gene-constellation-export", this::geneConstellationExport);
         http.createContext("/api/serpent-plot",          this::serpentPlot);
+        http.createContext("/api/serpent-locus",         this::serpentLocus);
         http.createContext("/api/susiex-run",        this::susiexRun);
         http.createContext("/api/susiex-progress",   this::susiexProgress);
         http.createContext("/api/susiex-result",     this::susiexResult);
+        http.createContext("/api/mvsusie-run",       this::mvsusieRun);
+        http.createContext("/api/mvsusie-progress",  this::mvsusieProgress);
+        http.createContext("/api/mvsusie-result",    this::mvsusieResult);
+        http.createContext("/api/mvsusie-latest",    this::mvsusieLatest);
+        http.createContext("/api/mvsusie-for-dataset", this::mvsusieForDataset);
+        http.createContext("/api/mvsusie-run-all",   this::mvsusieRunAll);
+        http.createContext("/api/mvsusie-run-all-progress", this::mvsusieRunAllProgress);
+        http.createContext("/api/mvsusie-run-all-cancel",   this::mvsusieRunAllCancel);
+        http.createContext("/api/mvsusie-summary",   this::mvsusieSummary);
         http.createContext("/api/search/rebuild-index", this::searchRebuildIndex);
         http.createContext("/api/search",            this::globalSearch);
         http.createContext("/pick-folder-native",    this::pickFolder);
@@ -540,6 +550,20 @@ public class LocalServer {
             projectLocusBuildLog(ex, projectDir, action);
         } else if (action.equals("analysis/tools")) {
             projectAnalysisTools(ex);  // doesn't need project state
+        } else if (action.equals("analysis/latest")) {
+            projectAnalysisLatest(ex, projectId, projectDir);
+        } else if (action.equals("analysis/run-result")) {
+            projectAnalysisRunResult(ex, projectId, projectDir);
+        } else if (action.equals("analysis/summary")) {
+            projectAnalysisSummary(ex, projectId, projectDir);
+        } else if (action.equals("analysis/run-all")) {
+            projectAnalysisRunAll(ex, projectId, projectDir);
+        } else if (action.equals("analysis/run-all-progress")) {
+            projectAnalysisRunAllProgress(ex, projectId);
+        } else if (action.equals("analysis/run-all-cancel")) {
+            BatchRun br = batchRuns.get(projectId + "|" + queryParam(ex, "tool"));
+            if (br != null) br.cancelled = true;
+            respond(ex, 200, "application/json", "{\"ok\":true}".getBytes());
         } else if (action.equals("analysis/run")) {
             projectAnalysisRun(ex, projectId, projectDir);
         } else if (action.startsWith("analysis/job/")) {
@@ -1736,89 +1760,1173 @@ public class LocalServer {
         analysisJobProgress.put(jobId, pt);
 
         // Run in background
-        new Thread(() -> {
-            try {
-                pt.update("Preparing", 0, 4);
-
-                // Tool-specific input preparation
-                File analysisRoot = BaseStepPipeline.analysisDir(cfg, targetLocus);
-                File harmonizedDir = new File(analysisRoot, "harmonized");
-                File matchedDir = new File(analysisRoot, "matched");
-                File ldDir = new File(analysisRoot, "ld");
-                File runDir = new File(analysisRoot, "runs/" + jobId);
-                runDir.mkdirs();
-
-                int sampleN = cfg.sampleN;
-
-                if (toolName.startsWith("cojo")) {
-                    double pCutoff = 5e-8;
-                    double collinear = 0.9;
-                    try { pCutoff = Double.parseDouble(params.getOrDefault("p_cutoff", "5e-8")); } catch (NumberFormatException e) {}
-                    try { collinear = Double.parseDouble(params.getOrDefault("collinear", "0.9")); } catch (NumberFormatException e) {}
-                    String gctaBin = params.getOrDefault("gcta_path", "bin/gcta64.exe");
-                    CojoAdapter.prepareRun(harmonizedDir, matchedDir, runDir, sampleN, pCutoff, collinear, gctaBin);
-                } else if (toolName.equals("susie_finemapping")) {
-                    int maxCausal = 10;
-                    double coverage = 0.95, ldShrink = 0.1;
-                    int windowKb = 250;
-                    try { maxCausal = Integer.parseInt(params.getOrDefault("max_causal", "10")); } catch (NumberFormatException e) {}
-                    try { coverage = Double.parseDouble(params.getOrDefault("coverage", "0.95")); } catch (NumberFormatException e) {}
-                    try { ldShrink = Double.parseDouble(params.getOrDefault("ld_shrink", "0.1")); } catch (NumberFormatException e) {}
-                    try { windowKb = Integer.parseInt(params.getOrDefault("window_kb", "250")); } catch (NumberFormatException e) {}
-                    SusieAdapter.prepareRun(harmonizedDir, matchedDir, runDir, sampleN, maxCausal, coverage, ldShrink, windowKb);
-                } else if (toolName.equals("finemap")) {
-                    int maxCausal = 5;
-                    try { maxCausal = Integer.parseInt(params.getOrDefault("max_causal", "5")); } catch (NumberFormatException e) {}
-                    FinemapAdapter.prepareRun(harmonizedDir, ldDir, matchedDir, runDir, sampleN, maxCausal);
-                } else if (toolName.equals("coloc")) {
-                    String trait2File = params.get("trait2_file");
-                    String trait2Type = params.getOrDefault("trait2_type", "quant");
-                    int trait2N = 0, trait2NCases = 0;
-                    double p1 = 1e-4, p2 = 1e-4, p12 = 1e-5, pipThreshold = 0.1;
-                    boolean restrictToFinemapped = "true".equalsIgnoreCase(params.getOrDefault("restrict_to_finemapped", "false"));
-                    try { trait2N = Integer.parseInt(params.getOrDefault("trait2_n", "0")); } catch (NumberFormatException e) {}
-                    try { trait2NCases = Integer.parseInt(params.getOrDefault("trait2_n_cases", "0")); } catch (NumberFormatException e) {}
-                    try { p1 = Double.parseDouble(params.getOrDefault("p1", "1e-4")); } catch (NumberFormatException e) {}
-                    try { p2 = Double.parseDouble(params.getOrDefault("p2", "1e-4")); } catch (NumberFormatException e) {}
-                    try { p12 = Double.parseDouble(params.getOrDefault("p12", "1e-5")); } catch (NumberFormatException e) {}
-                    try { pipThreshold = Double.parseDouble(params.getOrDefault("finemap_pip_threshold", "0.1")); } catch (NumberFormatException e) {}
-                    ColocAdapter.prepareRun(harmonizedDir, runDir, targetLocus, cfg,
-                        trait2File, trait2Type, trait2N, trait2NCases, p1, p2, p12,
-                        analysisRoot, restrictToFinemapped, pipThreshold);
-                } else if (toolName.equals("gwama_meta")) {
-                    GwamaAdapter.prepareRun(harmonizedDir, runDir);
-                }
-
-                PluginEngine.RunRequest req = new PluginEngine.RunRequest();
-                req.tool = toolName;
-                req.params = params;
-                req.locusId = locusId;
-                req.projectId = projectId;
-                req.projectDir = cfg.outputDir;
-                req.preCreatedRunDir = runDir.getAbsolutePath();
-
-                pt.update("Running " + toolName, 1, 4);
-                PluginEngine.RunResult result = PluginEngine.execute(req, cfg, targetLocus, pt);
-                result.jobId = jobId;
-
-                // R scripts write result.tsv + result.manifest.json directly
-
-                analysisJobs.put(jobId, result);
-                pt.done = true;
-                pt.phase = result.ok ? "Complete" : "Error: " + result.error;
-
-            } catch (Exception e) {
-                PluginEngine.RunResult errResult = new PluginEngine.RunResult();
-                errResult.jobId = jobId;
-                errResult.error = e.getMessage();
-                analysisJobs.put(jobId, errResult);
-                pt.done = true;
-                pt.phase = "Error: " + e.getMessage();
-            }
-        }, "analysis-run-" + jobId).start();
+        new Thread(() -> runAnalysisJob(projectId, cfg, targetLocus, toolName, params, jobId, pt),
+            "analysis-run-" + jobId).start();
 
         respond(ex, 202, "application/json",
             ("{\"job_id\":\"" + jobId + "\",\"status\":\"started\"}").getBytes());
+    }
+
+    /**
+     * Runs one tool on one locus and blocks until it finishes; the result is also recorded under
+     * {@code jobId} for the job endpoints. Shared by the per-locus "Run" button and batch runs.
+     */
+    private PluginEngine.RunResult runAnalysisJob(String projectId, Config cfg, Locus targetLocus, String toolName,
+                                                  Map<String, String> params, String jobId, ProgressTracker pt) {
+        String locusId = targetLocus.id;
+        try {
+            pt.update("Preparing", 0, 4);
+
+            // Tool-specific input preparation
+            File analysisRoot = BaseStepPipeline.analysisDir(cfg, targetLocus);
+            File harmonizedDir = new File(analysisRoot, "harmonized");
+            File matchedDir = new File(analysisRoot, "matched");
+            File ldDir = new File(analysisRoot, "ld");
+            File runDir = new File(analysisRoot, "runs/" + jobId);
+            runDir.mkdirs();
+
+            int sampleN = cfg.sampleN;
+
+            if (toolName.startsWith("cojo")) {
+                double pCutoff = 5e-8;
+                double collinear = 0.9;
+                try { pCutoff = Double.parseDouble(params.getOrDefault("p_cutoff", "5e-8")); } catch (NumberFormatException e) {}
+                try { collinear = Double.parseDouble(params.getOrDefault("collinear", "0.9")); } catch (NumberFormatException e) {}
+                String gctaBin = params.getOrDefault("gcta_path", "bin/gcta64.exe");
+                CojoAdapter.prepareRun(harmonizedDir, matchedDir, runDir, sampleN, pCutoff, collinear, gctaBin);
+            } else if (toolName.equals("susie_finemapping")) {
+                int maxCausal = 10;
+                double coverage = 0.95, ldShrink = 0.1;
+                int windowKb = 250;
+                try { maxCausal = Integer.parseInt(params.getOrDefault("max_causal", "10")); } catch (NumberFormatException e) {}
+                try { coverage = Double.parseDouble(params.getOrDefault("coverage", "0.95")); } catch (NumberFormatException e) {}
+                try { ldShrink = Double.parseDouble(params.getOrDefault("ld_shrink", "0.1")); } catch (NumberFormatException e) {}
+                try { windowKb = Integer.parseInt(params.getOrDefault("window_kb", "250")); } catch (NumberFormatException e) {}
+                SusieAdapter.prepareRun(harmonizedDir, matchedDir, runDir, sampleN, maxCausal, coverage, ldShrink, windowKb);
+            } else if (toolName.equals("finemap")) {
+                int maxCausal = 5;
+                try { maxCausal = Integer.parseInt(params.getOrDefault("max_causal", "5")); } catch (NumberFormatException e) {}
+                FinemapAdapter.prepareRun(harmonizedDir, ldDir, matchedDir, runDir, sampleN, maxCausal);
+            } else if (toolName.equals("coloc")) {
+                String trait2File = params.get("trait2_file");
+                String trait2Type = params.getOrDefault("trait2_type", "quant");
+                int trait2N = 0, trait2NCases = 0;
+                double p1 = 1e-4, p2 = 1e-4, p12 = 1e-5, pipThreshold = 0.1;
+                boolean restrictToFinemapped = "true".equalsIgnoreCase(params.getOrDefault("restrict_to_finemapped", "false"));
+                try { trait2N = Integer.parseInt(params.getOrDefault("trait2_n", "0")); } catch (NumberFormatException e) {}
+                try { trait2NCases = Integer.parseInt(params.getOrDefault("trait2_n_cases", "0")); } catch (NumberFormatException e) {}
+                try { p1 = Double.parseDouble(params.getOrDefault("p1", "1e-4")); } catch (NumberFormatException e) {}
+                try { p2 = Double.parseDouble(params.getOrDefault("p2", "1e-4")); } catch (NumberFormatException e) {}
+                try { p12 = Double.parseDouble(params.getOrDefault("p12", "1e-5")); } catch (NumberFormatException e) {}
+                try { pipThreshold = Double.parseDouble(params.getOrDefault("finemap_pip_threshold", "0.1")); } catch (NumberFormatException e) {}
+                ColocAdapter.prepareRun(harmonizedDir, runDir, targetLocus, cfg,
+                    trait2File, trait2Type, trait2N, trait2NCases, p1, p2, p12,
+                    analysisRoot, restrictToFinemapped, pipThreshold);
+            } else if (toolName.equals("gwama_meta")) {
+                GwamaAdapter.prepareRun(harmonizedDir, runDir);
+            }
+
+            PluginEngine.RunRequest req = new PluginEngine.RunRequest();
+            req.tool = toolName;
+            req.params = params;
+            req.locusId = locusId;
+            req.projectId = projectId;
+            req.projectDir = cfg.outputDir;
+            req.preCreatedRunDir = runDir.getAbsolutePath();
+
+            pt.update("Running " + toolName, 1, 4);
+            PluginEngine.RunResult result = PluginEngine.execute(req, cfg, targetLocus, pt);
+            result.jobId = jobId;
+
+            // R scripts write result.tsv + result.manifest.json directly
+
+            analysisJobs.put(jobId, result);
+            pt.done = true;
+            pt.phase = result.ok ? "Complete" : "Error: " + result.error;
+            return result;
+
+        } catch (Exception e) {
+            PluginEngine.RunResult errResult = new PluginEngine.RunResult();
+            errResult.jobId = jobId;
+            errResult.error = e.getMessage();
+            analysisJobs.put(jobId, errResult);
+            pt.done = true;
+            pt.phase = "Error: " + e.getMessage();
+            return errResult;
+        }
+    }
+
+    // ── Saved results: read finished runs back from disk ─────────────────────
+
+    /** One finished run of one tool at one locus, summarised for display. */
+    static class RunSummary {
+        String tool, runId;
+        long timestamp;
+        int rows;
+        String topSnp = "", topPos = "";
+        double topPip = Double.NaN;
+        int nSets;                                   // SuSiE/FINEMAP credible sets, COJO independent signals
+        String reliability = "";                     // COJO: ok | suspect | likely_artifact
+        String note = "";                            // COJO: why it is not reliable
+        final List<String> setLines = new ArrayList<>();   // "CS1: 9 SNPs, lead rs123 (PIP 0.26)" / "rs123 (pJ 1e-12)"
+
+        String toJson() {
+            StringBuilder j = new StringBuilder("{");
+            j.append("\"tool\":\"").append(escJ(tool)).append('"');
+            j.append(",\"run_id\":\"").append(escJ(runId)).append('"');
+            j.append(",\"timestamp\":").append(timestamp);
+            j.append(",\"rows\":").append(rows);
+            j.append(",\"top_snp\":\"").append(escJ(topSnp)).append('"');
+            j.append(",\"top_pos\":\"").append(escJ(topPos)).append('"');
+            j.append(",\"top_pip\":").append(Double.isNaN(topPip) ? "null" : String.format(Locale.ROOT, "%.4f", topPip));
+            j.append(",\"n_sets\":").append(nSets);
+            j.append(",\"reliability\":\"").append(escJ(reliability)).append('"');
+            j.append(",\"note\":\"").append(escJ(note)).append('"');
+            j.append(",\"sets\":[");
+            for (int i = 0; i < setLines.size(); i++) { if (i > 0) j.append(','); j.append('"').append(escJ(setLines.get(i))).append('"'); }
+            return j.append("]}").toString();
+        }
+    }
+
+    /** Newest successful run per tool at this locus (a run counts when provenance.json and result.tsv exist). */
+    static Map<String, RunSummary> latestRuns(Config cfg, Locus locus) {
+        Map<String, RunSummary> latest = new TreeMap<>();
+        File[] dirs = new File(BaseStepPipeline.analysisDir(cfg, locus), "runs").listFiles(File::isDirectory);
+        if (dirs == null) return latest;
+        for (File d : dirs) {
+            File prov = new File(d, "provenance.json"), res = new File(d, "result.tsv");
+            if (!prov.isFile() || !res.isFile()) continue;
+            try {
+                Map<String, Object> p = MiniJson.asObject(MiniJson.parse(new String(Files.readAllBytes(prov.toPath()), "UTF-8")));
+                String tool = MiniJson.getStr(p, "tool", "");
+                long ts = p.get("timestamp") instanceof Number ? ((Number) p.get("timestamp")).longValue() : d.lastModified();
+                RunSummary prev = latest.get(tool);
+                if (prev != null && prev.timestamp >= ts) continue;
+                RunSummary rs = summarise(tool, d.getName(), ts, res);
+                if (rs != null) latest.put(tool, rs);
+            } catch (Exception ignored) {}
+        }
+        return latest;
+    }
+
+    static RunSummary summarise(String tool, String runId, long ts, File resultTsv) throws IOException {
+        RunSummary rs = new RunSummary();
+        rs.tool = tool; rs.runId = runId; rs.timestamp = ts;
+        List<String> lines = Files.readAllLines(resultTsv.toPath());
+        if (lines.isEmpty()) return rs;
+        List<String> h = Arrays.asList(lines.get(0).split("\t", -1));
+        int iSnp = h.indexOf("snp_id"), iPos = h.indexOf("pos");
+        int iPip = h.indexOf(tool.startsWith("susie") ? "susie_pip" : "finemap_pip");
+        int iCs = h.indexOf(tool.startsWith("susie") ? "susie_cs" : "finemap_cs");
+        int iSel = h.indexOf("cojo_selected"), iPj = h.indexOf("cojo_pJ");
+        Map<String, List<String[]>> sets = new TreeMap<>();
+        for (int r = 1; r < lines.size(); r++) {
+            String[] f = lines.get(r).split("\t", -1);
+            if (f.length < h.size()) continue;
+            rs.rows++;
+            if (iPip >= 0) {
+                try {
+                    double pip = Double.parseDouble(f[iPip]);
+                    if (Double.isNaN(rs.topPip) || pip > rs.topPip) { rs.topPip = pip; rs.topSnp = f[iSnp]; rs.topPos = iPos >= 0 ? f[iPos] : ""; }
+                } catch (NumberFormatException ignored) {}
+            }
+            if (iCs >= 0 && !f[iCs].isEmpty() && !f[iCs].equals("NA")) sets.computeIfAbsent(f[iCs], k -> new ArrayList<>()).add(f);
+            if (iSel >= 0 && f[iSel].equalsIgnoreCase("selected")) {
+                rs.nSets++;
+                rs.setLines.add(f[iSnp] + (iPj >= 0 && !f[iPj].equals("NA") ? " (joint p " + f[iPj] + ")" : ""));
+                if (rs.topSnp.isEmpty()) { rs.topSnp = f[iSnp]; rs.topPos = iPos >= 0 ? f[iPos] : ""; }
+            }
+        }
+        File log = new File(resultTsv.getParentFile(), "run.log");
+        if (tool.startsWith("cojo") && log.isFile()) {
+            for (String line : Files.readAllLines(log.toPath())) {
+                if (line.startsWith("Reliability: ")) rs.reliability = line.substring(13).trim();
+                else if (line.trim().startsWith("Reasons: ")) rs.note = line.trim().substring(9).trim();
+            }
+        }
+        for (Map.Entry<String, List<String[]>> e : sets.entrySet()) {
+            String[] lead = null; double best = -1;
+            for (String[] f : e.getValue()) {
+                try { double v = Double.parseDouble(f[iPip]); if (v > best) { best = v; lead = f; } } catch (NumberFormatException ignored) {}
+            }
+            rs.nSets++;
+            rs.setLines.add("Set " + e.getKey() + ": " + e.getValue().size() + " SNPs, lead " + (lead == null ? "?" : lead[iSnp])
+                + String.format(Locale.ROOT, " (PIP %.2f)", Math.max(best, 0)));
+        }
+        if (tool.startsWith("susie")) {
+            // Every allowed effect forming a credible set usually means SuSiE is explaining an LD
+            // mismatch between the reference panel and the GWAS, not that many causal variants exist.
+            int maxL = 10;
+            try {
+                String prov = new String(Files.readAllBytes(new File(resultTsv.getParentFile(), "provenance.json").toPath()), "UTF-8");
+                java.util.regex.Matcher m = java.util.regex.Pattern.compile("\"max_causal\"\\s*:\\s*\"?(\\d+)").matcher(prov);
+                if (m.find()) maxL = Integer.parseInt(m.group(1));
+            } catch (Exception ignored) {}
+            // The run log records the measured GWAS-vs-reference LD inconsistency (estimate_s_rss)
+            double sRss = Double.NaN;
+            File runLog = new File(resultTsv.getParentFile(), "run.log");
+            if (runLog.isFile())
+                for (String line : Files.readAllLines(runLog.toPath()))
+                    if (line.contains("inconsistency s = "))
+                        try { sRss = Double.parseDouble(line.substring(line.indexOf("s = ") + 4).trim()); } catch (NumberFormatException ignored) {}
+            boolean saturated = rs.nSets >= maxL, inconsistent = sRss > 0.3;
+            rs.reliability = saturated || inconsistent ? "check" : "ok";
+            if (saturated)
+                rs.note = "All " + maxL + " SuSiE effects formed credible sets: this usually means the reference-panel LD "
+                    + "does not match the GWAS in this region (common in large, dense regions). Interpret with caution.";
+            else if (inconsistent)
+                rs.note = String.format(Locale.ROOT, "The GWAS z-scores are inconsistent with the reference LD here (s = %.2f > 0.3): "
+                    + "credible sets may include spurious signals. Interpret with caution.", sRss);
+        }
+        return rs;
+    }
+
+    private Locus findLocus(ProjectState ps, String locusId) {
+        if (ps == null || ps.loci == null || locusId == null) return null;
+        for (Locus l : ps.loci) if (l.id.equals(locusId)) return l;
+        return null;
+    }
+
+    // GET /api/project/{id}/analysis/latest?locus_id=... — newest finished run per tool, summarised
+    private void projectAnalysisLatest(HttpExchange ex, String projectId, String projectDir) throws IOException {
+        ProjectState ps = ensureProjectState(projectId, projectDir);
+        Locus l = findLocus(ps, queryParam(ex, "locus_id"));
+        if (l == null) { respond(ex, 404, "application/json", "{\"error\":\"Locus not found\"}".getBytes()); return; }
+        StringBuilder j = new StringBuilder("{\"runs\":[");
+        boolean first = true;
+        for (RunSummary rs : latestRuns(ps.config, l).values()) {
+            if (!first) j.append(',');
+            first = false;
+            j.append(rs.toJson());
+        }
+        respond(ex, 200, "application/json", j.append("]}").toString().getBytes("UTF-8"));
+    }
+
+    // GET /api/project/{id}/analysis/run-result?locus_id=...&run_id=... — a saved run's result.tsv
+    private void projectAnalysisRunResult(HttpExchange ex, String projectId, String projectDir) throws IOException {
+        ProjectState ps = ensureProjectState(projectId, projectDir);
+        Locus l = findLocus(ps, queryParam(ex, "locus_id"));
+        String runId = queryParam(ex, "run_id");
+        if (l == null || runId == null || !runId.matches("[A-Za-z0-9-]{1,64}")) {
+            respond(ex, 404, "application/json", "{\"error\":\"Run not found\"}".getBytes()); return;
+        }
+        File f = new File(new File(new File(BaseStepPipeline.analysisDir(ps.config, l), "runs"), runId), "result.tsv");
+        if (!f.isFile()) { respond(ex, 404, "application/json", "{\"error\":\"Run not found\"}".getBytes()); return; }
+        respond(ex, 200, "text/tab-separated-values", Files.readAllBytes(f.toPath()));
+    }
+
+    // GET /api/project/{id}/analysis/summary[?format=tsv] — every locus x tool, latest run each
+    private void projectAnalysisSummary(HttpExchange ex, String projectId, String projectDir) throws IOException {
+        ProjectState ps = ensureProjectState(projectId, projectDir);
+        if (ps == null || ps.loci == null) { respond(ex, 503, "application/json", "{\"error\":\"Pipeline state not available\"}".getBytes()); return; }
+        boolean tsv = "tsv".equals(queryParam(ex, "format"));
+        StringBuilder out = new StringBuilder();
+        if (tsv) out.append("locus\tlocus_id\tchr\tstart\tend\ttool\ttop_snp\ttop_pos\ttop_pip\tn_sets\tsets\treliability\tnote\trun_id\n");
+        else out.append("{\"loci\":[");
+        boolean first = true;
+        for (Locus l : ps.loci) {
+            Map<String, RunSummary> runs = latestRuns(ps.config, l);
+            if (tsv) {
+                for (RunSummary rs : runs.values())
+                    out.append(l.index).append('\t').append(l.id).append('\t').append(l.chr).append('\t').append(l.start).append('\t').append(l.end)
+                       .append('\t').append(rs.tool).append('\t').append(rs.topSnp).append('\t').append(rs.topPos)
+                       .append('\t').append(Double.isNaN(rs.topPip) ? "" : String.format(Locale.ROOT, "%.4f", rs.topPip))
+                       .append('\t').append(rs.nSets).append('\t').append(String.join("; ", rs.setLines))
+                       .append('\t').append(rs.reliability).append('\t').append(rs.note.replace('\t', ' ')).append('\t').append(rs.runId).append('\n');
+                continue;
+            }
+            if (!first) out.append(',');
+            first = false;
+            out.append("{\"index\":").append(l.index).append(",\"id\":\"").append(escJ(l.id)).append("\",\"chr\":\"").append(escJ(l.chr))
+               .append("\",\"start\":").append(l.start).append(",\"end\":").append(l.end)
+               .append(",\"mhc\":").append(BaseStepPipeline.overlapsMhc(l, ps.config.genomeBuild)).append(",\"runs\":[");
+            boolean f2 = true;
+            for (RunSummary rs : runs.values()) { if (!f2) out.append(','); f2 = false; out.append(rs.toJson()); }
+            out.append("]}");
+        }
+        if (tsv) {
+            ex.getResponseHeaders().set("Content-Disposition", "attachment; filename=\"" + projectId + "_finemapping_summary.tsv\"");
+            respond(ex, 200, "text/tab-separated-values", out.toString().getBytes("UTF-8"));
+        } else {
+            respond(ex, 200, "application/json", out.append("]}").toString().getBytes("UTF-8"));
+        }
+    }
+
+    // ── Joint fine-mapping across datasets (mvSuSiE) on an aligned locus ────
+    //
+    // POST /api/mvsusie-run {"job": <cross-dataset run id>, "locus": <aligned locus index>,
+    //                        "mode": "within" | "cross", "disease": <optional, within mode>}
+    // Safeguards: only datasets genome-wide significant at the locus with built inputs; datasets whose
+    // SuSiE result is flagged "check" (LD mismatch) are left out; "within" (default) keeps one disease;
+    // "cross" keeps only datasets whose SuSiE credible sets overlap the consensus signal, since pooling
+    // different causal variants misleads the fit. Every exclusion is reported with its reason; the R side
+    // reports the between-dataset correlation (sample overlap) and, per credible set, the datasets it is
+    // active in.
+    //
+    // Every run is saved under output/mvsusie/<id>/ (manifest, result.json, meta.json) and indexed in
+    // memory, so a locus shows its latest joint result when reopened, each dataset's regional plot can
+    // draw it, and a whole cross-dataset run can be fine-mapped jointly in one batch.
+
+    static class MvsusieJob {
+        String ownerId;
+        volatile String status = "running", phase = "Selecting datasets", error;
+        volatile String selectionJson = "{}", resultJson, metaJson;
+        final long startedAt = System.currentTimeMillis();
+    }
+    private final Map<String, MvsusieJob> mvsusieJobs = new ConcurrentHashMap<>();
+    static final long MVSUSIE_HALF_WINDOW = 250_000L;
+    static final File MVSUSIE_DIR = new File("output/mvsusie");
+
+    /** A saved run's summary (from its meta.json), for listing without reading the result. */
+    static class MvsusieSaved {
+        String id, job, mode, disease = "", status, error, ownerId, leadSnp = "", gene = "", chr = "";
+        int locus, nSets, nDatasets;
+        long created;
+        double leadPip = Double.NaN;
+        final Map<String, Integer> datasetLoci = new LinkedHashMap<>();   // dataset -> its own locus index
+
+        String toJson() {
+            StringBuilder j = new StringBuilder("{");
+            j.append("\"id\":\"").append(escJ(id)).append("\",\"job\":\"").append(escJ(job)).append("\",\"locus\":").append(locus)
+             .append(",\"mode\":\"").append(escJ(mode)).append("\",\"disease\":\"").append(escJ(disease))
+             .append("\",\"status\":\"").append(escJ(status)).append("\",\"created\":").append(created)
+             .append(",\"n_sets\":").append(nSets).append(",\"n_datasets\":").append(nDatasets)
+             .append(",\"lead_snp\":\"").append(escJ(leadSnp)).append('"')
+             .append(",\"lead_pip\":").append(Double.isNaN(leadPip) ? "null" : String.format(Locale.ROOT, "%.4f", leadPip))
+             .append(",\"gene\":\"").append(escJ(gene)).append('"');
+            if (error != null) j.append(",\"error\":\"").append(escJ(error)).append('"');
+            j.append(",\"datasets\":{");
+            int i = 0;
+            for (Map.Entry<String, Integer> e : datasetLoci.entrySet())
+                j.append(i++ > 0 ? "," : "").append('"').append(escJ(e.getKey())).append("\":").append(e.getValue());
+            return j.append("}}").toString();
+        }
+    }
+    private final Map<String, MvsusieSaved> mvsusieSaved = new ConcurrentHashMap<>();
+    private volatile boolean mvsusieIndexed = false;
+
+    // Access hooks (desktop: single user, everything visible; the server edition narrows these)
+    private String mvsusieUser(HttpExchange ex) { return null; }
+    private boolean mvsusieCanSeeRun(HttpExchange ex, String job) { return job != null; }
+    private boolean mvsusieReadable(HttpExchange ex, String pid) { return true; }
+    private boolean mvsusieVisible(HttpExchange ex, MvsusieSaved s) {
+        return s.ownerId == null || s.ownerId.equals(mvsusieUser(ex));
+    }
+
+    private static MvsusieSaved parseSavedMeta(Map<String, Object> m) {
+        MvsusieSaved s = new MvsusieSaved();
+        s.id = MiniJson.getStr(m, "id", "");
+        s.job = MiniJson.getStr(m, "job", "");
+        s.locus = (int) num(m.get("locus"), -1);
+        s.mode = MiniJson.getStr(m, "mode", "within");
+        s.disease = MiniJson.getStr(m, "disease", "");
+        s.status = MiniJson.getStr(m, "status", "error");
+        s.error = m.get("error") == null ? null : String.valueOf(m.get("error"));
+        s.ownerId = m.get("owner") == null ? null : String.valueOf(m.get("owner"));
+        s.created = (long) num(m.get("created"), 0);
+        s.nSets = (int) num(m.get("n_sets"), 0);
+        s.leadSnp = MiniJson.getStr(m, "lead_snp", "");
+        s.leadPip = num(m.get("lead_pip"), Double.NaN);
+        s.gene = MiniJson.getStr(m, "gene", "");
+        s.chr = MiniJson.getStr(m, "chr", "");
+        Object ds = m.get("datasets");
+        if (ds instanceof List)
+            for (Object o : (List<?>) ds)
+                if (o instanceof Map) {
+                    Map<String, Object> d = MiniJson.asObject(o);
+                    s.datasetLoci.put(MiniJson.getStr(d, "id", ""), (int) num(d.get("locus_index"), -1));
+                }
+        s.nDatasets = s.datasetLoci.size();
+        return s;
+    }
+
+    private static double num(Object o, double dflt) {
+        if (o instanceof Number) return ((Number) o).doubleValue();
+        try { return o == null ? dflt : Double.parseDouble(String.valueOf(o)); } catch (NumberFormatException e) { return dflt; }
+    }
+
+    /** Loads every saved run's meta.json once (lazily, on first use). */
+    private void ensureMvsusieIndex() {
+        if (mvsusieIndexed) return;
+        synchronized (mvsusieSaved) {
+            if (mvsusieIndexed) return;
+            File[] dirs = MVSUSIE_DIR.listFiles(File::isDirectory);
+            if (dirs != null)
+                for (File d : dirs) {
+                    File meta = new File(d, "meta.json");
+                    if (!meta.isFile()) continue;
+                    try {
+                        MvsusieSaved s = parseSavedMeta(MiniJson.asObject(MiniJson.parse(
+                            new String(Files.readAllBytes(meta.toPath()), "UTF-8"))));
+                        if (s.id.equals(d.getName())) mvsusieSaved.put(s.id, s);
+                    } catch (Exception e) {
+                        System.err.println("[mvSuSiE] skipping unreadable " + meta + ": " + e.getMessage());
+                    }
+                }
+            mvsusieIndexed = true;
+        }
+    }
+
+    /** Saved runs at one aligned locus of one cross-dataset run, newest first. */
+    private List<MvsusieSaved> savedAtLocus(String job, int locus) {
+        ensureMvsusieIndex();
+        List<MvsusieSaved> out = new ArrayList<>();
+        for (MvsusieSaved s : mvsusieSaved.values()) if (s.job.equals(job) && s.locus == locus) out.add(s);
+        out.sort((a, b) -> Long.compare(b.created, a.created));
+        return out;
+    }
+
+    private String diseaseOf(MultiLocusResult result, String pid) {
+        // Same grouping the Serpent Plot shows, so "within one disease" matches what the user sees
+        for (MultiLocusResult.DatasetInfo di : result.datasets)
+            if (di.id.equals(pid)) return GeneConstellationBuilder.diseaseGroupOf(pid, di.diseaseName);
+        return GeneConstellationBuilder.diseaseGroupOf(pid);
+    }
+
+    /**
+     * The dataset's latest SuSiE credible sets at this locus as chr:pos sets, the primary set first:
+     * the set containing the dataset's strongest GWAS association ({@code leadKey}), else the set
+     * holding the highest-PIP SNP. Empty when there is no run or no set.
+     */
+    private static List<Set<String>> susieCredibleSets(Config cfg, Locus l, RunSummary rs, String leadKey) {
+        Map<String, Set<String>> sets = new LinkedHashMap<>();
+        String primary = null; double best = -1;
+        if (rs == null) return new ArrayList<>();
+        File f = new File(new File(new File(BaseStepPipeline.analysisDir(cfg, l), "runs"), rs.runId), "result.tsv");
+        try {
+            List<String> lines = Files.readAllLines(f.toPath());
+            List<String> h = Arrays.asList(lines.get(0).split("\t", -1));
+            int ic = h.indexOf("chr"), ip = h.indexOf("pos"), ics = h.indexOf("susie_cs"), ipip = h.indexOf("susie_pip");
+            for (int i = 1; i < lines.size(); i++) {
+                String[] x = lines.get(i).split("\t", -1);
+                if (ics < 0 || ics >= x.length || x[ics].isEmpty() || x[ics].equals("NA")) continue;
+                sets.computeIfAbsent(x[ics], k -> new HashSet<>()).add(x[ic] + ":" + x[ip]);
+                try { double v = Double.parseDouble(x[ipip]); if (v > best) { best = v; primary = x[ics]; } } catch (Exception ignored) {}
+            }
+        } catch (Exception ignored) {}
+        for (Map.Entry<String, Set<String>> e : sets.entrySet())
+            if (e.getValue().contains(leadKey)) { primary = e.getKey(); break; }   // strongest association wins
+        List<Set<String>> out = new ArrayList<>();
+        if (primary != null) out.add(sets.remove(primary));
+        out.addAll(sets.values());
+        return out;
+    }
+
+    /** Single-dataset SuSiE PIPs (position -> PIP >= 0.001) from the dataset's latest run at this locus. */
+    private static Map<String, Object> susiePips(Config cfg, Locus l, RunSummary rs, long from, long to) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        if (rs == null) return out;
+        File f = new File(new File(new File(BaseStepPipeline.analysisDir(cfg, l), "runs"), rs.runId), "result.tsv");
+        try {
+            List<String> lines = Files.readAllLines(f.toPath());
+            List<String> h = Arrays.asList(lines.get(0).split("\t", -1));
+            int ip = h.indexOf("pos"), ipip = h.indexOf("susie_pip");
+            if (ip < 0 || ipip < 0) return out;
+            for (int i = 1; i < lines.size(); i++) {
+                String[] x = lines.get(i).split("\t", -1);
+                try {
+                    long pos = Long.parseLong(x[ip]);
+                    double v = Double.parseDouble(x[ipip]);
+                    if (v >= 0.001 && pos >= from && pos <= to) out.put(String.valueOf(pos), Math.round(v * 10000) / 10000.0);
+                } catch (Exception ignored) {}
+            }
+        } catch (Exception ignored) {}
+        return out;
+    }
+
+    /** Datasets genome-wide significant at an aligned locus, by disease group (the Serpent Plot's grouping). */
+    private Map<String, List<String>> significantByDisease(MultiLocusResult result, MultiLocusResult.LocusRow row) {
+        Map<String, List<String>> out = new TreeMap<>();
+        for (Map.Entry<String, MultiLocusResult.DatasetLocusStat> e : row.cells.entrySet())
+            if (e.getValue() != null && e.getValue().nP5e8 > 0)
+                out.computeIfAbsent(diseaseOf(result, e.getKey()), k -> new ArrayList<>()).add(e.getKey());
+        return out;
+    }
+
+    private MultiLocusResult.LocusRow locusRow(MultiLocusResult result, String locusStr) {
+        try {
+            int li = Integer.parseInt(locusStr);
+            for (MultiLocusResult.LocusRow r : result.loci) if (r.index == li) return r;
+        } catch (Exception ignored) {}
+        return null;
+    }
+
+    private void mvsusieRun(HttpExchange ex) throws IOException {
+        cors(ex); if (preflight(ex)) return;
+        if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) {
+            respond(ex, 405, "application/json", "{\"error\":\"POST required\"}".getBytes()); return;
+        }
+        String body = new String(readAll(ex.getRequestBody()), "UTF-8");
+        String jobRef = extractStr(body, "job");
+        String mode = "cross".equals(extractStr(body, "mode")) ? "cross" : "within";
+        String wantDisease = extractStr(body, "disease");
+        if (wantDisease != null && wantDisease.length() > 80) wantDisease = null;
+        MultiLocusResult result = jobRef == null || !mvsusieCanSeeRun(ex, jobRef) ? null : locusMatrixJobs.get(jobRef);
+        if (result == null) { respond(ex, 404, "application/json", "{\"error\":\"Cross-dataset run not found\"}".getBytes()); return; }
+        MultiLocusResult.LocusRow row = locusRow(result, extractStr(body, "locus"));
+        if (row == null) { respond(ex, 404, "application/json", "{\"error\":\"Locus not found\"}".getBytes()); return; }
+        if (mvsusieBatches.containsKey(jobRef) && !mvsusieBatches.get(jobRef).finished) {
+            respond(ex, 409, "application/json", "{\"error\":\"A joint fine-mapping batch is running on this run; wait for it or cancel it\"}".getBytes()); return;
+        }
+        Set<String> readable = new HashSet<>();
+        for (String pid : row.cells.keySet()) if (mvsusieReadable(ex, pid)) readable.add(pid);
+
+        String id = UUID.randomUUID().toString();
+        MvsusieJob job = new MvsusieJob();
+        job.ownerId = mvsusieUser(ex);
+        mvsusieJobs.put(id, job);
+        final MultiLocusResult.LocusRow r = row;
+        final String disease = wantDisease;
+        new Thread(() -> runMvsusieJob(job, id, jobRef, result, r, mode, disease, readable), "mvsusie-" + id).start();
+        respond(ex, 202, "application/json", ("{\"id\":\"" + id + "\"}").getBytes());
+    }
+
+    private void runMvsusieJob(MvsusieJob job, String id, String jobRef, MultiLocusResult result, MultiLocusResult.LocusRow row,
+                               String mode, String wantDisease, Set<String> readable) {
+        class Cand { String pid, disease; Config cfg; Locus locus; File harmonized; double p; long pos; List<Set<String>> cs; RunSummary su; }
+        List<Cand> chosen = new ArrayList<>();
+        String disease = "";
+        long from = 0, to = 0;
+        File work = new File(MVSUSIE_DIR, id).getAbsoluteFile();
+        try {
+            // 1. Candidates: significant here, inputs built, not flagged
+            List<Cand> eligible = new ArrayList<>();
+            List<String[]> excluded = new ArrayList<>();
+            for (Map.Entry<String, MultiLocusResult.DatasetLocusStat> e : row.cells.entrySet()) {
+                MultiLocusResult.DatasetLocusStat st = e.getValue();
+                if (st == null || st.nP5e8 <= 0) continue;
+                String pid = e.getKey();
+                if (!readable.contains(pid)) continue;
+                ProjectState ps = ensureProjectState(pid, new File("projects", pid).getAbsolutePath());
+                if (ps == null || ps.loci == null) { excluded.add(new String[]{pid, "project not available"}); continue; }
+                Locus own = null;
+                for (Locus l : ps.loci)
+                    if (l.chr.equals(row.chr) && l.start <= row.end && l.end >= row.start
+                            && !BaseStepPipeline.overlapsMhc(l, ps.config.genomeBuild)
+                            && (own == null || (l.start <= st.bestPos && st.bestPos <= l.end))) own = l;
+                if (own == null) { excluded.add(new String[]{pid, "no fine-mappable locus of its own here (MHC or not identified)"}); continue; }
+                File harm = new File(BaseStepPipeline.analysisDir(ps.config, own), "harmonized/harmonized_gwas.tsv");
+                if (!harm.isFile()) { excluded.add(new String[]{pid, "inputs not built for this locus (run Analyze first)"}); continue; }
+                RunSummary su = latestRuns(ps.config, own).get("susie_finemapping");
+                if (su != null && "check".equals(su.reliability)) {
+                    excluded.add(new String[]{pid, "SuSiE flagged this locus (reference LD does not match the GWAS)"}); continue;
+                }
+                Cand c = new Cand();
+                c.pid = pid; c.disease = diseaseOf(result, pid); c.cfg = ps.config; c.locus = own; c.harmonized = harm; c.su = su;
+                c.p = Double.isNaN(st.bestP) ? 1 : st.bestP; c.pos = st.bestPos; c.cs = susieCredibleSets(ps.config, own, su, row.chr + ":" + st.bestPos);
+                eligible.add(c);
+            }
+
+            // 2. Within one disease, or colocalising datasets across diseases
+            if (mode.equals("within")) {
+                Map<String, Integer> counts = new TreeMap<>();
+                for (Cand c : eligible) counts.merge(c.disease, 1, Integer::sum);
+                disease = wantDisease != null && counts.containsKey(wantDisease)
+                    ? wantDisease
+                    : wantDisease != null && !wantDisease.isEmpty() ? wantDisease
+                    : counts.entrySet().stream().max(Map.Entry.comparingByValue()).map(Map.Entry::getKey).orElse("");
+                for (Cand c : eligible) {
+                    if (c.disease.equals(disease)) chosen.add(c);
+                    else excluded.add(new String[]{c.pid, "different disease (" + c.disease + "); within-disease mode"});
+                }
+            } else {
+                List<Cand> withCs = new ArrayList<>();
+                for (Cand c : eligible) {
+                    if (c.cs.isEmpty()) excluded.add(new String[]{c.pid, "no SuSiE credible set to test colocalisation (run SuSiE first)"});
+                    else withCs.add(c);
+                }
+                // Anchor = the consensus signal: the credible set that overlaps credible sets in the most other
+                // datasets (ties: the dataset with the stronger association). A dataset joins only if one of
+                // its own sets shares a SNP with that anchor; no chaining through secondary signals, which
+                // would pull in datasets whose signal here is a different causal variant.
+                withCs.sort(Comparator.comparingDouble(c -> c.p));
+                Set<String> anchor = null; String anchorFrom = null; int bestSupport = -1;
+                for (Cand c : withCs)
+                    for (Set<String> set : c.cs) {
+                        int support = 0;
+                        for (Cand o : withCs) {
+                            if (o == c) continue;
+                            for (Set<String> os : o.cs) if (!Collections.disjoint(os, set)) { support++; break; }
+                        }
+                        if (support > bestSupport) { bestSupport = support; anchor = set; anchorFrom = c.pid; }
+                    }
+                if (anchor != null) {
+                    for (Cand c : withCs) {
+                        boolean overlaps = false;
+                        for (Set<String> set : c.cs) if (!Collections.disjoint(set, anchor)) { overlaps = true; break; }
+                        if (overlaps) chosen.add(c);
+                        else excluded.add(new String[]{c.pid, "no credible set overlaps the shared signal (the "
+                            + anchor.size() + "-SNP set of " + anchorFrom + " supported by " + bestSupport
+                            + " other datasets): likely a different causal variant"});
+                    }
+                }
+            }
+
+            StringBuilder sel = new StringBuilder("{\"mode\":\"").append(mode).append("\",\"disease\":\"").append(escJ(disease)).append("\",\"chosen\":[");
+            for (int i = 0; i < chosen.size(); i++) sel.append(i > 0 ? "," : "").append('"').append(escJ(chosen.get(i).pid)).append('"');
+            sel.append("],\"excluded\":[");
+            for (int i = 0; i < excluded.size(); i++)
+                sel.append(i > 0 ? "," : "").append("{\"dataset\":\"").append(escJ(excluded.get(i)[0])).append("\",\"reason\":\"").append(escJ(excluded.get(i)[1])).append("\"}");
+            sel.append("]}");
+            job.selectionJson = sel.toString();
+            if (chosen.size() < 2) throw new IOException("Need at least 2 datasets for joint fine-mapping here; " + chosen.size() + " qualified");
+
+            // 3. Manifest for the R script
+            Cand lead = Collections.min(chosen, Comparator.comparingDouble(c -> c.p));
+            from = Math.max(1, lead.pos - MVSUSIE_HALF_WINDOW);
+            to = lead.pos + MVSUSIE_HALF_WINDOW;
+            work.mkdirs();
+            String plink = PlinkSubsetter.findPlink(lead.cfg);
+            if (plink == null) throw new IOException("PLINK not found");
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("chr", row.chr);
+            m.put("from", from);
+            m.put("to", to);
+            m.put("ref_panel", lead.cfg.refPanelPath);
+            m.put("plink", new File(plink).getAbsolutePath());
+            m.put("ukbb_dir", SusieAdapter.ukbbLdDir());
+            m.put("ukbb_script", new File(SusieAdapter.appRoot(), "scripts/ukbb_ld.py").getAbsolutePath());
+            m.put("extra_lib", mvsusieRLib().replace("\\", "/"));
+            m.put("L", 10); m.put("coverage", 0.95); m.put("ld_shrink", 0.1);
+            m.put("work_dir", work.getAbsolutePath().replace("\\", "/"));
+            m.put("out", new File(work, "result.json").getAbsolutePath().replace("\\", "/"));
+            List<Object> ds = new ArrayList<>();
+            for (Cand c : chosen) {
+                Map<String, Object> d = new LinkedHashMap<>();
+                d.put("id", c.pid); d.put("disease", c.disease); d.put("N", c.cfg.sampleN); d.put("p", c.p);
+                Map<String, Object> gw = new LinkedHashMap<>();
+                gw.put("file", c.cfg.gwasFile.replace("\\", "/")); gw.put("chr", c.cfg.colChr); gw.put("pos", c.cfg.colPos);
+                gw.put("ea", c.cfg.colEa); gw.put("nea", c.cfg.colNea); gw.put("se", c.cfg.colSe);
+                gw.put("beta", c.cfg.colBeta); gw.put("or", c.cfg.colOr);
+                d.put("gwas", gw);
+                d.put("null_cache", mvsusieNullCache(c.pid, c.cfg).getAbsolutePath().replace("\\", "/"));
+                d.put("files", new ArrayList<Object>(Collections.singletonList(c.harmonized.getAbsolutePath().replace("\\", "/"))));
+                ds.add(d);
+            }
+            m.put("datasets", ds);
+            File manifest = new File(work, "manifest.json");
+            Files.write(manifest.toPath(), MiniJson.encode(m).getBytes("UTF-8"));
+
+            // 4. Run
+            job.phase = "Running mvSuSiE on " + chosen.size() + " datasets";
+            ProcessBuilder pb = new ProcessBuilder(ToolLocator.rscript(),
+                new File(SusieAdapter.appRoot(), "tools/r/mvsusie_run.R").getAbsolutePath(), manifest.getAbsolutePath());
+            pb.redirectErrorStream(true);
+            pb.redirectOutput(new File(work, "run.log"));
+            Process proc = pb.start();
+            if (!proc.waitFor(20, TimeUnit.MINUTES)) { proc.destroyForcibly(); throw new IOException("mvSuSiE did not finish within 20 minutes"); }
+            File out = new File(work, "result.json");
+            if (!out.isFile()) throw new IOException("mvSuSiE produced no result; see " + new File(work, "run.log"));
+            String res = new String(Files.readAllBytes(out.toPath()), "UTF-8");
+            Map<String, Object> parsed = MiniJson.asObject(MiniJson.parse(res));
+            if (Boolean.FALSE.equals(parsed.get("ok"))) throw new IOException(String.valueOf(parsed.get("error")));
+            job.resultJson = res;
+            job.phase = "Complete";
+            job.status = "done";
+        } catch (Exception e) {
+            job.error = mvsusiePublicError(e.getMessage());
+            job.status = "error";
+            job.phase = "Error";
+            System.err.printf("[mvSuSiE] %s failed: %s%n", id, e.getMessage());
+        }
+        try {
+            saveMvsusieRun(job, id, jobRef, row, mode, disease, chosen.stream().map(c -> new Object[]{c.pid, c.disease, c.locus, c.cfg, c.su, c.cs})
+                .collect(java.util.stream.Collectors.toList()), from, to);
+        } catch (Exception e) {
+            System.err.printf("[mvSuSiE] %s could not be saved: %s%n", id, e.getMessage());
+        }
+    }
+
+    /** R library holding mvsusieR (needs a newer susieR than the main library). */
+    private String mvsusieRLib() {
+        String lib = System.getenv("LYNXGWAS_R_LIB");
+        if (lib != null && !lib.isEmpty()) return lib;
+        File appLib = new File(SusieAdapter.appRoot(), "rlib"), userLib = new File(System.getProperty("user.home"), "R/mvsusie-lib");
+        return appLib.isDirectory() ? appLib.getAbsolutePath() : userLib.isDirectory() ? userLib.getAbsolutePath() : "";
+    }
+
+    /** Where a dataset's genome-wide null z sample is cached (rebuilt by R when the GWAS file changes). */
+    private File mvsusieNullCache(String pid, Config cfg) {
+        return new File(cfg.outputDir, "cache/mvsusie_null_z.rds");
+    }
+
+    private String mvsusiePublicError(String msg) { return msg == null ? "mvSuSiE failed" : msg; }
+
+    /** Removes every saved joint fine-mapping run made on a cross-dataset run (when that run is deleted). */
+    private void purgeMvsusieRunsOf(String jobId) {
+        ensureMvsusieIndex();
+        for (MvsusieSaved sv : new ArrayList<>(mvsusieSaved.values())) {
+            if (!sv.job.equals(jobId)) continue;
+            mvsusieSaved.remove(sv.id);
+            File dir = new File(MVSUSIE_DIR, sv.id);
+            File[] fs = dir.listFiles();
+            if (fs != null) for (File f : fs) f.delete();
+            dir.delete();
+        }
+        mvsusieBatches.remove(jobId);
+    }
+
+    /**
+     * Writes meta.json next to the run (selection, datasets with their own locus, single-dataset SuSiE PIPs
+     * and credible-set sizes for the comparison panel) and indexes it. Error runs are saved too, so a
+     * batch does not retry loci that cannot be fine-mapped jointly.
+     */
+    @SuppressWarnings("unchecked")
+    private void saveMvsusieRun(MvsusieJob job, String id, String jobRef, MultiLocusResult.LocusRow row, String mode,
+                                String disease, List<Object[]> chosen, long from, long to) throws IOException {
+        File work = new File(MVSUSIE_DIR, id);
+        work.mkdirs();
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("id", id); meta.put("job", jobRef); meta.put("locus", row.index); meta.put("chr", row.chr);
+        meta.put("start", row.start); meta.put("end", row.end); meta.put("gene", row.nearestGene == null ? "" : row.nearestGene);
+        meta.put("mode", mode); meta.put("disease", disease);
+        meta.put("created", System.currentTimeMillis());
+        meta.put("status", job.status); meta.put("error", job.error); meta.put("owner", job.ownerId);
+        try { meta.put("selection", MiniJson.parse(job.selectionJson)); } catch (Exception e) { meta.put("selection", new LinkedHashMap<>()); }
+
+        Map<String, Object> result = null;
+        if (job.resultJson != null) result = MiniJson.asObject(MiniJson.parse(job.resultJson));
+        List<Object> sets = result != null && result.get("credible_sets") instanceof List ? (List<Object>) result.get("credible_sets") : new ArrayList<>();
+        meta.put("n_sets", sets.size());
+        if (!sets.isEmpty()) {
+            Map<String, Object> s0 = MiniJson.asObject(sets.get(0));
+            meta.put("lead_snp", s0.get("lead_snp")); meta.put("lead_pip", s0.get("lead_pip"));
+        }
+        // Datasets the R step actually pooled (it can drop one that is too sparse in the window)
+        if (result != null && result.get("datasets") instanceof List) {
+            Set<String> used = new HashSet<>();
+            for (Object o : (List<Object>) result.get("datasets")) used.add(String.valueOf(o));
+            chosen = chosen.stream().filter(c -> used.contains((String) c[0])).collect(java.util.stream.Collectors.toList());
+        }
+        List<Object> ds = new ArrayList<>();
+        Map<String, Object> singlePips = new LinkedHashMap<>();
+        for (Object[] c : chosen) {
+            Map<String, Object> d = new LinkedHashMap<>();
+            Locus l = (Locus) c[2];
+            d.put("id", c[0]); d.put("disease", c[1]); d.put("locus_index", l.index); d.put("locus_id", l.id);
+            ds.add(d);
+            if (job.resultJson != null) singlePips.put((String) c[0], susiePips((Config) c[3], l, (RunSummary) c[4], from, to));
+        }
+        meta.put("datasets", ds);
+        meta.put("single_pips", singlePips);
+        // Per joint credible set: each dataset's smallest single-dataset set holding the joint lead SNP
+        List<Object> setCmp = new ArrayList<>();
+        for (Object so : sets) {
+            Map<String, Object> s = MiniJson.asObject(so);
+            String key = row.chr + ":" + (long) num(s.get("lead_pos"), -1);
+            Map<String, Object> sizes = new LinkedHashMap<>();
+            for (Object[] c : chosen) {
+                int best = Integer.MAX_VALUE;
+                for (Set<String> cs : (List<Set<String>>) c[5]) if (cs.contains(key)) best = Math.min(best, cs.size());
+                sizes.put((String) c[0], best == Integer.MAX_VALUE ? null : best);
+            }
+            setCmp.add(sizes);
+        }
+        meta.put("single_set_size_at_lead", setCmp);
+        String metaJson = MiniJson.encode(meta);
+        Files.write(new File(work, "meta.json").toPath(), metaJson.getBytes("UTF-8"));
+        job.metaJson = metaJson;
+        ensureMvsusieIndex();
+        mvsusieSaved.put(id, parseSavedMeta(meta));
+    }
+
+    // GET /api/mvsusie-progress?id=...
+    private void mvsusieProgress(HttpExchange ex) throws IOException {
+        cors(ex); if (preflight(ex)) return;
+        MvsusieJob job = mvsusieJobs.get(String.valueOf(queryParam(ex, "id")));
+        if (job != null && job.ownerId != null && !job.ownerId.equals(mvsusieUser(ex))) job = null;
+        if (job == null) { respond(ex, 404, "application/json", "{\"error\":\"Job not found\"}".getBytes()); return; }
+        respond(ex, 200, "application/json", ("{\"status\":\"" + job.status + "\",\"phase\":\"" + escJ(job.phase) + "\""
+            + ",\"elapsed_s\":" + (System.currentTimeMillis() - job.startedAt) / 1000
+            + (job.error != null ? ",\"error\":\"" + escJ(job.error) + "\"" : "") + ",\"selection\":" + job.selectionJson + "}").getBytes("UTF-8"));
+    }
+
+    // GET /api/mvsusie-result?id=... -> {selection, result (null for a failed run), error?, meta}
+    private void mvsusieResult(HttpExchange ex) throws IOException {
+        cors(ex); if (preflight(ex)) return;
+        String id = String.valueOf(queryParam(ex, "id"));
+        ensureMvsusieIndex();
+        MvsusieSaved saved = mvsusieSaved.get(id);
+        if (saved == null || !mvsusieVisible(ex, saved) || !mvsusieCanSeeRun(ex, saved.job)) {
+            respond(ex, 404, "application/json", "{\"error\":\"Result not available\"}".getBytes()); return;
+        }
+        File work = new File(MVSUSIE_DIR, saved.id);
+        String meta = new String(Files.readAllBytes(new File(work, "meta.json").toPath()), "UTF-8");
+        File res = new File(work, "result.json");
+        String result = "ok".equals(saved.status) || "done".equals(saved.status)
+            ? (res.isFile() ? new String(Files.readAllBytes(res.toPath()), "UTF-8") : "null") : "null";
+        Map<String, Object> mm = MiniJson.asObject(MiniJson.parse(meta));
+        respond(ex, 200, "application/json", ("{\"selection\":" + MiniJson.encode(mm.get("selection"))
+            + ",\"result\":" + result + (saved.error != null ? ",\"error\":\"" + escJ(saved.error) + "\"" : "")
+            + ",\"meta\":" + meta + "}").getBytes("UTF-8"));
+    }
+
+    // GET /api/mvsusie-latest?job=...&locus=... -> {"runs":[saved run summaries, newest first]}
+    private void mvsusieLatest(HttpExchange ex) throws IOException {
+        cors(ex); if (preflight(ex)) return;
+        String job = queryParam(ex, "job");
+        int locus;
+        try { locus = Integer.parseInt(String.valueOf(queryParam(ex, "locus"))); }
+        catch (NumberFormatException e) { respond(ex, 400, "application/json", "{\"error\":\"locus required\"}".getBytes()); return; }
+        if (!mvsusieCanSeeRun(ex, job)) { respond(ex, 404, "application/json", "{\"error\":\"Cross-dataset run not found\"}".getBytes()); return; }
+        StringBuilder j = new StringBuilder("{\"runs\":[");
+        int i = 0;
+        for (MvsusieSaved s : savedAtLocus(job, locus))
+            if (mvsusieVisible(ex, s)) j.append(i++ > 0 ? "," : "").append(s.toJson());
+        respond(ex, 200, "application/json", j.append("]}").toString().getBytes("UTF-8"));
+    }
+
+    // GET /api/mvsusie-for-dataset?project=...&locus_index=... -> successful joint runs that pooled this
+    // dataset's locus (latest per cross-dataset run, mode and disease), for the regional-plot strip
+    private void mvsusieForDataset(HttpExchange ex) throws IOException {
+        cors(ex); if (preflight(ex)) return;
+        String pid = queryParam(ex, "project");
+        int li;
+        try { li = Integer.parseInt(String.valueOf(queryParam(ex, "locus_index"))); }
+        catch (NumberFormatException e) { respond(ex, 400, "application/json", "{\"error\":\"locus_index required\"}".getBytes()); return; }
+        if (pid == null || !mvsusieReadable(ex, pid)) { respond(ex, 404, "application/json", "{\"error\":\"Project not found\"}".getBytes()); return; }
+        ensureMvsusieIndex();
+        Map<String, MvsusieSaved> latest = new LinkedHashMap<>();
+        for (MvsusieSaved s : mvsusieSaved.values()) {
+            if (!"done".equals(s.status) || !Integer.valueOf(li).equals(s.datasetLoci.get(pid))) continue;
+            if (!mvsusieVisible(ex, s) || !mvsusieCanSeeRun(ex, s.job)) continue;
+            String k = s.job + "|" + s.mode + "|" + s.disease;
+            MvsusieSaved cur = latest.get(k);
+            if (cur == null || s.created > cur.created) latest.put(k, s);
+        }
+        StringBuilder j = new StringBuilder("{\"runs\":[");
+        int i = 0;
+        for (MvsusieSaved s : latest.values()) j.append(i++ > 0 ? "," : "").append(s.toJson());
+        respond(ex, 200, "application/json", j.append("]}").toString().getBytes("UTF-8"));
+    }
+
+    // ── Joint fine-mapping over every aligned locus of a cross-dataset run ──
+    //
+    // POST /api/mvsusie-run-all {"job":..., "mode":"within"|"cross", "only_missing":true, "parallel":3}
+    //   within: every (locus, disease) with >= 2 genome-wide significant datasets of that disease
+    //   cross:  every locus genome-wide significant in >= 2 diseases
+    // GET  /api/mvsusie-run-all-progress?job=...   POST /api/mvsusie-run-all-cancel {"job":...}
+    // GET  /api/mvsusie-summary?job=...&format=tsv  (one row per joint credible set, latest run per unit)
+
+    static class MvsusieBatch {
+        final String mode; String ownerId;
+        volatile int total, done, ok, failed, skipped;
+        volatile String current = "";
+        volatile boolean finished, cancelled;
+        final long startedAt = System.currentTimeMillis();
+        MvsusieBatch(String mode) { this.mode = mode; }
+        String toJson() {
+            return "{\"mode\":\"" + mode + "\",\"total\":" + total + ",\"done\":" + done + ",\"ok\":" + ok + ",\"failed\":" + failed
+                + ",\"skipped\":" + skipped + ",\"current\":\"" + escJ(current) + "\",\"finished\":" + finished
+                + ",\"cancelled\":" + cancelled + ",\"elapsed_s\":" + (System.currentTimeMillis() - startedAt) / 1000 + "}";
+        }
+    }
+    private final Map<String, MvsusieBatch> mvsusieBatches = new ConcurrentHashMap<>();
+
+    private void mvsusieRunAll(HttpExchange ex) throws IOException {
+        cors(ex); if (preflight(ex)) return;
+        if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) {
+            respond(ex, 405, "application/json", "{\"error\":\"POST required\"}".getBytes()); return;
+        }
+        String body = new String(readAll(ex.getRequestBody()), "UTF-8");
+        String jobRef = extractStr(body, "job");
+        String mode = "cross".equals(extractStr(body, "mode")) ? "cross" : "within";
+        boolean onlyMissing = !"false".equals(extractStr(body, "only_missing"));
+        int parallel = (int) Math.max(1, Math.min(4, parseDoubleOr(extractStr(body, "parallel"), 3)));
+        MultiLocusResult result = jobRef == null || !mvsusieCanSeeRun(ex, jobRef) ? null : locusMatrixJobs.get(jobRef);
+        if (result == null) { respond(ex, 404, "application/json", "{\"error\":\"Cross-dataset run not found\"}".getBytes()); return; }
+        if (!mvsusieBatchAllowed(ex, jobRef)) return;
+        MvsusieBatch prev = mvsusieBatches.get(jobRef);
+        if (prev != null && !prev.finished) {
+            respond(ex, 409, "application/json", "{\"error\":\"A joint fine-mapping batch is already running on this run\"}".getBytes()); return;
+        }
+        Set<String> readable = new HashSet<>();
+        for (MultiLocusResult.DatasetInfo di : result.datasets) if (mvsusieReadable(ex, di.id)) readable.add(di.id);
+
+        // Units of work
+        List<Object[]> units = new ArrayList<>();   // {row, disease}
+        for (MultiLocusResult.LocusRow row : result.loci) {
+            Map<String, List<String>> byDis = significantByDisease(result, row);
+            if (mode.equals("within")) {
+                for (Map.Entry<String, List<String>> e : byDis.entrySet())
+                    if (e.getValue().size() >= 2) units.add(new Object[]{row, e.getKey()});
+            } else if (byDis.size() >= 2) units.add(new Object[]{row, ""});
+        }
+        MvsusieBatch b = new MvsusieBatch(mode);
+        b.ownerId = mvsusieUser(ex);
+        b.total = units.size();
+        mvsusieBatches.put(jobRef, b);
+        final String owner = b.ownerId;
+        Runnable all = () -> {
+            java.util.concurrent.ExecutorService pool = Executors.newFixedThreadPool(parallel);
+            List<java.util.concurrent.Future<?>> fs = new ArrayList<>();
+            for (Object[] u : units) {
+                MultiLocusResult.LocusRow row = (MultiLocusResult.LocusRow) u[0];
+                String dis = (String) u[1];
+                fs.add(pool.submit(() -> {
+                    if (b.cancelled) return;
+                    boolean have = false;
+                    if (onlyMissing)
+                        for (MvsusieSaved s : savedAtLocus(jobRef, row.index))
+                            if (s.mode.equals(mode) && s.disease.equals(dis) && Objects.equals(s.ownerId, owner)) { have = true; break; }
+                    if (have) { synchronized (b) { b.skipped++; b.done++; } return; }
+                    b.current = (row.nearestGene == null || row.nearestGene.isEmpty() ? row.chr + ":" + row.start : row.nearestGene)
+                        + (dis.isEmpty() ? "" : " (" + dis + ")");
+                    String id = UUID.randomUUID().toString();
+                    MvsusieJob job = new MvsusieJob();
+                    job.ownerId = owner;
+                    runMvsusieJob(job, id, jobRef, result, row, mode, dis.isEmpty() ? null : dis, readable);
+                    synchronized (b) { if ("done".equals(job.status)) b.ok++; else b.failed++; b.done++; }
+                }));
+            }
+            for (java.util.concurrent.Future<?> f : fs) try { f.get(); } catch (Exception ignored) {}
+            pool.shutdown();
+            b.current = "";
+            b.finished = true;
+        };
+        String refused = mvsusieStartBatch(ex, owner, jobRef, all);
+        if (refused != null) { mvsusieBatches.remove(jobRef); respond(ex, 429, "application/json", ("{\"error\":\"" + escJ(refused) + "\"}").getBytes("UTF-8")); return; }
+        respond(ex, 202, "application/json", b.toJson().getBytes("UTF-8"));
+    }
+
+    /** Desktop: any batch may run. */
+    private boolean mvsusieBatchAllowed(HttpExchange ex, String jobRef) throws IOException { return true; }
+
+    /** Starts the batch; returns a refusal message, or null when it started. */
+    private String mvsusieStartBatch(HttpExchange ex, String owner, String jobRef, Runnable r) {
+        new Thread(r, "mvsusie-batch-" + jobRef).start();
+        return null;
+    }
+
+    private void mvsusieRunAllProgress(HttpExchange ex) throws IOException {
+        cors(ex); if (preflight(ex)) return;
+        String job = queryParam(ex, "job");
+        MvsusieBatch b = job == null ? null : mvsusieBatches.get(job);
+        if (b != null && b.ownerId != null && !b.ownerId.equals(mvsusieUser(ex))) b = null;
+        respond(ex, 200, "application/json", (b == null ? "{\"running\":false}" : b.toJson()).getBytes("UTF-8"));
+    }
+
+    private void mvsusieRunAllCancel(HttpExchange ex) throws IOException {
+        cors(ex); if (preflight(ex)) return;
+        if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) {
+            respond(ex, 405, "application/json", "{\"error\":\"POST required\"}".getBytes()); return;
+        }
+        String job = extractStr(new String(readAll(ex.getRequestBody()), "UTF-8"), "job");
+        MvsusieBatch b = job == null ? null : mvsusieBatches.get(job);
+        if (b != null && b.ownerId != null && !b.ownerId.equals(mvsusieUser(ex))) b = null;
+        if (b == null) { respond(ex, 404, "application/json", "{\"error\":\"No batch running\"}".getBytes()); return; }
+        b.cancelled = true;
+        respond(ex, 200, "application/json", "{\"ok\":true}".getBytes());
+    }
+
+    // GET /api/mvsusie-summary?job=...[&format=tsv]
+    @SuppressWarnings("unchecked")
+    private void mvsusieSummary(HttpExchange ex) throws IOException {
+        cors(ex); if (preflight(ex)) return;
+        String job = queryParam(ex, "job");
+        boolean tsv = "tsv".equals(queryParam(ex, "format"));
+        if (!mvsusieCanSeeRun(ex, job)) { respond(ex, 404, "application/json", "{\"error\":\"Cross-dataset run not found\"}".getBytes()); return; }
+        ensureMvsusieIndex();
+        // Latest visible run per (locus, mode, disease)
+        Map<String, MvsusieSaved> latest = new TreeMap<>();
+        for (MvsusieSaved s : mvsusieSaved.values()) {
+            if (!s.job.equals(job) || !mvsusieVisible(ex, s)) continue;
+            String k = String.format(Locale.ROOT, "%08d|%s|%s", s.locus, s.mode, s.disease);
+            MvsusieSaved cur = latest.get(k);
+            if (cur == null || s.created > cur.created) latest.put(k, s);
+        }
+        if (!tsv) {
+            int ok = 0, sets = 0, single = 0;
+            for (MvsusieSaved s : latest.values()) if ("done".equals(s.status)) { ok++; sets += s.nSets; if (s.nSets == 1) single++; }
+            respond(ex, 200, "application/json", String.format(Locale.ROOT,
+                "{\"units\":%d,\"ok\":%d,\"failed\":%d,\"credible_sets\":%d,\"single_signal_units\":%d}",
+                latest.size(), ok, latest.size() - ok, sets, single).getBytes("UTF-8"));
+            return;
+        }
+        StringBuilder out = new StringBuilder("locus\tchr\tstart\tend\tnearest_gene\tmode\tdisease\tstatus\tn_datasets\tdatasets\tn_sets"
+            + "\tset\tset_size\tpip_min\tpip_max\tlead_snp\tlead_pos\tlead_pip\tpurity\tn_active\tactive_in"
+            + "\tsmallest_single_dataset_set_at_lead\tld_source\tnote\trun_id\n");
+        for (MvsusieSaved s : latest.values()) {
+            File work = new File(MVSUSIE_DIR, s.id);
+            Map<String, Object> meta, res = null;
+            try {
+                meta = MiniJson.asObject(MiniJson.parse(new String(Files.readAllBytes(new File(work, "meta.json").toPath()), "UTF-8")));
+                File rf = new File(work, "result.json");
+                if ("done".equals(s.status) && rf.isFile()) res = MiniJson.asObject(MiniJson.parse(new String(Files.readAllBytes(rf.toPath()), "UTF-8")));
+            } catch (Exception e) { continue; }
+            String head = s.locus + "\t" + s.chr + "\t" + (long) num(meta.get("start"), 0) + "\t" + (long) num(meta.get("end"), 0) + "\t"
+                + tsvEsc(s.gene) + "\t" + s.mode + "\t" + tsvEsc(s.disease) + "\t" + ("done".equals(s.status) ? "ok" : "failed") + "\t"
+                + s.nDatasets + "\t" + tsvEsc(String.join(",", s.datasetLoci.keySet())) + "\t" + s.nSets;
+            String ld = res == null ? "" : tsvEsc(MiniJson.getStr(res, "ld_source", ""));
+            List<Object> sets = res != null && res.get("credible_sets") instanceof List ? (List<Object>) res.get("credible_sets") : new ArrayList<>();
+            if (sets.isEmpty()) {
+                out.append(head).append("\t\t\t\t\t\t\t\t\t\t\t\t").append(ld).append('\t')
+                   .append(tsvEsc(s.error != null ? s.error : "no credible set reached 95% coverage")).append('\t').append(s.id).append('\n');
+                continue;
+            }
+            List<Object> cmp = meta.get("single_set_size_at_lead") instanceof List ? (List<Object>) meta.get("single_set_size_at_lead") : new ArrayList<>();
+            for (int i = 0; i < sets.size(); i++) {
+                Map<String, Object> c = MiniJson.asObject(sets.get(i));
+                List<Object> act = c.get("active_in") instanceof List ? (List<Object>) c.get("active_in") : new ArrayList<>();
+                String smallest = "";
+                if (i < cmp.size() && cmp.get(i) instanceof Map) {
+                    int best = Integer.MAX_VALUE; String who = "";
+                    for (Map.Entry<String, Object> e : MiniJson.asObject(cmp.get(i)).entrySet())
+                        if (e.getValue() instanceof Number && ((Number) e.getValue()).intValue() < best) { best = ((Number) e.getValue()).intValue(); who = e.getKey(); }
+                    if (best != Integer.MAX_VALUE) smallest = who + ":" + best;
+                }
+                List<String> actS = new ArrayList<>();
+                for (Object a : act) actS.add(String.valueOf(a));
+                out.append(head).append('\t').append(i + 1).append('\t').append((long) num(c.get("size"), 0))
+                   .append('\t').append(MiniJson.getStr(c, "pip_min", "")).append('\t').append(MiniJson.getStr(c, "pip_max", ""))
+                   .append('\t').append(tsvEsc(MiniJson.getStr(c, "lead_snp", ""))).append('\t').append((long) num(c.get("lead_pos"), 0))
+                   .append('\t').append(MiniJson.getStr(c, "lead_pip", "")).append('\t').append(MiniJson.getStr(c, "min_abs_corr", ""))
+                   .append('\t').append(actS.size()).append('\t').append(tsvEsc(String.join(",", actS)))
+                   .append('\t').append(tsvEsc(smallest)).append('\t').append(ld).append("\t\t").append(s.id).append('\n');
+            }
+        }
+        ex.getResponseHeaders().set("Content-Disposition", "attachment; filename=\"joint_finemapping_" + (job.length() > 8 ? job.substring(0, 8) : job) + ".tsv\"");
+        respond(ex, 200, "text/tab-separated-values", out.toString().getBytes("UTF-8"));
+    }
+
+    // ── Batch runs: one tool over every ready locus of a project ─────────────
+
+    static class BatchRun {
+        final String tool;
+        volatile int total, done, ok, failed, skipped;
+        volatile String current = "";
+        volatile boolean finished, cancelled;
+        final long startedAt = System.currentTimeMillis();
+        volatile long finishedAt;
+        final List<String> errors = Collections.synchronizedList(new ArrayList<>());
+        BatchRun(String tool) { this.tool = tool; }
+
+        String toJson() {
+            StringBuilder j = new StringBuilder("{");
+            j.append("\"tool\":\"").append(escJ(tool)).append('"');
+            j.append(",\"total\":").append(total).append(",\"done\":").append(done);
+            j.append(",\"ok\":").append(ok).append(",\"failed\":").append(failed).append(",\"skipped\":").append(skipped);
+            j.append(",\"current\":\"").append(escJ(current)).append('"');
+            j.append(",\"finished\":").append(finished).append(",\"cancelled\":").append(cancelled);
+            j.append(",\"elapsed_s\":").append(((finished ? finishedAt : System.currentTimeMillis()) - startedAt) / 1000);
+            j.append(",\"errors\":[");
+            synchronized (errors) {
+                for (int i = 0; i < errors.size(); i++) { if (i > 0) j.append(','); j.append('"').append(escJ(errors.get(i))).append('"'); }
+            }
+            return j.append("]}").toString();
+        }
+    }
+    private final Map<String, BatchRun> batchRuns = new ConcurrentHashMap<>();
+
+    /** True when this locus already has a successful run of {@code tool} (provenance + result written). */
+    static boolean hasSuccessfulRun(Config cfg, Locus locus, String tool) {
+        File runs = new File(BaseStepPipeline.analysisDir(cfg, locus), "runs");
+        File[] dirs = runs.listFiles(File::isDirectory);
+        if (dirs == null) return false;
+        for (File d : dirs) {
+            File prov = new File(d, "provenance.json");
+            if (!prov.isFile() || !new File(d, "result.tsv").isFile()) continue;
+            try {
+                String j = new String(Files.readAllBytes(prov.toPath()), "UTF-8");
+                if (j.contains("\"tool\": \"" + tool + "\"") || j.contains("\"tool\":\"" + tool + "\"")) return true;
+            } catch (IOException ignored) {}
+        }
+        return false;
+    }
+
+    // POST /api/project/{id}/analysis/run-all
+    //   {"tool": "...", "only_missing": "true", "include_mhc": "false", "parallel": "2", <tool params>}
+    // Runs the tool on every locus whose base artifacts are ready, skipping the extended MHC
+    // (dense LD, not fine-mappable with a reference panel) and, by default, loci already done.
+    private void projectAnalysisRunAll(HttpExchange ex, String projectId, String projectDir) throws IOException {
+        if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) {
+            respond(ex, 405, "text/plain", "Method Not Allowed".getBytes()); return;
+        }
+        ProjectState ps = ensureProjectState(projectId, projectDir);
+        if (ps == null || ps.config == null || ps.loci == null) {
+            respond(ex, 503, "application/json", "{\"error\":\"Pipeline state not available\"}".getBytes()); return;
+        }
+        String body = new String(readAll(ex.getRequestBody()), "UTF-8");
+        String toolName = extractStr(body, "tool");
+        ToolDescriptor td = toolName == null ? null : PluginEngine.findTool(toolName);
+        if (td == null) {
+            respond(ex, 400, "application/json", "{\"error\":\"Unknown tool\"}".getBytes()); return;
+        }
+        if (toolName.equals("coloc") || toolName.equals("gwama_meta")) {
+            respond(ex, 400, "application/json", ("{\"error\":\"" + escJ(toolName)
+                + " compares datasets; run it per locus or as a cross-dataset run\"}").getBytes()); return;
+        }
+        String key = projectId + "|" + toolName;
+        BatchRun existing = batchRuns.get(key);
+        if (existing != null && !existing.finished) {
+            respond(ex, 409, "application/json", ("{\"error\":\"A batch run of " + escJ(toolName) + " is already running\"}").getBytes()); return;
+        }
+        boolean onlyMissing = !"false".equalsIgnoreCase(extractStr(body, "only_missing"));
+        boolean includeMhc = "true".equalsIgnoreCase(extractStr(body, "include_mhc"));
+        int parallel = 2;
+        try { parallel = Math.max(1, Math.min(8, Integer.parseInt(extractStr(body, "parallel")))); } catch (Exception ignored) {}
+
+        Map<String, String> params = new LinkedHashMap<>();
+        for (ToolDescriptor.Param p : td.params) {
+            String val = extractStr(body, p.name);
+            if (val != null) params.put(p.name, val);
+            else if (p.defaultValue != null) params.put(p.name, p.defaultValue);
+        }
+
+        final Config cfg = ps.config;
+        List<Locus> todo = new ArrayList<>();
+        BatchRun br = new BatchRun(toolName);
+        for (Locus l : ps.loci) {
+            Map<String, Boolean> st = BaseStepPipeline.checkStatus(cfg, l);
+            boolean ready = !st.isEmpty() && !st.containsValue(false);
+            if (!ready || (!includeMhc && BaseStepPipeline.overlapsMhc(l, cfg.genomeBuild))
+                    || (onlyMissing && hasSuccessfulRun(cfg, l, toolName))) { br.skipped++; continue; }
+            todo.add(l);
+        }
+        br.total = todo.size();
+        batchRuns.put(key, br);
+        final int threads = parallel;
+        new Thread(() -> {
+            ExecutorService pool = Executors.newFixedThreadPool(threads);
+            try {
+                List<Future<?>> fs = new ArrayList<>();
+                for (Locus l : todo) fs.add(pool.submit(() -> {
+                    if (br.cancelled) return;
+                    br.current = "Locus " + l.index + " (chr" + l.chr + ")";
+                    String jobId = UUID.randomUUID().toString();
+                    ProgressTracker pt = new ProgressTracker();
+                    analysisJobProgress.put(jobId, pt);
+                    PluginEngine.RunResult r = runAnalysisJob(projectId, cfg, l, toolName, new LinkedHashMap<>(params), jobId, pt);
+                    synchronized (br) {
+                        br.done++;
+                        if (r.ok) br.ok++;
+                        else {
+                            br.failed++;
+                            if (br.errors.size() < 100) br.errors.add("Locus " + l.index + ": " + (r.error == null ? "failed" : r.error));
+                        }
+                    }
+                }));
+                for (Future<?> f : fs) { try { f.get(); } catch (Exception ignored) {} }
+            } finally {
+                pool.shutdown();
+                br.current = "";
+                br.finished = true;
+                br.finishedAt = System.currentTimeMillis();
+                System.out.printf("[Batch] %s on '%s': %d ok, %d failed, %d skipped in %ds%n",
+                    toolName, projectId, br.ok, br.failed, br.skipped, (br.finishedAt - br.startedAt) / 1000);
+            }
+        }, "batch-" + toolName + "-" + projectId).start();
+
+        respond(ex, 202, "application/json", br.toJson().getBytes("UTF-8"));
+    }
+
+    // GET /api/project/{id}/analysis/run-all-progress?tool=...
+    private void projectAnalysisRunAllProgress(HttpExchange ex, String projectId) throws IOException {
+        BatchRun br = batchRuns.get(projectId + "|" + queryParam(ex, "tool"));
+        if (br == null) {
+            respond(ex, 404, "application/json", "{\"error\":\"No batch run for this tool\"}".getBytes()); return;
+        }
+        respond(ex, 200, "application/json", br.toJson().getBytes("UTF-8"));
     }
 
     // GET /api/project/{id}/analysis/job/{jobId}/progress or /result or /cancel
@@ -2898,6 +4006,7 @@ public class LocalServer {
         locusMatrixJobProgress.remove(jobId);
         locusMatrixJobs.remove(jobId);
         serpentPlotCache.remove(jobId);
+        if (jobId.matches("[A-Za-z0-9-]+")) purgeMvsusieRunsOf(jobId);
 
         try {
             File jobDir = new File(MULTI_LOCUS_DIR, jobId);
@@ -3069,6 +4178,7 @@ public class LocalServer {
             respond(ex, 404, "application/json", "{\"error\":\"Job not found or not complete\"}".getBytes());
             return;
         }
+        warmGeneAnnotation(jobId); // so the first click on a serpent does not wait for the GFF parse
         try {
             String json = serpentPlotCache.computeIfAbsent(jobId,
                 k -> SerpentPlotBuilder.toJson(SerpentPlotBuilder.build(result)));
@@ -3076,6 +4186,88 @@ public class LocalServer {
         } catch (Exception e) {
             respond(ex, 500, "application/json", ("{\"error\":\"" + escJ(e.getMessage()) + "\"}").getBytes());
         }
+    }
+
+    // GET /api/serpent-locus?job=<jobId>&locus=<index> — table shown when the user clicks a serpent:
+    // each dataset's lead SNP (position, alleles, OR + 95% CI, p) with its nearest gene.
+    private void serpentLocus(HttpExchange ex) throws IOException {
+        cors(ex); if (preflight(ex)) return;
+        String jobId = queryParam(ex, "job");
+        MultiLocusResult result = jobId != null ? locusMatrixJobs.get(jobId) : null;
+        if (result == null) {
+            respond(ex, 404, "application/json", "{\"error\":\"Job not found or not complete\"}".getBytes());
+            return;
+        }
+        int locus;
+        try { locus = Integer.parseInt(queryParam(ex, "locus")); }
+        catch (Exception e) { respond(ex, 400, "application/json", "{\"error\":\"locus index required\"}".getBytes()); return; }
+        try {
+            GffParser gff = geneAnnotationFor(jobId);
+            SerpentPlotBuilder.GeneLookup lookup = gff == null ? null : (chr, pos) -> nearestGene(gff, chr, pos);
+            String json = SerpentPlotBuilder.locusDetailJson(result, locus, lookup);
+            if (json == null) { respond(ex, 404, "application/json", "{\"error\":\"Locus not found\"}".getBytes()); return; }
+            respond(ex, 200, "application/json", json.getBytes("UTF-8"));
+        } catch (Exception e) {
+            respond(ex, 500, "application/json", ("{\"error\":\"" + escJ(e.getMessage()) + "\"}").getBytes());
+        }
+    }
+
+    /** Parsed gene annotation per GFF3 path, loaded once (the GENCODE file is ~1.3 GB). */
+    private static final Map<String, java.util.concurrent.Future<GffParser>> gffByPath = new ConcurrentHashMap<>();
+
+    /** The GFF3 of the first project in the run (all projects in a run share one annotation in practice). */
+    private String gffPathForJob(String jobId) {
+        LocusMatrixJobMeta meta = locusMatrixJobMeta.get(jobId);
+        if (meta == null || meta.projectIds == null) return null;
+        for (String pid : meta.projectIds) {
+            try {
+                Config c = Config.loadFromProject(new File("projects/" + pid).getAbsolutePath());
+                if (c.gff3File != null && new File(c.gff3File).isFile()) return c.gff3File;
+            } catch (Exception ignored) {}
+        }
+        return null;
+    }
+
+    private java.util.concurrent.Future<GffParser> gffFuture(String path) {
+        return gffByPath.computeIfAbsent(path, k -> {
+            java.util.concurrent.FutureTask<GffParser> task = new java.util.concurrent.FutureTask<>(() -> {
+                Config c = new Config();
+                c.gff3File = k;
+                return GffParser.parse(c);
+            });
+            Thread t = new Thread(task, "gff-load"); t.setDaemon(true); t.start();
+            return task;
+        });
+    }
+
+    private void warmGeneAnnotation(String jobId) {
+        try { String path = gffPathForJob(jobId); if (path != null) gffFuture(path); } catch (Exception ignored) {}
+    }
+
+    private GffParser geneAnnotationFor(String jobId) {
+        String path = gffPathForJob(jobId);
+        if (path == null) return null;
+        try { return gffFuture(path).get(); }
+        catch (Exception e) {
+            gffByPath.remove(path); // let a later request retry
+            System.err.printf("[Serpent] Could not load gene annotation %s: %s%n", path, e.getMessage());
+            return null;
+        }
+    }
+
+    /** Nearest protein-coding gene within 1 Mb of pos (falling back to any annotated gene), as {name, distance}. */
+    private static Object[] nearestGene(GffParser gff, String chr, long pos) {
+        String c = chr == null ? "" : (chr.startsWith("chr") ? chr.substring(3) : chr);
+        List<Gene> near = gff.overlapping(c, Math.max(0, pos - 1_000_000), pos + 1_000_000);
+        Gene best = null, bestAny = null;
+        for (Gene g : near) {
+            if (bestAny == null || g.distanceTo(pos) < bestAny.distanceTo(pos)) bestAny = g;
+            Transcript t = g.canonical();
+            boolean coding = t != null && "protein_coding".equals(t.transcriptType);
+            if (coding && (best == null || g.distanceTo(pos) < best.distanceTo(pos))) best = g;
+        }
+        Gene g = best != null ? best : bestAny;
+        return g == null ? null : new Object[]{ g.geneName, g.distanceTo(pos) };
     }
 
     // GET /api/locus-matrix-export?job=<jobId>
