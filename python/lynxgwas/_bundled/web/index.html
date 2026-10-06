@@ -272,6 +272,20 @@ table.gsearch-table a.gsearch-open:hover { background: #0b5a46; }
 #agent-inputrow input { flex: 1; padding: 0.5rem 0.7rem; border: 1px solid #ccc; border-radius: 6px; font-size: 0.85rem; }
 #agent-inputrow button { padding: 0.5rem 1.1rem; }
 #agent-status { font-size: 0.72rem; color: #888; padding: 0 0.75rem 0.4rem; }
+/* ── Example data banner ─────────────────────────── */
+#exdata { display: none; background: #fff; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  border-left: 4px solid #0F6E56; padding: 0.9rem 1.1rem; margin-bottom: 1rem; }
+#exdata .ex-row { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+#exdata .ex-text { flex: 1; min-width: 260px; font-size: 0.86rem; }
+#exdata .ex-text b { font-size: 0.95rem; }
+#exdata .ex-sub { color: #666; font-size: 0.78rem; margin-top: 0.15rem; }
+#exdata .ex-bar { height: 8px; background: #e6ece9; border-radius: 4px; overflow: hidden; margin: 0.55rem 0 0.3rem; }
+#exdata .ex-bar > div { height: 100%; background: #0F6E56; width: 0; transition: width 0.4s; }
+#exdata .ex-bar.indeterminate > div { width: 30%; animation: exslide 1.2s linear infinite; }
+@keyframes exslide { from { margin-left: -30%; } to { margin-left: 100%; } }
+#exdata .ex-err { color: #b91c1c; }
+#exdata .ex-ok { color: #065f46; }
+.badge-example { background: #dbeafe; color: #1e3a8a; }
 </style>
 </head>
 <body>
@@ -347,6 +361,7 @@ table.gsearch-table a.gsearch-open:hover { background: #0b5a46; }
 </div>
 
 <main>
+  <div id="exdata"></div>
   <div class="toolbar">
     <h2>Projects</h2>
     <button class="btn btn-secondary" id="btn-process-all" onclick="processAllStale()" disabled>
@@ -376,6 +391,9 @@ table.gsearch-table a.gsearch-open:hover { background: #0b5a46; }
     <button class="btn btn-secondary" onclick="githubOpenImport()" title="Extract a project from a GitHub repository">
       <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="vertical-align:-2px"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
       Import from GitHub
+    </button>
+    <button class="btn btn-secondary" onclick="exdataShow()" title="Download the article's 30 example datasets (results only) from Zenodo">
+      Example data
     </button>
     <button class="btn btn-primary" id="btn-new" onclick="newProject()">
       + New project
@@ -636,10 +654,10 @@ function render() {
       + '<td class="actions" onclick="event.stopPropagation()">'
       + '<button class="btn btn-secondary" style="background:#dbeafe;color:#1e3a8a;font-weight:600" onclick="openSummary(\'' + esc(p.id) + '\')" title="Results of every analysis, with plots, and what still needs to be run">Summary</button>'
       + '<button class="btn btn-secondary" onclick="editConfig(\'' + esc(p.id) + '\')" title="Edit configuration">Edit</button>'
-      + '<button class="btn btn-secondary" onclick="reprocess(\'' + esc(p.id) + '\')" title="Reprocess">Reprocess</button>'
+      + (p.results_only ? '' : '<button class="btn btn-secondary" onclick="reprocess(\'' + esc(p.id) + '\')" title="Reprocess">Reprocess</button>')
       + '<button class="btn btn-secondary" onclick="exportExcel(\'' + esc(p.id) + '\')" title="Export Excel">Excel</button>'
       + '<button class="btn btn-secondary" style="background:#d1fae5;color:#065f46" onclick="openProjectAnalysis(\'' + esc(p.id) + '\')" title="Build analysis base artifacts">Analyze</button>'
-      + '<button class="btn btn-secondary" onclick="openGwasQc(\'' + esc(p.id) + '\')" title="Genomic inflation / confounding triage">QC</button>'
+      + (p.results_only ? '' : '<button class="btn btn-secondary" onclick="openGwasQc(\'' + esc(p.id) + '\')" title="Genomic inflation / confounding triage">QC</button>')
       + '<button class="btn btn-secondary" onclick="openEvidence(\'' + esc(p.id) + '\')" title="Attach gene-level evidence data (PPI, expression, etc.)">Evidence</button>'
       + '<button class="btn btn-secondary" onclick="githubOpenPush(\'' + esc(p.id) + '\')" title="Save this project to a GitHub repository">' + GITHUB_ICON_SVG + ' Save</button>'
       + '<button class="btn btn-danger" style="padding:0.2rem 0.6rem;font-size:0.75rem" onclick="deleteProject(\'' + esc(p.id) + '\')" title="Delete project">Delete</button>'
@@ -650,6 +668,8 @@ function render() {
 }
 
 function statusBadge(p) {
+  if (p.results_only && p.status !== 'processing')
+    return '<span class="badge badge-example" title="Installed from the example data: results only, without the GWAS summary statistics, so it can be browsed but not re-run">Example data</span>';
   switch (p.status) {
     case 'up_to_date':
       return '<span class="badge badge-ok">Up to date</span>';
@@ -3249,6 +3269,119 @@ loadProjects();
 loadResources();
 loadLocusMatrixJobs();
 setInterval(loadProjects, 10000);
+
+// ═══════════════════════════════════════════════════════════════
+// Example data: the article's 30 datasets (results only), downloaded from Zenodo and merged in.
+// The banner shows until it is installed or dismissed; the toolbar's "Example data" brings it back.
+// ═══════════════════════════════════════════════════════════════
+var exdataTimer = null, exdataForced = false;
+
+function exdataGB(b) { return b >= 1e9 ? (b / 1e9).toFixed(2) + ' GB' : (b / 1e6).toFixed(0) + ' MB'; }
+
+async function exdataLoad() {
+  var st;
+  try { st = await (await fetch(API + '/api/example-data/status')).json(); } catch (e) { return; }
+  exdataRender(st);
+}
+
+function exdataShow() { exdataForced = true; exdataLoad(); }
+
+function exdataRender(st) {
+  var el = document.getElementById('exdata');
+  var job = st.job;
+  if (st.running && job) { exdataProgress(job); exdataPoll(); return; }
+  if (job && job.done && !job.cancelled && !job.error && job.phase === 'Done') {
+    el.style.display = 'block';
+    el.innerHTML = '<div class="ex-row"><div class="ex-text ex-ok"><b>Example data added.</b> '
+      + esc(job.message || '') + '. The projects are marked <i>Example data</i>; the Locus Serpent Plot and Gene '
+      + 'Constellation runs over all 30 are in the runs lists below.</div>'
+      + '<button class="btn btn-secondary" onclick="exdataHide()">Close</button></div>';
+    return;
+  }
+  var showIt = exdataForced || (!st.installed && !st.dismissed);
+  if (!showIt) { el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  var title = st.title || 'LYNXgwas article data';
+  var lines = [];
+  if (st.installed) lines.push('Already installed (version ' + esc(st.installed) + '). Installing again only adds what is missing.');
+  var sub = '30 GWAS datasets across 6 diseases, with every analysis already run: browse them without processing anything. '
+    + 'Results only: the original summary statistics are not included.';
+  var err = job && job.done && (job.error || job.cancelled)
+    ? '<div class="ex-sub ' + (job.error ? 'ex-err' : '') + '">' + esc(job.error || job.message || 'Cancelled.') + '</div>' : '';
+  var buttons = st.available
+    ? '<button class="btn btn-primary" onclick="exdataInstall()">Download' + (st.size ? ' (' + exdataGB(st.size) + ')' : '') + '</button>'
+    : '';
+  var note = st.available ? '' : '<div class="ex-sub">' + esc(st.source_error || 'Not available right now.') + '</div>';
+  el.innerHTML = '<div class="ex-row"><div class="ex-text"><b>Add the example data: ' + esc(title) + '</b>'
+    + '<div class="ex-sub">' + sub + (st.doi ? ' DOI: <a href="https://doi.org/' + escAttr(st.doi) + '" target="_blank" rel="noopener">' + esc(st.doi) + '</a>' : '') + '</div>'
+    + (lines.length ? '<div class="ex-sub">' + lines.join(' ') + '</div>' : '') + note + err + '</div>'
+    + buttons
+    + '<button class="btn btn-secondary" onclick="exdataInstallFile()" title="Install a pack you have already downloaded (lynxgwas-example-data-*.zip)">Install from a file</button>'
+    + '<button class="btn btn-secondary" onclick="exdataDismiss()">Not now</button></div>';
+}
+
+function exdataProgress(job) {
+  var el = document.getElementById('exdata');
+  el.style.display = 'block';
+  var pct = job.bytes_total > 0 ? Math.min(100, 100 * job.bytes_done / job.bytes_total)
+          : job.files_total > 0 ? 100 * job.files_done / job.files_total : -1;
+  var detail = '';
+  if (job.bytes_total > 0) {
+    detail = exdataGB(job.bytes_done) + ' of ' + exdataGB(job.bytes_total);
+    if (job.speed > 0 && /Download/.test(job.phase)) {
+      var left = (job.bytes_total - job.bytes_done) / job.speed;
+      detail += ' · ' + (job.speed / 1e6).toFixed(1) + ' MB/s · about ' + (left > 90 ? Math.round(left / 60) + ' min' : Math.round(left) + ' s') + ' left';
+    }
+  } else if (job.files_total > 0) {
+    detail = job.files_done.toLocaleString() + ' of ' + job.files_total.toLocaleString() + ' files';
+  }
+  el.innerHTML = '<div class="ex-row"><div class="ex-text"><b>Adding the example data</b> · ' + esc(job.phase)
+    + '<div class="ex-bar' + (pct < 0 ? ' indeterminate' : '') + '"><div style="width:' + (pct < 0 ? 30 : pct.toFixed(1)) + '%"></div></div>'
+    + '<div class="ex-sub">' + esc(detail) + (job.message ? ' · ' + esc(job.message) : '') + '</div></div>'
+    + '<button class="btn btn-secondary" onclick="exdataCancel()">Cancel</button></div>';
+}
+
+function exdataPoll() {
+  if (exdataTimer) return;
+  exdataTimer = setInterval(async function() {
+    var st;
+    try { st = await (await fetch(API + '/api/example-data/status')).json(); } catch (e) { return; }
+    if (!st.running) {
+      clearInterval(exdataTimer); exdataTimer = null;
+      exdataForced = !!(st.job && (st.job.error || st.job.cancelled));
+      loadProjects();
+      loadLocusMatrixJobs();
+    }
+    exdataRender(st);
+  }, 1000);
+}
+
+async function exdataInstall(path) {
+  var r = await fetch(API + '/api/example-data/install', {method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(path ? {path: path} : {})});
+  if (!r.ok) { var d = {}; try { d = await r.json(); } catch (e) {} alert(d.error || 'Could not start the install.'); return; }
+  exdataPoll();
+  exdataLoad();
+}
+
+async function exdataInstallFile() {
+  try {
+    var d = await (await fetch(API + '/pick-file')).json();
+    if (d.path) exdataInstall(d.path);
+  } catch (e) { alert('Could not open the file picker.'); }
+}
+
+async function exdataCancel() { await fetch(API + '/api/example-data/cancel', {method: 'POST'}); }
+
+async function exdataDismiss() {
+  exdataForced = false;
+  await fetch(API + '/api/example-data/dismiss', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{"dismissed":true}'});
+  exdataHide();
+}
+
+function exdataHide() { document.getElementById('exdata').style.display = 'none'; }
+
+exdataLoad();
 
 // ═══════════════════════════════════════════════════════════════
 // AI Agent panel (Phase 4) — see DECISIONS_PHASE4.md

@@ -31,6 +31,10 @@ public class ProjectMetadata {
     public String  rsidRecoveryDate      = "";
     public String  selectedSnpDatabase   = "";
 
+    // Example data (results only): installed from the example-data pack without the GWAS summary statistics,
+    // so it can be browsed but not reprocessed; its inputs are missing by design, not stale
+    public boolean resultsOnly           = false;
+
     // ── Staleness detection ──────────────────────────────────────────────
 
     public enum StaleReason { NOT_STALE, NO_METADATA, VERSION_CHANGED, CORE_INPUT_CHANGED, ANNOTATION_CHANGED }
@@ -45,6 +49,7 @@ public class ProjectMetadata {
 
         ProjectMetadata stored = load(projectDir);
         if (stored == null) return StaleReason.NO_METADATA;
+        if (stored.resultsOnly) return StaleReason.NOT_STALE;
 
         if (!Config.PIPELINE_VERSION.equals(stored.pipelineVersion))
             return StaleReason.VERSION_CHANGED;
@@ -317,6 +322,7 @@ public class ProjectMetadata {
             pm.rsidRecoveryRate        = extractJsonStr(json, "rsid_recovery_rate");
             pm.rsidRecoveryDate        = extractJsonStr(json, "rsid_recovery_date");
             pm.selectedSnpDatabase     = extractJsonStr(json, "selected_snp_database");
+            pm.resultsOnly             = "true".equals(extractJsonStr(json, "results_only"));
             return pm;
         } catch (IOException e) {
             System.err.println("[ProjectMetadata] Could not read " + f + ": " + e.getMessage());
@@ -348,7 +354,8 @@ public class ProjectMetadata {
             pw.printf("  \"rsid_recovery_status\": \"%s\",%n", escJson(rsidRecoveryStatus));
             pw.printf("  \"rsid_recovery_rate\": \"%s\",%n", escJson(rsidRecoveryRate));
             pw.printf("  \"rsid_recovery_date\": \"%s\",%n", escJson(rsidRecoveryDate));
-            pw.printf("  \"selected_snp_database\": \"%s\"%n", escJson(selectedSnpDatabase));
+            pw.printf("  \"selected_snp_database\": \"%s\"%s%n", escJson(selectedSnpDatabase), resultsOnly ? "," : "");
+            if (resultsOnly) pw.println("  \"results_only\": true");
             pw.println("}");
         }
     }

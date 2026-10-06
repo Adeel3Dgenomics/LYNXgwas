@@ -1,0 +1,4 @@
+{
+ "zenodo_record": "",
+ "_note": "Zenodo record id of the LYNXgwas example data (any version; the latest is used). Empty until the record is published. Alternatively set \"url\", \"file\", \"size\" and \"md5\" or \"sha256\" to serve the pack from elsewhere."
+}

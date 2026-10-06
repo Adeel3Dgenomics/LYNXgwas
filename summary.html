@@ -252,6 +252,8 @@ async function load() {
   S.access = access && access.access ? access.access : 'owner';
   S.cfg = cfg || {}; S.herit = herit;
   S.meta = (Array.isArray(projects) ? projects : []).find(p => p.id === PID) || {};
+  // example data has results but not the summary statistics: nothing can be run, so offer no actions
+  if (S.meta.results_only) S.access = 'viewer';
   const genes = new Map(((manifest && manifest.loci) || []).map(m => [m.index, m]));
   const ready = new Map(((base && base.loci) || []).map(b => [b.index, b.ready]));
   S.loci = summary.loci.map(l => {
@@ -319,7 +321,12 @@ function render() {
   const n = Number(c['sample.n']), nc = Number(c['n.cases']), nn = Number(c['n.controls']);
   document.getElementById('subtitle').textContent = [S.meta.description, c['genome.build'], c['ancestry'] || c['ref.panel.population']]
     .filter(Boolean).join(' · ');
-  document.getElementById('ro').style.display = S.access === 'owner' ? 'none' : 'block';
+  const ro = document.getElementById('ro');
+  if (S.meta.results_only)
+    ro.innerHTML = '<b>Example data, results only.</b> Every result here comes with the example data. The GWAS summary '
+      + 'statistics are not included, so nothing can be re-run; to re-run analyses, download the original summary '
+      + 'statistics and set them as the GWAS file of this project (Edit on the home page).';
+  ro.style.display = S.access === 'owner' ? 'none' : 'block';
   const ld = S.herit && S.herit.ldsc;
   const sigLoci = S.loci.filter(l => l.topP != null && l.topP < 5e-8).length;
   const tiles = [
@@ -371,6 +378,10 @@ function renderSteps() {
 
 function renderNext() {
   const ul = document.getElementById('next');
+  if (S.meta.results_only) {
+    ul.innerHTML = '<li>Nothing to run: this is example data, with results only (see the note above).</li>';
+    return;
+  }
   const items = [];
   const owner = S.access === 'owner';
   const blocked = S.loci.filter(l => !l.ready).length;

@@ -69,6 +69,13 @@ def copy_tools() -> None:
     shutil.copy2(ROOT / "scripts" / "ukbb_ld.py", scripts / "ukbb_ld.py")
 
 
+def copy_config() -> None:
+    """Where the "Add example data" installer finds the example data (the Zenodo record)."""
+    dest = BUNDLED / "config"
+    reset(dest)
+    shutil.copy2(ROOT / "config" / "example_data.json", dest / "example_data.json")
+
+
 def main() -> None:
     if not (ROOT / "bin").exists():
         raise SystemExit("bin/ not found — run build.bat first")
@@ -76,6 +83,7 @@ def main() -> None:
     copy_lib()
     copy_web()
     copy_tools()
+    copy_config()
     n_classes = len(list((BUNDLED / "classes").rglob("*.class")))
     n_jars = len(list((BUNDLED / "lib").glob("*.jar")))
     print(f"Bundled {n_classes} class files, {n_jars} jar(s), web assets, and tool descriptors "

@@ -72,6 +72,10 @@ def ensure_workspace_assets(workspace: Path) -> None:
     # Tool descriptors are discovered from the workspace's tools/ folder; new tools (MAGMA, local
     # heritability, causal-SNP ranking...) must reach existing workspaces after an upgrade.
     sync_tree(bundled_path("tools"), workspace / "tools")
+    # Where "Add example data" finds the article's example data (a Zenodo record)
+    example_cfg = bundled_path("config", "example_data.json")
+    if example_cfg.is_file():
+        sync_file(example_cfg, workspace / "config" / "example_data.json")
 
 
 def require_java() -> None:

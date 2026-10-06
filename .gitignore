@@ -70,3 +70,5 @@ scratch_*
 javac_err*.txt
 run_log*.txt
 build_log.txt
+# Example data downloads, staging and install state (see docs/EXAMPLE_DATA.md)
+example-data/

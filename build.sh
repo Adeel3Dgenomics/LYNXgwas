@@ -112,6 +112,7 @@ javac -encoding UTF-8 -d bin -cp "bin$LIBCP" \
   src/GenomeSkyline.java \
   src/GenomeLiftover.java \
   src/ProjectMetadata.java \
+  src/ExampleDataInstaller.java \
   src/JsonExporter.java \
   src/LocusUpdater.java \
   src/LociMutationService.java \

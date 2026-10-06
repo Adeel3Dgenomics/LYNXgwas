@@ -1,0 +1,13 @@
+LYNXgwas article data (results only)
+
+The processed results in this archive (fine-mapping, gene tests, heritability estimates, enrichment
+results, causal-SNP rankings, cross-dataset runs and the viewer data derived from them) are licensed
+under the Creative Commons Attribution 4.0 International licence (CC BY 4.0):
+https://creativecommons.org/licenses/by/4.0/
+
+You may share and adapt them for any purpose, provided you give appropriate credit: cite the LYNXgwas
+article and the original publication of each GWAS dataset you use (listed in README.md).
+
+The GWAS summary statistics these results were computed from are not included and remain under the
+terms of the consortia that published them. The Roadmap Epigenomics histone peaks in regulatory_data/
+are redistributed from the Roadmap Epigenomics Project under its own terms.

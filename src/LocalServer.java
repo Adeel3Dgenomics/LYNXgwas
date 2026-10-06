@@ -13,7 +13,14 @@ import opentargets.*;
 
 public class LocalServer {
 
-    public static final int PORT = 8765;
+    public static final int PORT = configuredPort();
+
+    /** 8765, unless -Dlynxgwas.port or LYNXGWAS_PORT says otherwise (e.g. to run a second instance). */
+    private static int configuredPort() {
+        String v = System.getProperty("lynxgwas.port", System.getenv("LYNXGWAS_PORT"));
+        try { return v == null || v.trim().isEmpty() ? 8765 : Integer.parseInt(v.trim()); }
+        catch (NumberFormatException e) { return 8765; }
+    }
 
     /** Global progress — used by legacy single-project mode. */
     public static final ProgressTracker progress = new ProgressTracker();
@@ -229,6 +236,9 @@ public class LocalServer {
         http = HttpServer.create(new InetSocketAddress("localhost", PORT), 32);
         loadPersistedLocusMatrixJobs();
 
+        // ── Example data (the article's 30 datasets, from Zenodo) ────────
+        http.createContext("/api/example-data/", this::exampleDataEndpoint);
+
         // ── Project-scoped API (Step 6) ──────────────────────────────────
         http.createContext("/api/projects/process", this::processProjects);
         http.createContext("/api/projects",         this::listProjects);
@@ -337,6 +347,7 @@ public class LocalServer {
                 json.append(",\"pipeline_version\":\"").append(escJ(pm.pipelineVersion)).append('"');
                 json.append(",\"rsid_recovery_status\":\"").append(escJ(pm.rsidRecoveryStatus)).append('"');
                 json.append(",\"rsid_recovery_rate\":\"").append(escJ(pm.rsidRecoveryRate)).append('"');
+                json.append(",\"results_only\":").append(pm.resultsOnly);
             }
 
             // rsID status from project.json (always available, even if config fails)
@@ -390,6 +401,7 @@ public class LocalServer {
                 respond(ex, 404, "application/json",
                     ("{\"error\":\"Project not found: " + escJ(id) + "\"}").getBytes()); return;
             }
+            if (isResultsOnly(id)) { resultsOnlyRefusal(ex); return; }
             toProcess.add(id);
         } else if ("true".equals(allStale)) {
             for (File dir : Main.discoverProjects(new File("projects"))) {
@@ -487,6 +499,66 @@ public class LocalServer {
         System.out.printf("[Server] Deleted project '%s'%n", id);
     }
 
+    // ── Example data ─────────────────────────────────────────────────────
+
+    private final ExampleDataInstaller exampleData = new ExampleDataInstaller(() -> {
+        loadPersistedLocusMatrixJobs();
+        mvsusieIndexed = false;
+    });
+
+    // GET  /api/example-data/status    — published pack, whether it is installed, banner dismissed, running job
+    // POST /api/example-data/install   — {} downloads from Zenodo; {"path": "..."} installs a pack already on disk
+    // GET  /api/example-data/progress  — the running (or last) install
+    // POST /api/example-data/cancel    — stops the install; a partial download is kept and resumed next time
+    // POST /api/example-data/dismiss   — {"dismissed": true|false}: hide or show the home-page banner
+    private void exampleDataEndpoint(HttpExchange ex) throws IOException {
+        cors(ex); if (preflight(ex)) return;
+        String action = ex.getRequestURI().getPath().substring("/api/example-data/".length());
+        boolean post = "POST".equalsIgnoreCase(ex.getRequestMethod());
+        switch (action) {
+            case "status":
+                respond(ex, 200, "application/json", exampleData.statusJson().getBytes("UTF-8")); return;
+            case "progress":
+                respond(ex, 200, "application/json", exampleData.progressJson().getBytes("UTF-8")); return;
+            case "install": {
+                if (!post) break;
+                String err = exampleData.start(extractStr(new String(readAll(ex.getRequestBody()), "UTF-8"), "path"));
+                respond(ex, err == null ? 200 : 409, "application/json",
+                    (err == null ? "{\"ok\":true}" : "{\"error\":\"" + escJ(err) + "\"}").getBytes("UTF-8"));
+                return;
+            }
+            case "cancel":
+                if (!post) break;
+                exampleData.cancel();
+                respond(ex, 200, "application/json", "{\"ok\":true}".getBytes()); return;
+            case "dismiss":
+                if (!post) break;
+                exampleData.setDismissed(!"false".equals(extractStr(new String(readAll(ex.getRequestBody()), "UTF-8"), "dismissed")));
+                respond(ex, 200, "application/json", "{\"ok\":true}".getBytes()); return;
+            default:
+                respond(ex, 404, "application/json", "{\"error\":\"not found\"}".getBytes()); return;
+        }
+        respond(ex, 405, "application/json", "{\"error\":\"POST required\"}".getBytes());
+    }
+
+    /** Actions that need a project's GWAS summary statistics, which example data does not include. */
+    private static final Set<String> RESULTS_ONLY_BLOCKED = new HashSet<>(Arrays.asList(
+        "analysis/build-base", "analysis/run", "analysis/run-all", "heritability/run", "sample-size/apply",
+        "update-locus", "create-locus", "split-locus", "delete-locus", "merge-loci", "undo-mutation", "reorder-loci",
+        "qc"));
+
+    private static boolean isResultsOnly(String projectId) {
+        ProjectMetadata pm = ProjectMetadata.load(new File("projects", projectId).getAbsolutePath());
+        return pm != null && pm.resultsOnly;
+    }
+
+    private void resultsOnlyRefusal(HttpExchange ex) throws IOException {
+        respond(ex, 409, "application/json", ("{\"error\":\"This is example data with results only: the GWAS summary "
+            + "statistics are not included, so it can be browsed but not re-run. To re-run analyses, download the "
+            + "original summary statistics and set them as this project's GWAS file in its settings.\","
+            + "\"results_only\":true}").getBytes("UTF-8"));
+    }
+
     private void projectRouter(HttpExchange ex) throws IOException {
         cors(ex); if (preflight(ex)) return;
         String path = ex.getRequestURI().getPath();
@@ -498,6 +570,8 @@ public class LocalServer {
 
         String projectDir = new File("projects", projectId).getAbsolutePath();
         String dataDir = projectDir + "/data";
+
+        if (RESULTS_ONLY_BLOCKED.contains(action) && isResultsOnly(projectId)) { resultsOnlyRefusal(ex); return; }
 
         // DELETE /api/project/{id} — delete entire project
         if (action.isEmpty() && "DELETE".equalsIgnoreCase(ex.getRequestMethod())) {
@@ -665,6 +739,11 @@ public class LocalServer {
             cfg.applyJson(body);
             markSampleSizeChange(previous, cfg);
             cfg.writeProperties(cfgFile.getAbsolutePath());
+            ProjectMetadata pm = ProjectMetadata.load(projectDir);
+            if (pm != null && pm.resultsOnly && !cfg.gwasFile.isEmpty() && new File(cfg.gwasFile).isFile()) {
+                pm.resultsOnly = false;
+                pm.save(projectDir);
+            }
             respond(ex, 200, "application/json", "{\"ok\":true}".getBytes());
         } catch (Exception e) {
             respond(ex, 500, "application/json",
@@ -943,6 +1022,13 @@ public class LocalServer {
         File cacheFile = new File(new File(cfg.outputDir), "regulatory_enrichment.json");
         File cacheKeyFile = new File(new File(cfg.outputDir), "regulatory_enrichment.key");
         try {
+            // example data: no summary statistics to key against, so the saved result at the same tissue and
+            // threshold is the result
+            String savedKey = cacheKeyFile.isFile() ? new String(Files.readAllBytes(cacheKeyFile.toPath()), "UTF-8").trim() : "";
+            if (cacheFile.isFile() && isResultsOnly(projectId) && savedKey.startsWith(eid + "|" + threshold + "|")) {
+                respond(ex, 200, "application/json", Files.readAllBytes(cacheFile.toPath()));
+                return;
+            }
             if (cacheFile.isFile() && cacheKeyFile.isFile()
                     && cacheKey.equals(new String(Files.readAllBytes(cacheKeyFile.toPath()), "UTF-8").trim())) {
                 respond(ex, 200, "application/json", Files.readAllBytes(cacheFile.toPath()));
@@ -2433,7 +2519,8 @@ public class LocalServer {
         if (f.isFile()) {
             String j = new String(Files.readAllBytes(f.toPath()), "UTF-8");
             Map<String, Object> m = MiniJson.asObject(MiniJson.parse(j));
-            if (SampleSizeCheck.key(cfg).replace("\\", "/").replace("\"", "'").equals(MiniJson.getStr(m, "key", ""))) {
+            // example data has no summary statistics to key the saved check against: it is the result
+            if (isResultsOnly(projectId) || SampleSizeCheck.key(cfg).replace("\\", "/").replace("\"", "'").equals(MiniJson.getStr(m, "key", ""))) {
                 respond(ex, 200, "application/json", j.getBytes("UTF-8"));
                 return;
             }
@@ -4869,6 +4956,7 @@ public class LocalServer {
         for (File dir : dirs) {
             File metaFile = new File(dir, "job.json");
             if (!metaFile.isFile()) continue; // runs from before persistence existed: nothing to restore
+            if (locusMatrixJobMeta.containsKey(dir.getName())) continue;  // already loaded
             try {
                 Map<String, Object> m = MiniJson.asObject(MiniJson.parse(
                     new String(Files.readAllBytes(metaFile.toPath()), java.nio.charset.StandardCharsets.UTF_8)));
@@ -4911,7 +4999,7 @@ public class LocalServer {
             }
         }
         loaded.sort(Comparator.comparing(x -> x.createdAt == null ? "" : x.createdAt));
-        for (LocusMatrixJobMeta meta : loaded) locusMatrixJobOrder.add(meta.jobId);
+        for (LocusMatrixJobMeta meta : loaded) if (!locusMatrixJobOrder.contains(meta.jobId)) locusMatrixJobOrder.add(meta.jobId);
         if (!loaded.isEmpty())
             System.out.printf("Restored %d saved cross-dataset run(s) (%d complete, %d failed/interrupted)%n", loaded.size(), ok, failed);
     }
