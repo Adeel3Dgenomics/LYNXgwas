@@ -238,6 +238,7 @@ public class LocalServer {
 
         // ── Example data (the article's 30 datasets, from Zenodo) ────────
         http.createContext("/api/example-data/", this::exampleDataEndpoint);
+        http.createContext("/api/pack/", this::packEndpoint);
 
         // ── Project-scoped API (Step 6) ──────────────────────────────────
         http.createContext("/api/projects/process", this::processProjects);
@@ -539,6 +540,48 @@ public class LocalServer {
                 respond(ex, 404, "application/json", "{\"error\":\"not found\"}".getBytes()); return;
         }
         respond(ex, 405, "application/json", "{\"error\":\"POST required\"}".getBytes());
+    }
+
+    // ── Project packs: export / import ───────────────────────────────────
+
+    private final ProjectPackExporter packExporter = new ProjectPackExporter();
+
+    // POST /api/pack/export    {"ids": [...], "include_gwas": bool, "include_runs": bool} — zip into exports/
+    // GET  /api/pack/export-progress  — the running (or last) export; when done, the zip's name
+    // POST /api/pack/export-cancel
+    // GET  /api/pack/download?file=<name>  — a finished export, as a download
+    // POST /api/pack/import    {"path": "..."} — imports a pack (one project or many); progress at /api/example-data/progress
+    private void packEndpoint(HttpExchange ex) throws IOException {
+        cors(ex); if (preflight(ex)) return;
+        String action = ex.getRequestURI().getPath().substring("/api/pack/".length());
+        boolean post = "POST".equalsIgnoreCase(ex.getRequestMethod());
+        if (action.equals("export") && post) {
+            Map<String, Object> b = MiniJson.asObject(MiniJson.parse(new String(readAll(ex.getRequestBody()), "UTF-8")));
+            List<String> ids = new ArrayList<>();
+            if (b.get("ids") instanceof List) for (Object o : MiniJson.asArray(b.get("ids"))) ids.add(String.valueOf(o));
+            String err = packExporter.start(ids, Boolean.TRUE.equals(b.get("include_gwas")), !Boolean.FALSE.equals(b.get("include_runs")));
+            respond(ex, err == null ? 200 : 409, "application/json",
+                (err == null ? "{\"ok\":true}" : "{\"error\":\"" + escJ(err) + "\"}").getBytes("UTF-8"));
+        } else if (action.equals("export-progress")) {
+            respond(ex, 200, "application/json", packExporter.progressJson().getBytes("UTF-8"));
+        } else if (action.equals("export-cancel") && post) {
+            packExporter.cancel();
+            respond(ex, 200, "application/json", "{\"ok\":true}".getBytes());
+        } else if (action.equals("download")) {
+            File f = ProjectPackExporter.exported(queryParam(ex, "file"));
+            if (f == null) { respond(ex, 404, "application/json", "{\"error\":\"not found\"}".getBytes()); return; }
+            ex.getResponseHeaders().set("Content-Type", "application/zip");
+            ex.getResponseHeaders().set("Content-Disposition", "attachment; filename=\"" + f.getName() + "\"");
+            ex.sendResponseHeaders(200, f.length());
+            try (OutputStream os = ex.getResponseBody()) { Files.copy(f.toPath(), os); }
+        } else if (action.equals("import") && post) {
+            String path = extractStr(new String(readAll(ex.getRequestBody()), "UTF-8"), "path");
+            String err = path == null || path.isEmpty() ? "Choose a .zip file to import." : exampleData.start(path);
+            respond(ex, err == null ? 200 : 409, "application/json",
+                (err == null ? "{\"ok\":true}" : "{\"error\":\"" + escJ(err) + "\"}").getBytes("UTF-8"));
+        } else {
+            respond(ex, post ? 404 : 405, "application/json", "{\"error\":\"not found\"}".getBytes());
+        }
     }
 
     /** Actions that need a project's GWAS summary statistics, which example data does not include. */
@@ -1042,6 +1085,17 @@ public class LocalServer {
 
         List<RegulatoryEnrichmentAnalyzer.SnpPos> foreground = new ArrayList<>();
         List<RegulatoryEnrichmentAnalyzer.SnpPos> background = new ArrayList<>();
+
+        // without the tissue's peak files every overlap counts as zero and the test reports nonsense
+        if (eid != null) {
+            for (String mark : RegulatoryPeakIndex.MARKS) {
+                if (!new File("regulatory_data/" + eid + "/" + eid + "-" + mark + ".narrowPeak.gz").isFile()) {
+                    respond(ex, 404, "application/json", ("{\"error\":\"The Roadmap histone peaks for " + escJ(eid)
+                        + " (" + escJ(mark) + ") are not in regulatory_data/, so the enrichment cannot be computed.\"}").getBytes("UTF-8"));
+                    return;
+                }
+            }
+        }
 
         if (eid != null) {
             File gwasFile = new File(cfg.gwasFile);

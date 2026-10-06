@@ -392,6 +392,12 @@ table.gsearch-table a.gsearch-open:hover { background: #0b5a46; }
       <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="vertical-align:-2px"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
       Import from GitHub
     </button>
+    <button class="btn btn-secondary" onclick="packImport()" title="Add the projects from a LYNXgwas .zip (one project or many) made with Export">
+      Import
+    </button>
+    <button class="btn btn-secondary" onclick="packOpenExport()" title="Pack one or more projects, with their results, into one .zip">
+      Export
+    </button>
     <button class="btn btn-secondary" onclick="exdataShow()" title="Download the article's 30 example datasets (results only) from Zenodo">
       Example data
     </button>
@@ -3292,9 +3298,16 @@ function exdataRender(st) {
   if (st.running && job) { exdataProgress(job); exdataPoll(); return; }
   if (job && job.done && !job.cancelled && !job.error && job.phase === 'Done') {
     el.style.display = 'block';
-    el.innerHTML = '<div class="ex-row"><div class="ex-text ex-ok"><b>Example data added.</b> '
-      + esc(job.message || '') + '. The projects are marked <i>Example data</i>; the Locus Serpent Plot and Gene '
-      + 'Constellation runs over all 30 are in the runs lists below.</div>'
+    el.innerHTML = '<div class="ex-row"><div class="ex-text ex-ok"><b>' + (job.kind === 'import' ? 'Import finished.' : 'Example data added.') + '</b> '
+      + esc(job.message || '') + '.' + (job.kind === 'import' ? ' Projects without their summary statistics are marked <i>Example data</i> (results only).'
+        : ' The projects are marked <i>Example data</i>; the Locus Serpent Plot and Gene Constellation runs over all 30 are in the runs lists below.') + '</div>'
+      + '<button class="btn btn-secondary" onclick="exdataHide()">Close</button></div>';
+    return;
+  }
+  if (job && job.done && job.kind === 'import' && (job.error || job.cancelled)) {
+    el.style.display = 'block';
+    el.innerHTML = '<div class="ex-row"><div class="ex-text"><b>Import ' + (job.error ? 'failed' : 'cancelled') + '.</b> '
+      + '<span class="' + (job.error ? 'ex-err' : '') + '">' + esc(job.error || job.message || '') + '</span></div>'
       + '<button class="btn btn-secondary" onclick="exdataHide()">Close</button></div>';
     return;
   }
@@ -3337,7 +3350,7 @@ function exdataProgress(job) {
   } else if (job.files_total > 0) {
     detail = job.files_done.toLocaleString() + ' of ' + job.files_total.toLocaleString() + ' files';
   }
-  el.innerHTML = '<div class="ex-row"><div class="ex-text"><b>Adding the example data</b> · ' + esc(job.phase)
+  el.innerHTML = '<div class="ex-row"><div class="ex-text"><b>' + (job.kind === 'import' ? 'Importing projects' : 'Adding the example data') + '</b> · ' + esc(job.phase)
     + '<div class="ex-bar' + (pct < 0 ? ' indeterminate' : '') + '"><div style="width:' + (pct < 0 ? 30 : pct.toFixed(1)) + '%"></div></div>'
     + '<div class="ex-sub">' + esc(detail) + (job.message ? ' · ' + esc(job.message) : '') + '</div></div>'
     + '<button class="btn btn-secondary" onclick="exdataCancel()">Cancel</button></div>';
@@ -3382,6 +3395,93 @@ async function exdataDismiss() {
 }
 
 function exdataHide() { document.getElementById('exdata').style.display = 'none'; }
+
+// ═══════════════════════════════════════════════════════════════
+// Export / import of projects as one .zip (one project or many). Import reuses the example-data
+// installer and its progress banner; export runs on the server and offers the zip as a download.
+// ═══════════════════════════════════════════════════════════════
+async function packImport() {
+  try {
+    var d = await (await fetch(API + '/pick-file')).json();
+    if (!d.path) return;
+    var r = await fetch(API + '/api/pack/import', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({path: d.path})});
+    if (!r.ok) { var e = {}; try { e = await r.json(); } catch (x) {} alert(e.error || 'Could not start the import.'); return; }
+    exdataPoll();
+    exdataLoad();
+  } catch (e) { alert('Could not open the file picker.'); }
+}
+
+var packTimer = null;
+
+function packOpenExport() {
+  var overlay = document.getElementById('pack-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'pack-overlay';
+    overlay.className = 'wizard-overlay';
+    overlay.innerHTML = '<div class="wizard-box" style="max-width:640px" id="pack-box"></div>';
+    overlay.addEventListener('click', function(e) { if (e.target === overlay && !packTimer) overlay.classList.remove('open'); });
+    document.body.appendChild(overlay);
+  }
+  var rows = projects.filter(function(p) { return p.status !== 'error'; }).map(function(p) {
+    return '<label style="display:flex;gap:0.5rem;align-items:center;padding:0.2rem 0;font-size:0.84rem">'
+      + '<input type="checkbox" class="pack-pick" value="' + escAttr(p.id) + '"> ' + miniGenomeIcon(p.id) + '<b>' + esc(p.name || p.id) + '</b>'
+      + '<span style="color:#888">' + (p.loci_count != null ? p.loci_count + ' loci' : '') + (p.results_only ? ' · example data' : '') + '</span></label>';
+  }).join('');
+  document.getElementById('pack-box').innerHTML = '<h3>Export projects</h3>'
+    + '<p style="color:#666;font-size:0.85rem;margin:0.5rem 0 0.8rem">Packs the chosen projects, with all their results, into one .zip that '
+    + '<b>Import</b> reads on this or another computer. LD matrices and other files LYNXgwas can rebuild are left out.</p>'
+    + '<div style="display:flex;gap:0.5rem;margin-bottom:0.4rem"><button class="btn btn-secondary" onclick="packPickAll(true)">Select all</button>'
+    + '<button class="btn btn-secondary" onclick="packPickAll(false)">None</button></div>'
+    + '<div style="max-height:300px;overflow:auto;border:1px solid #e5e7eb;border-radius:8px;padding:0.4rem 0.7rem">' + (rows || 'No projects.') + '</div>'
+    + '<label style="display:block;margin-top:0.8rem;font-size:0.84rem"><input type="checkbox" id="pack-gwas"> Include the GWAS summary statistics '
+    + '<span style="color:#888">(much bigger; without them the projects arrive as results only and cannot be re-run)</span></label>'
+    + '<label style="display:block;margin-top:0.3rem;font-size:0.84rem"><input type="checkbox" id="pack-runs" checked> Include the cross-dataset runs '
+    + '<span style="color:#888">(Gene Constellation, Locus Serpent Plot and their joint fine-mapping) whose datasets are all chosen</span></label>'
+    + '<div id="pack-status" style="margin-top:0.9rem;font-size:0.84rem"></div>'
+    + '<div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-top:0.9rem">'
+    + '<button class="btn btn-secondary" id="pack-close" onclick="packClose()">Close</button>'
+    + '<button class="btn btn-primary" id="pack-go" onclick="packExport()">Export</button></div>';
+  overlay.classList.add('open');
+}
+
+function packPickAll(on) { document.querySelectorAll('.pack-pick').forEach(function(c) { c.checked = on; }); }
+
+function packClose() {
+  if (packTimer) { fetch(API + '/api/pack/export-cancel', {method: 'POST'}); return; }
+  document.getElementById('pack-overlay').classList.remove('open');
+}
+
+async function packExport() {
+  var ids = Array.from(document.querySelectorAll('.pack-pick:checked')).map(function(c) { return c.value; });
+  var st = document.getElementById('pack-status');
+  if (!ids.length) { st.innerHTML = '<span style="color:#b91c1c">Choose at least one project.</span>'; return; }
+  var r = await fetch(API + '/api/pack/export', {method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ids: ids, include_gwas: document.getElementById('pack-gwas').checked, include_runs: document.getElementById('pack-runs').checked})});
+  if (!r.ok) { var e = {}; try { e = await r.json(); } catch (x) {} st.innerHTML = '<span style="color:#b91c1c">' + esc(e.error || 'Could not start the export.') + '</span>'; return; }
+  document.getElementById('pack-go').disabled = true;
+  document.getElementById('pack-close').textContent = 'Cancel';
+  packTimer = setInterval(async function() {
+    var p;
+    try { p = await (await fetch(API + '/api/pack/export-progress')).json(); } catch (e) { return; }
+    var pct = p.bytes_total > 0 ? Math.min(100, 100 * p.bytes_done / p.bytes_total) : 0;
+    if (!p.done) {
+      st.innerHTML = esc(p.phase) + '<div style="height:8px;background:#e6ece9;border-radius:4px;overflow:hidden;margin:0.4rem 0">'
+        + '<div style="height:100%;width:' + pct.toFixed(1) + '%;background:#0F6E56"></div></div>'
+        + '<span style="color:#666">' + (p.bytes_total > 0 ? exdataGB(p.bytes_done) + ' of ' + exdataGB(p.bytes_total) : '')
+        + (p.files_total > 0 ? ' · ' + p.files_done.toLocaleString() + ' of ' + p.files_total.toLocaleString() + ' files' : '') + '</span>';
+      return;
+    }
+    clearInterval(packTimer); packTimer = null;
+    document.getElementById('pack-go').disabled = false;
+    document.getElementById('pack-close').textContent = 'Close';
+    if (p.error) { st.innerHTML = '<span style="color:#b91c1c">' + esc(p.error) + '</span>'; return; }
+    if (p.cancelled) { st.innerHTML = '<span style="color:#666">' + esc(p.message || 'Cancelled.') + '</span>'; return; }
+    st.innerHTML = '<span style="color:#065f46"><b>Exported:</b> ' + esc(p.message || '') + '.</span> '
+      + '<a class="btn btn-primary" style="margin-left:0.4rem" href="' + API + '/api/pack/download?file=' + encodeURIComponent(p.file) + '">Download ' + esc(p.file) + '</a>'
+      + '<div style="color:#666;margin-top:0.4rem">Also saved in ' + esc(p.folder) + '</div>';
+  }, 1000);
+}
 
 exdataLoad();
 

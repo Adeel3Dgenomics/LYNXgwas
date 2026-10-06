@@ -94,6 +94,12 @@ progress bar. Your own projects are never touched. The example projects include 
 original summary statistics, so they can be browsed but not re-run. See
 [docs/EXAMPLE_DATA.md](docs/EXAMPLE_DATA.md).
 
+### Moving projects: Export and Import
+
+**Export** packs one or more projects, with all their results (and optionally their GWAS summary
+statistics and the cross-dataset runs among them), into one `.zip`; **Import** adds such a zip to another
+workspace or computer, with a progress bar, without touching projects that are already there.
+
 ## What it does
 
 **Loci & annotation**

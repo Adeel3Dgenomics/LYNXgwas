@@ -56,6 +56,7 @@ public class ExampleDataInstaller {
         volatile long bytesDone, bytesTotal, startedAt = System.currentTimeMillis(), phaseStartedAt = startedAt;
         volatile int filesDone, filesTotal;
         volatile boolean done, cancelled;
+        volatile String kind = "example";            // "example" (the article data) or "import" (any other pack)
         final List<String> installed = Collections.synchronizedList(new ArrayList<>());
         final List<String> skipped = Collections.synchronizedList(new ArrayList<>());
 
@@ -69,6 +70,7 @@ public class ExampleDataInstaller {
             double speed = bytesDone * 1000.0 / el;
             StringBuilder j = new StringBuilder("{");
             j.append("\"phase\":\"").append(esc(phase)).append('"');
+            j.append(",\"kind\":\"").append(esc(kind)).append('"');
             j.append(",\"message\":\"").append(esc(message)).append('"');
             j.append(",\"bytes_done\":").append(bytesDone).append(",\"bytes_total\":").append(bytesTotal);
             j.append(",\"files_done\":").append(filesDone).append(",\"files_total\":").append(filesTotal);
@@ -148,6 +150,7 @@ public class ExampleDataInstaller {
             Source s = null;
             if (localZip != null) {
                 zip = localZip;
+                p.kind = localZip.getName().startsWith("lynxgwas-example-data") ? "example" : "import";
             } else {
                 p.phase("Finding the latest version", 0);
                 s = source(true);
@@ -166,14 +169,15 @@ public class ExampleDataInstaller {
             Map<String, Object> pack;
             try (ZipFile zf = new ZipFile(zip)) {
                 ZipEntry pe = zf.getEntry("pack.json");
-                if (pe == null) throw new IOException("This file is not a LYNXgwas example-data pack (no pack.json).");
+                if (pe == null) throw new IOException("This file is not a LYNXgwas project pack (no pack.json).");
                 try (InputStream in = zf.getInputStream(pe)) {
                     pack = MiniJson.asObject(MiniJson.parse(new String(readAll(in), StandardCharsets.UTF_8)));
                 }
                 if (!"1".equals(String.valueOf(num(pack.get("format")))))
                     throw new IOException("This pack needs a newer LYNXgwas (pack format " + pack.get("format") + ").");
+                if ("projects".equals(MiniJson.getStr(pack, "kind", ""))) p.kind = "import";
                 long unzipped = num(pack.get("uncompressed_bytes"));
-                checkSpace(unzipped + gffNeed() + 500_000_000L, "extracting the example data");
+                checkSpace(unzipped + gffNeed() + 500_000_000L, "extracting the pack");
                 extract(p, zf, unzipped);
             }
             checkCancel(p);
@@ -183,19 +187,23 @@ public class ExampleDataInstaller {
             fillPaths(p, rw);
             checkCancel(p);
 
-            ensureGff3(p);
+            ensureGff3(p, pack);
             checkCancel(p);
 
             p.phase("Adding the projects to LYNXgwas", 0);
             merge(p);
+            restoreTimes(pack, p.installed);
+            restamp(p.installed);
 
-            Map<String, Object> st = readState();
-            st.put("installed_version", s != null ? s.version : String.valueOf(pack.getOrDefault("version", "")));
-            st.put("installed_at", java.time.Instant.now().toString());
-            if (s != null && !s.doi.isEmpty()) st.put("doi", s.doi);
-            st.put("projects", new ArrayList<>(p.installed));
-            st.put("dismissed", true);
-            writeState(st);
+            if ("example".equals(p.kind)) {
+                Map<String, Object> st = readState();
+                st.put("installed_version", s != null ? s.version : String.valueOf(pack.getOrDefault("version", "")));
+                st.put("installed_at", java.time.Instant.now().toString());
+                if (s != null && !s.doi.isEmpty()) st.put("doi", s.doi);
+                st.put("projects", new ArrayList<>(p.installed));
+                st.put("dismissed", true);
+                writeState(st);
+            }
 
             deleteUnder(STAGING);
             if (downloaded && zip != null) zip.delete();
@@ -211,7 +219,7 @@ public class ExampleDataInstaller {
             p.error = e.getMessage() == null ? e.toString() : e.getMessage();
             p.phase("Failed", 0);
             try { deleteUnder(STAGING); } catch (IOException ignored) {}
-            System.err.println("[ExampleData] install failed: " + p.error);
+            System.err.println("[Import] failed: " + p.error);
         } finally {
             p.done = true;
         }
@@ -447,15 +455,41 @@ public class ExampleDataInstaller {
 
     private static long gffNeed() { return new File("resources", GFF3_NAME).isFile() ? 0 : GFF3_BYTES + 60_000_000L; }
 
-    /** The example projects use GENCODE v37lift37 (GRCh37); fetch it from GENCODE if this workspace lacks it. */
-    private static void ensureGff3(Progress p) throws IOException {
-        File gff = new File("resources", GFF3_NAME);
-        if (gff.isFile() && gff.length() > 0) return;
+    /**
+     * Fetches from GENCODE each gene annotation the pack's projects use that this workspace lacks
+     * (pack.json "gff3": [{file, url}]; packs without it are the example data, which uses v37lift37).
+     */
+    private static void ensureGff3(Progress p, Map<String, Object> pack) throws IOException {
+        List<String[]> wanted = new ArrayList<>();
+        Object g = pack.get("gff3");
+        if (g instanceof List) {
+            for (Object o : MiniJson.asArray(g)) {
+                Map<String, Object> m = MiniJson.asObject(o);
+                wanted.add(new String[]{MiniJson.getStr(m, "file", ""), MiniJson.getStr(m, "url", "")});
+            }
+        } else if (g instanceof Map) {
+            wanted.add(new String[]{MiniJson.getStr(MiniJson.asObject(g), "file", GFF3_NAME), MiniJson.getStr(MiniJson.asObject(g), "url", GFF3_URL)});
+        } else {
+            wanted.add(new String[]{GFF3_NAME, GFF3_URL});
+        }
+        for (String[] w : wanted) {
+            if (!w[0].matches("[A-Za-z0-9._-]+\\.gff3")) continue;
+            if (new File("resources", w[0]).isFile()) continue;
+            if (w[1].isEmpty() || !w[1].startsWith("https://")) {
+                p.message = "The gene annotation " + w[0] + " is not available to download; put it in resources/ (Edit to point a project elsewhere).";
+                continue;
+            }
+            fetchGff3(p, w[0], w[1]);
+        }
+    }
+
+    private static void fetchGff3(Progress p, String name, String url) throws IOException {
+        File gff = new File("resources", name);
         new File("resources").mkdirs();
-        File gz = new File(HOME, GFF3_NAME + ".gz.part");
-        download(p, GFF3_URL, gz, -1, "Downloading the gene annotation (GENCODE)");
+        File gz = new File(HOME, name + ".gz.part");
+        download(p, url, gz, -1, "Downloading the gene annotation (GENCODE)");
         p.phase("Unpacking the gene annotation", gz.length());
-        File tmp = new File("resources", GFF3_NAME + ".part");
+        File tmp = new File("resources", name + ".part");
         try (CountingInputStream cin = new CountingInputStream(new FileInputStream(gz), p);
              InputStream in = new GZIPInputStream(new BufferedInputStream(cin, 1 << 16), 1 << 16);
              OutputStream out = new BufferedOutputStream(new FileOutputStream(tmp), 1 << 16)) {
@@ -524,6 +558,49 @@ public class ExampleDataInstaller {
         } catch (IOException ignored) {}
     }
 
+    /**
+     * A project that arrived with its summary statistics was up to date where it was exported, but its
+     * fingerprint names that machine's paths: stamp it again here so it is not shown as needing reprocessing.
+     * Results-only projects are never stale and need nothing.
+     */
+    private static void restamp(List<String> ids) {
+        synchronized (ids) {
+            for (String id : ids) {
+                String dir = new File("projects", id).getAbsolutePath();
+                try {
+                    ProjectMetadata pm = ProjectMetadata.load(dir);
+                    if (pm == null || pm.resultsOnly) continue;
+                    Config cfg = Config.loadFromProject(dir);
+                    pm.coreInputFingerprint = ProjectMetadata.computeCoreInputFingerprint(cfg, dir);
+                    pm.annotationFingerprint = ProjectMetadata.computeAnnotationFingerprint(new File(dir, "annotations.yaml").getAbsolutePath());
+                    String last = pm.lastProcessed;
+                    pm.save(dir);
+                    if (last != null && !last.isEmpty()) {          // save() stamps "now"; keep when it was processed
+                        File f = new File(dir, "project.json");
+                        String t = new String(Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8);
+                        Files.write(f.toPath(), t.replaceFirst("\"last_processed\": \"[^\"]*\"",
+                            java.util.regex.Matcher.quoteReplacement("\"last_processed\": \"" + last + "\"")).getBytes(StandardCharsets.UTF_8));
+                    }
+                } catch (Exception e) {
+                    System.err.println("[Import] could not re-stamp " + id + ": " + e.getMessage());
+                }
+            }
+        }
+    }
+
+    /** Gives files their exact modification time from pack.json (a zip keeps it only to 2 s). */
+    private static void restoreTimes(Map<String, Object> pack, List<String> installed) {
+        if (!(pack.get("mtimes") instanceof Map)) return;
+        for (Map.Entry<String, Object> e : MiniJson.asObject(pack.get("mtimes")).entrySet()) {
+            String arc = e.getKey();
+            String[] parts = arc.split("/");
+            if (parts.length < 3 || !parts[0].equals("projects") || !installed.contains(parts[1]) || arc.contains("..")) continue;
+            File f = new File(arc);
+            long t = num(e.getValue());
+            if (f.isFile() && t > 0) f.setLastModified(t);
+        }
+    }
+
     private static void move(Path from, Path to) throws IOException {
         try {
             Files.move(from, to, StandardCopyOption.ATOMIC_MOVE);
@@ -569,7 +646,7 @@ public class ExampleDataInstaller {
         Files.write(STATE.toPath(), MiniJson.encode(st).getBytes(StandardCharsets.UTF_8));
     }
 
-    private static long num(Object o) {
+    static long num(Object o) {
         if (o instanceof Number) return ((Number) o).longValue();
         try { return o == null ? 0 : Long.parseLong(String.valueOf(o).trim()); } catch (NumberFormatException e) { return 0; }
     }

@@ -83,3 +83,30 @@ Publish a new pack as a new version of the same Zenodo record; the app always ta
 
 To test without Zenodo, serve the zip locally and point a workspace's `config/example_data.json` at it
 (`url`, `file`, `size`, `md5`); a second instance can run next to the first with `-Dlynxgwas.port=8790`.
+
+## Export and import of your own projects
+
+The same pack format moves any projects between workspaces or computers.
+
+**Export** (home page toolbar) lists the projects; tick one or many. Two options:
+
+- *Include the GWAS summary statistics*: the input file of each project goes into the zip
+  (`projects/<id>/input/`). Such a project arrives fully usable and up to date; it can be re-run once the
+  importing workspace has the reference panel. Without this option the projects arrive as results only,
+  like the example data, and the zip stays small.
+- *Include the cross-dataset runs* (on by default): every Gene Constellation / Locus Serpent Plot run whose
+  datasets are all among the chosen projects, with its joint fine-mapping runs.
+
+The zip is written to `exports/` in the workspace (`lynxgwas-project-<id>-<date>.zip` or
+`lynxgwas-projects-<n>-<date>.zip`) and offered as a download. Like the example pack it leaves out what
+LYNXgwas rebuilds (LD matrices, reference-panel subsets, superseded runs) and stores machine paths as
+placeholders; `pack.json` has `"kind": "projects"`, whether the summary statistics are included, and the
+gene annotations the projects use (fetched from GENCODE on import when they are GENCODE files).
+
+**Import** (toolbar) takes such a zip, or the example-data zip, and installs it with the same steps and
+progress as the example data. Projects that arrive with their summary statistics are stamped as up to date
+for the new paths; projects or runs whose name already exists are skipped and reported, never replaced.
+
+Endpoints: `POST /api/pack/export` `{"ids": [...], "include_gwas": bool, "include_runs": bool}`,
+`GET /api/pack/export-progress`, `POST /api/pack/export-cancel`, `GET /api/pack/download?file=<name>`,
+`POST /api/pack/import` `{"path": "<zip>"}` (progress at `/api/example-data/progress`).
