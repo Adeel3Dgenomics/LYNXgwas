@@ -1,5 +1,10 @@
 # Phase 6 decisions log — GitHub project save/extract with safe token handling
 
+> **Removed on 2026-10-06.** GitHub save/extract was taken out of the app (local and server). Projects with their
+> results are too large for GitHub (100 MB per file, a few GB per repository, small LFS quotas) and it needed every
+> user to have an account and a token. Projects now move as one `.zip` with **Export** / **Import**, and shared data
+> is published on Zenodo (see `docs/EXAMPLE_DATA.md`). This log is kept as the record of what was built.
+
 Same contract as prior phases: written and updated incrementally and honestly. `[ ]` not done,
 `[x]` done and verified, blockers stated plainly.
 
