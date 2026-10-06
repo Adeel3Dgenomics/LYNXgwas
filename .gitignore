@@ -72,3 +72,10 @@ run_log*.txt
 build_log.txt
 # Example data downloads, staging and install state (see docs/EXAMPLE_DATA.md)
 example-data/
+
+# Intro video renders (large; re-create with launch/video/make_video.py)
+launch/video/*.mp4
+launch/video/*.wav
+launch/video/preview_*.png
+launch/video/sheet_*.png
+launch/video/render.log
