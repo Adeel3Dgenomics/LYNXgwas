@@ -3303,7 +3303,9 @@ function exdataRender(st) {
   el.style.display = 'block';
   var title = st.title || 'LYNXgwas article data';
   var lines = [];
-  if (st.installed) lines.push('Already installed (version ' + esc(st.installed) + '). Installing again only adds what is missing.');
+  if (st.installed === 'present') lines.push('All ' + st.projects_total + ' example projects are already in this workspace.');
+  else if (st.installed) lines.push('Already installed (version ' + esc(st.installed) + '). Installing again only adds what is missing.');
+  else if (st.projects_present > 0) lines.push(st.projects_present + ' of the ' + st.projects_total + ' example projects are already here; installing adds the rest and leaves those as they are.');
   var sub = '30 GWAS datasets across 6 diseases, with every analysis already run: browse them without processing anything. '
     + 'Results only: the original summary statistics are not included.';
   var err = job && job.done && (job.error || job.cancelled)

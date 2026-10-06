@@ -33,7 +33,15 @@ public class ExampleDataInstaller {
     static final String GFF3_URL = "https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_37/"
         + "GRCh37_mapping/gencode.v37lift37.annotation.gff3.gz";
     static final long GFF3_BYTES = 1_700_000_000L;
-    static final Set<String> ALLOWED_TOP = new HashSet<>(Arrays.asList(
+    /** The projects of the example-data pack (version 1), to tell whether a workspace already has them. */
+    static final List<String> PACK_PROJECTS = Arrays.asList(
+        "alz-demo", "alz-src-bellenguez2022", "alz-src-eadb2026", "alz-src-finngen-r12", "alz-src-nicolas2025",
+        "cad-demo", "cad-src-aragam2022", "cad-src-hartiala2021", "cad-src-nam2026", "cad-src-nikpay2015",
+        "ibd-demo", "ibd-src-delange2017uc", "ibd-src-finngen-r12", "ibd-src-liu2015", "ibd-src-zorina2023",
+        "ra-demo", "ra-src-eyre2012", "ra-src-finngen-r12", "ra-src-glanville2021", "ra-src-stahl2010",
+        "scz-demo", "scz-src-clozuk2018", "scz-src-pgc1-2011", "scz-src-pgc2-2014", "scz-src-sweden2013",
+        "t2d-demo", "t2d-src-diamante2022", "t2d-src-finngen-r12", "t2d-src-mahajan2018", "t2d-src-scott2017");
+    static final Set<String> ALLOWED_TOP =new HashSet<>(Arrays.asList(
         "projects", "output", "regulatory_data", "pack.json", "README.md", "LICENSE.txt"));
 
     /** Where the pack comes from: a Zenodo file or a configured URL. */
@@ -95,7 +103,13 @@ public class ExampleDataInstaller {
         j.append(",\"doi\":\"").append(esc(s.doi)).append('"');
         j.append(",\"page\":\"").append(esc(s.page)).append('"');
         Object inst = st.get("installed_version");
+        // The example projects may already be here without this installer (copied, or the workspace they came
+        // from): when all of them are, there is nothing to offer
+        int present = 0;
+        for (String id : PACK_PROJECTS) if (new File("projects", id + "/config.properties").isFile()) present++;
+        if (inst == null && present == PACK_PROJECTS.size()) inst = "present";
         j.append(",\"installed\":").append(inst == null ? "null" : "\"" + esc(String.valueOf(inst)) + "\"");
+        j.append(",\"projects_present\":").append(present).append(",\"projects_total\":").append(PACK_PROJECTS.size());
         j.append(",\"dismissed\":").append(Boolean.TRUE.equals(st.get("dismissed")));
         j.append(",\"running\":").append(running);
         if (job != null) j.append(",\"job\":").append(job.toJson());

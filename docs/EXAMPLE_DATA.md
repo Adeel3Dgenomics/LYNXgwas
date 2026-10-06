@@ -3,7 +3,8 @@
 A fresh LYNXgwas install has no projects. The home page offers the article's example data — the 30
 GWAS datasets of the validation corpus (6 diseases × 5, GRCh37) with every analysis already run — as
 one download from Zenodo. One click on **Download** does the rest; **Not now** hides the banner, and
-the toolbar's **Example data** button brings it back.
+the toolbar's **Example data** button brings it back. The banner is only shown when the example projects are not in the
+workspace yet (installed by the app or not); if some are, installing adds only the missing ones.
 
 ## What the user gets
 
