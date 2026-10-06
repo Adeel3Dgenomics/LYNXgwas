@@ -2316,7 +2316,7 @@ public class LocalServer {
         try (PrintWriter pw = new PrintWriter(new OutputStreamWriter(new FileOutputStream(new File(runDir, "provenance.json")), "UTF-8"))) {
             pw.printf(Locale.ROOT, "{%n  \"job_id\": \"%s\",%n  \"tool\": \"heritability_local\",%n  \"tool_version\": \"1.0\",%n"
                 + "  \"timestamp\": %d,%n  \"params\": {\"k_max\": \"%d\", \"sample_n\": \"%d\"}%n}%n",
-                escJ(jobId), System.currentTimeMillis(), kMax, cfg.sampleN);
+                escJ(jobId), System.currentTimeMillis(), kMax, cfg.analysisN());
         }
         res.ok = true;
         res.resultRows = 1;
@@ -3141,7 +3141,7 @@ public class LocalServer {
             List<Object> ds = new ArrayList<>();
             for (Cand c : chosen) {
                 Map<String, Object> d = new LinkedHashMap<>();
-                d.put("id", c.pid); d.put("disease", c.disease); d.put("N", c.cfg.sampleN); d.put("p", c.p);
+                d.put("id", c.pid); d.put("disease", c.disease); d.put("N", c.cfg.analysisN()); d.put("p", c.p);
                 Map<String, Object> gw = new LinkedHashMap<>();
                 gw.put("file", c.cfg.gwasFile.replace("\\", "/")); gw.put("chr", c.cfg.colChr); gw.put("pos", c.cfg.colPos);
                 gw.put("ea", c.cfg.colEa); gw.put("nea", c.cfg.colNea); gw.put("se", c.cfg.colSe);
@@ -5568,7 +5568,7 @@ public class LocalServer {
             SusiexAdapter.Member m = new SusiexAdapter.Member();
             ProjectMetadata pm = ProjectMetadata.load(dir.getAbsolutePath());
             m.label = (pm != null && !pm.name.isEmpty()) ? pm.name : pid;
-            m.sampleN = ps.config.sampleN;
+            m.sampleN = ps.config.analysisN();
             File analysisRoot = BaseStepPipeline.analysisDir(ps.config, locus);
             m.harmonizedDir = new File(analysisRoot, "harmonized");
             m.matchedDir = new File(analysisRoot, "matched");
