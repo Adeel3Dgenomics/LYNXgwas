@@ -1,7 +1,7 @@
-"""Render the LYNXgwas intro video (1080p, about 3 minutes) with an original synthesized soundtrack.
+"""Render the LYNXgwas intro video (1080p, about 4 minutes) with an original synthesized soundtrack.
 
     pip install pillow numpy imageio-ffmpeg
-    python launch/video/capture.py && python launch/video/capture_extra.py   # screenshots (app running)
+    python launch/video/capture.py && python launch/video/capture_extra.py && python launch/video/capture_features.py
     python launch/video/make_video.py            ->  launch/video/lynxgwas-intro.mp4
     python launch/video/make_video.py --preview  ->  a few still frames only (fast)
 
@@ -258,17 +258,17 @@ def manhattan(im, pid, box, progress=1.0, alpha=1.0, cap=40.0, glow=True, label=
 
 # --------------------------------------------------------------------------- scenes
 def s_hook(t):
-    """One GWAS draws itself: 7.66 million SNPs, and then the question."""
+    """One GWAS draws itself: 7.66 million SNPs, and then the questions."""
     im = background(t).convert("RGBA")
     box = (110, 260, W - 220, 520)
-    manhattan(im, "scz-demo", box, progress=ease(t / 6.5), alpha=ease(t / 0.8) * (1 - 0.55 * ease((t - 9) / 1.2)))
-    n = int(SKY["scz-demo"]["snps"] * ease(t / 6.5))
-    text_center(im, f"{n:,} SNPs", 120, font(80, bold=True, mono=True), TEXT, fade(t, 0.3, 7.6))
-    text_center(im, "one schizophrenia GWAS (PGC3)", 225, font(34), MUTED, fade(t, 0.8, 7.6))
-    text_center(im, "177 genome-wide significant loci.", 120, font(76, bold=True), AMBER, fade(t, 7.8, 10.8))
-    q = [("Which variant is causal?", 9.2), ("Which gene does it act through?", 10.4), ("Does it replicate in other studies?", 11.6)]
+    manhattan(im, "scz-demo", box, progress=ease(t / 6.0), alpha=ease(t / 0.8) * (1 - 0.55 * ease((t - 8.5) / 1.2)))
+    n = int(SKY["scz-demo"]["snps"] * ease(t / 6.0))
+    text_center(im, f"{n:,} SNPs", 120, font(80, bold=True, mono=True), TEXT, fade(t, 0.3, 7.0))
+    text_center(im, "one schizophrenia GWAS", 225, font(34), MUTED, fade(t, 0.8, 7.0))
+    text_center(im, "177 genome-wide significant loci.", 120, font(76, bold=True), AMBER, fade(t, 7.2, 10.2))
+    q = [("Which variant is causal?", 8.4), ("Which gene does it act through?", 9.4), ("Does it replicate in other studies?", 10.4)]
     for i, (line, at) in enumerate(q):
-        text_center(im, line, 830 + i * 64 - 70, font(50, bold=True), TEXT if i < 2 else MINT, fade(t, at, 15.0))
+        text_center(im, line, 760 + i * 64, font(50, bold=True), TEXT if i < 2 else MINT, fade(t, at, 13.0))
     return im
 
 
@@ -278,29 +278,28 @@ TOOLS = ["PLINK", "SuSiE", "FINEMAP / ABF", "GCTA-COJO", "MAGMA", "LDSC", "HESS"
 
 
 def s_problem(t):
-    """A dozen tools and formats swirling; then: and the web servers want your data."""
     im = background(t + 15).convert("RGBA")
     rnd = random.Random(3)
-    collapse = ease((t - 10.2) / 1.6)
+    collapse = ease((t - 9.0) / 1.4)
     for i, name in enumerate(TOOLS):
         x0 = rnd.uniform(140, W - 360)
-        y0 = rnd.choice((rnd.uniform(90, 330), rnd.uniform(700, H - 120)))   # keep the headline band clear
+        y0 = rnd.choice((rnd.uniform(90, 330), rnd.uniform(700, H - 120)))
         vx, vy = rnd.uniform(-22, 22), rnd.uniform(-6, 6)
         x = x0 + vx * t + math.sin(t * 1.3 + i) * 18
         y = y0 + vy * t + math.cos(t * 1.1 + i) * 14
         x = x + (W / 2 - 80 - x) * collapse
         y = y + (H / 2 - y) * collapse
-        a = ease((t - i * 0.12) / 0.5) * (1 - collapse) * 0.9
+        a = ease((t - i * 0.1) / 0.5) * (1 - collapse) * 0.9
         size = rnd.choice((34, 40, 46, 52))
         col = rnd.choice((TEXT, MUTED, SKYBLUE, AMBER, MINT))
         text_at(im, name, (x, y), font(size, bold=size > 40, mono=rnd.random() < 0.3), col, a)
     band = Image.new("RGBA", im.size, (0, 0, 0, 0))
-    ImageDraw.Draw(band).rectangle((0, 400, W, 690), fill=BG + (int(240 * fade(t, 0.5, 10.4)),))
+    ImageDraw.Draw(band).rectangle((0, 400, W, 690), fill=BG + (int(240 * fade(t, 0.5, 9.2)),))
     im.alpha_composite(band.filter(ImageFilter.GaussianBlur(40)))
-    text_center(im, "A dozen tools. A dozen file formats.", 470, font(74, bold=True), TEXT, fade(t, 0.6, 4.6))
-    text_center(im, "Weeks of scripts before the first answer.", 470, font(74, bold=True), AMBER, fade(t, 4.8, 7.6))
-    text_center(im, "And web servers ask you to upload your data.", 470, font(70, bold=True), TEXT, fade(t, 7.8, 10.6))
-    emoji(im, "☁", (W / 2 - 55, 575), 90, fade(t, 8.2, 10.6) * 0.9)
+    text_center(im, "A dozen tools. A dozen file formats.", 470, font(74, bold=True), TEXT, fade(t, 0.6, 3.8))
+    text_center(im, "Weeks of scripts before the first answer.", 470, font(74, bold=True), AMBER, fade(t, 4.0, 6.6))
+    text_center(im, "And web servers ask you to upload your data.", 470, font(70, bold=True), TEXT, fade(t, 6.8, 9.4))
+    emoji(im, "☁", (W / 2 - 45, 575), 90, fade(t, 7.0, 9.4) * 0.9)
     return im
 
 
@@ -311,18 +310,268 @@ def s_reveal(t):
     halo = Image.new("RGBA", im.size, (0, 0, 0, 0))
     ImageDraw.Draw(halo).ellipse((W / 2 - size, 360 - size, W / 2 + size, 360 + size), fill=MINT + (int(80 * k),))
     im.alpha_composite(halo.filter(ImageFilter.GaussianBlur(70)))
-    ic = img(str(ICON))
     s = int(size * 1.15)
-    pic = ic.resize((s, s), Image.LANCZOS)
+    pic = img(str(ICON)).resize((s, s), Image.LANCZOS)
     m = Image.new("L", (s, s), 0)
     ImageDraw.Draw(m).ellipse((0, 0, s, s), fill=int(255 * k))
     pic.putalpha(m)
     im.alpha_composite(pic, (int(W / 2 - s / 2), int(360 - s / 2)))
     text_center(im, "LYNXgwas", 560, font(140, bold=True), TEXT, ease((t - 0.8) / 0.7))
-    gradient_text(im, "Every locus. Every method. One app on your computer.", 735, font(54, bold=True),
-                  ease((t - 1.7) / 0.7))
-    text_center(im, "Locus analYsis and geNomic eXplorer · free and open source", 830, font(36), MUTED,
+    gradient_text(im, "From summary statistics to the causal variant.", 735, font(56, bold=True), ease((t - 1.7) / 0.7))
+    text_center(im, "Every locus, every method, one app on your computer · free and open source", 830, font(36), MUTED,
                 ease((t - 2.6) / 0.7))
+    return im
+
+
+def s_steps(t):
+    """How easy it is: point it at a file, map the columns, explore."""
+    im = background(t + 40).convert("RGBA")
+    if t < 3.0:
+        section(im, t, "EASY TO USE", "Three steps", "no scripts, no command line", dur=3.0)
+        return im
+    t -= 3.0
+    steps = [("wizard_1.png", (560, 20, 1360, 480), "1", "Name your project", "a short wizard, in the browser"),
+             ("wizard_3.png", (560, 20, 1360, 760), "1", "Point it at your summary statistics", "it reads the header and maps the columns"),
+             ("home.png", (0, 150, 1920, 700), "2", "It finds and processes the loci", "PLINK clumping, rsIDs, LD, annotation: automatically"),
+             ("viewer_tcf7l2.png", (320, 40, 1920, 1080), "3", "Explore every locus", "plots, fine-mapping and genes, one click away")]
+    seg = 3.6
+    for i, (shot, crop0, num, title, sub) in enumerate(steps):
+        a = fade(t, i * seg, (i + 1) * seg + 0.3, 0.45)
+        if a <= 0:
+            continue
+        k = (t - i * seg) / seg
+        cw, ch = crop0[2] - crop0[0], crop0[3] - crop0[1]
+        crop = lerp_box(crop0, (crop0[0] + cw * 0.02, crop0[1] + ch * 0.02, crop0[2] - cw * 0.02, crop0[3] - ch * 0.02), k)
+        frame(im, shot, crop, (620, 70, 1220, 760), a, glow=TEAL)
+        halo = Image.new("RGBA", im.size, (0, 0, 0, 0))
+        ImageDraw.Draw(halo).ellipse((150, 230, 390, 470), fill=MINT + (int(60 * a),))
+        im.alpha_composite(halo.filter(ImageFilter.GaussianBlur(40)))
+        text_center(im, num, 205, font(200, bold=True), MINT, a, x=270)
+        for j, ln in enumerate(wrap(title, font(50, bold=True), 470)):
+            text_at(im, ln, (95, 520 + j * 64), font(50, bold=True), TEXT, a)
+        text_at(im, sub, (97, 520 + len(wrap(title, font(50, bold=True), 470)) * 64 + 12), font(30), MUTED, a)
+    caption(im, "Your GWAS summary statistics in, every analysis out", "", fade(t, 0, 4 * seg, 0.45), y=900)
+    return im
+
+
+# Feature chapters: (kicker, title, subtitle, accent, items). Each item: (shot, crop or None, title, bullets).
+V = (320, 40, 1920, 1080)          # the viewer's main panel
+CHAPTERS = [
+    ("SEE EVERY LOCUS", "The locus viewer", "everything about a locus on one screen", MINT, [
+        ("viewer_pcsk9.png", V, "The genome, then the locus", [
+            "genome-wide skyline with every locus marked", "regional plot coloured by LD with the lead SNP",
+            "genes, and SNP-heritability in the header"]),
+        ("viewer_pcsk9_ld.png", (330, 260, 1910, 1080), "Genes, regulation and LD, together", [
+            "histone peaks of the disease's own tissue", "pairwise LD triangle with LD blocks",
+            "they zoom together; export as PDF or Excel"]),
+        ("viewer_tcf7l2_magma.png", V, "Genes, and the likely causal one", [
+            "MAGMA ranks the genes of every locus", "nearest genes and the likely causal gene",
+            "split, merge or resize loci live, with undo"]),
+    ]),
+    ("FINE-MAP IT", "Fine-mapping", "three methods at every locus, and a fourth across datasets", SKYBLUE, [
+        ("viewer_sort1_susie.png", V, "SuSiE, ABF and COJO", [
+            "95% credible sets drawn on the plot", "run on one locus or on all loci at once",
+            "an LD-consistency check flags doubtful SNPs"]),
+        ("sum_precision.png", None, "How precise are the sets?", [
+            "credible-set sizes across the project", "SuSiE and ABF agree on the lead at 85% of T2D loci",
+            "where they differ, a second signal is likely"]),
+        ("viewer_sort1_joint.png", V, "Joint fine-mapping across datasets", [
+            "mvSuSiE over the datasets of a disease", "SORT1: one two-SNP set, PIP 0.94",
+            "sample overlap estimated from null SNPs"]),
+    ]),
+    ("FIND THE CAUSAL SNP", "Causal-SNP ranking", "one score per SNP from all the evidence", AMBER, [
+        ("viewer_pcsk9_rank.png", (336, 325, 1290, 600), "Every SNP, ranked, with its reasons", [
+            "SuSiE, ABF, COJO, joint PIP, CADD, LD score, histone peaks, MAGMA",
+            "plus how the SNP replicates in the other datasets", "PCSK9 R46L (rs11591147): score 0.993"]),
+        ("sum_rankconf.png", None, "How confident, locus by locus", [
+            "the top SNP's probability of being causal", "a conditional-logit model trained on FinnGen",
+            "held-out chromosomes and diseases for testing"]),
+        ("sum_topsnps.png", None, "The strongest candidates", [
+            "the most confident causal SNPs of the project", "MTNR1B, ADCY5, CMIP in type 2 diabetes",
+            "click a row to open the locus"]),
+    ]),
+    ("HERITABILITY & QC", "How much do the SNPs explain?", "built-in LD-score regression and local heritability", VIOLET, [
+        ("sum_heritability.png", None, "SNP-heritability, genome-wide and per locus", [
+            "LDSC on the observed and liability scales", "local heritability (HESS) at every locus",
+            "T2D: 0.204; its 132 loci explain 41%"]),
+        ("sum_qc.png", None, "Quality control that catches mistakes", [
+            "λGC, the LDSC intercept and the ratio", "the sample size implied by the standard errors",
+            "a wrong N is flagged and can be corrected"]),
+    ]),
+    ("GENES & REGULATION", "From SNPs to genes", "gene tests and regulatory enrichment", ORANGE, [
+        ("sum_magma.png", None, "MAGMA at every locus", [
+            "which genes of the locus carry the association", "125 of 125 tested loci have a significant gene",
+            "the strongest gene of each locus"]),
+        ("sum_regulatory.png", None, "Regulatory enrichment", [
+            "do significant SNPs fall in active chromatin?", "Fisher's exact test per histone mark",
+            "T2D in pancreas: OR 2.86 at H3K27ac"]),
+    ]),
+    ("ACROSS DATASETS", "Compare many GWAS at once", "the same loci, through every dataset", RED, [
+        ("serpent.png", (90, 240, 1830, 1060), "Locus Serpent Plot", [
+            "927 loci through 30 datasets", "red, thick serpents: loci shared across studies",
+            "a category analysis of what drives sharing"]),
+        ("serpent_pcsk9.png", (820, 0, 1920, 760), "Click a serpent", [
+            "every dataset's lead SNP, OR and p", "PCSK9: one lead SNP in four CAD datasets",
+            "joint fine-mapping for every shared locus"]),
+        ("constellation.png", (405, 92, 1265, 952), "Gene Constellation", [
+            "712 genes across 30 datasets, on one ring", "inner: replicated; color: risk or protective",
+            "150 co-significance links between genes"]),
+        ("search.png", (480, 55, 1460, 925), "Search every dataset", [
+            "a gene, an rsID or a position", "SH2B3: 58 hits across CAD and RA datasets",
+            "open any hit straight in the viewer"]),
+    ]),
+]
+ITEM, TITLE_T = 5.4, 2.8
+
+
+def chapter_scene(ch):
+    kicker, title, sub, col, items = ch
+
+    def scene(t):
+        im = background(t + 50).convert("RGBA")
+        if t < TITLE_T:
+            section(im, t, kicker, title, sub, dur=TITLE_T)
+            return im
+        t -= TITLE_T
+        for i, (shot, crop0, ititle, bullets) in enumerate(items):
+            a = fade(t, i * ITEM, (i + 1) * ITEM + 0.3, 0.4)
+            if a <= 0:
+                continue
+            src = img(shot)
+            c0 = crop0 or (0, 0, src.width, src.height)
+            cw, ch_ = c0[2] - c0[0], c0[3] - c0[1]
+            k = (t - i * ITEM) / ITEM
+            crop = lerp_box(c0, (c0[0] + cw * 0.03, c0[1] + ch_ * 0.03, c0[2] - cw * 0.03, c0[3] - ch_ * 0.03), k)
+            frame(im, shot, crop, (720, 70, 1140, 940), a, glow=col if shot.startswith("sum_") else TEAL)
+            text_at(im, kicker, (90, 150), font(30, bold=True), col, a)
+            y = 205
+            for ln in wrap(ititle, font(54, bold=True), 580):
+                text_at(im, ln, (90, y), font(54, bold=True), TEXT, a)
+                y += 68
+            y += 30
+            for j, b in enumerate(bullets):
+                ab = a * ease((t - i * ITEM - 0.5 - j * 0.45) / 0.4)
+                layer = Image.new("RGBA", im.size, (0, 0, 0, 0))
+                ImageDraw.Draw(layer).ellipse((92, y + 16, 106, y + 30), fill=col + (int(255 * ab),))
+                im.alpha_composite(layer)
+                for ln in wrap(b, font(32), 540):
+                    text_at(im, ln, (126, y), font(32), (226, 232, 230), ab)
+                    y += 44
+                y += 18
+        return im
+    scene.__name__ = "s_ch_" + kicker.split()[0].lower()
+    return scene
+
+
+def s_agent(t):
+    im = background(t + 120).convert("RGBA")
+    a = fade(t, 0, 7.0, 0.5)
+    text_center(im, "ASK THE AGENT", 200, font(38, bold=True), MINT, a)
+    gradient_text(im, "Or just ask.", 260, font(110, bold=True), a)
+    text_center(im, "a built-in AI agent drives the same actions, with a local model by default", 420, font(38), MUTED, a)
+    prompts = ["“Create a project from my T2D summary statistics”", "“Run SuSiE on every locus”",
+               "“Which loci are still missing MAGMA?”"]
+    for i, p in enumerate(prompts):
+        ap = a * ease((t - 1.2 - i * 1.0) / 0.5)
+        pill(im, p, (W / 2 - (ImageDraw.Draw(im).textlength(p, font=font(38)) + 44) / 2, 540 + i * 100), font(38),
+             TEXT, (22, 52, 58), ap)
+    text_center(im, "every step it takes is shown; it cannot delete anything", 900, font(32), MUTED, a * ease((t - 4) / 0.5))
+    return im
+
+
+def s_robust(t):
+    """Robust and fast: what was measured."""
+    im = background(t + 130).convert("RGBA")
+    if t < 2.8:
+        section(im, t, "ROBUST AND FAST", "Measured, not promised", "on the article's data, on one desktop computer", dur=2.8)
+        return im
+    t -= 2.8
+    cards = [("4 s", "to read a 7.66-million-SNP GWAS", "and 37 minutes to process all 177 of its loci", MINT),
+             ("0.1 SE", "built-in LDSC vs the reference ldsc", "h² 0.7949 vs 0.7967 on identical input", SKYBLUE),
+             ("9 of 30", "datasets had a wrong sample size", "caught from their own standard errors, and corrected", AMBER),
+             ("2,387", "loci across 30 datasets", "processed and analysed end to end, on one machine", VIOLET)]
+    seg = 3.3
+    for i, (num, line, sub, col) in enumerate(cards):
+        a = fade(t, i * seg, (i + 1) * seg, 0.4)
+        if a <= 0:
+            continue
+        halo = Image.new("RGBA", im.size, (0, 0, 0, 0))
+        ImageDraw.Draw(halo).ellipse((W / 2 - 380, 230, W / 2 + 380, 560), fill=col + (int(55 * a),))
+        im.alpha_composite(halo.filter(ImageFilter.GaussianBlur(80)))
+        text_center(im, num, 250, font(190, bold=True), col, a)
+        text_center(im, line, 560, font(58, bold=True), TEXT, a)
+        text_center(im, sub, 650, font(34), MUTED, a)
+    return im
+
+
+def bars(im, x, y, label, ours, published, a, col):
+    """One pair of horizontal bars: LYNXgwas vs the published estimate."""
+    text_at(im, label, (x, y), font(36, bold=True), TEXT, a)
+    scale = 1500
+    for j, (name, v, c) in enumerate((("LYNXgwas", ours, col), ("published", published, (150, 160, 165)))):
+        yy = y + 60 + j * 56
+        w = scale * v * ease(a)
+        layer = Image.new("RGBA", im.size, (0, 0, 0, 0))
+        ImageDraw.Draw(layer).rounded_rectangle((x + 190, yy, x + 190 + w, yy + 40), 8, fill=c + (int(230 * a),))
+        im.alpha_composite(layer)
+        text_at(im, name, (x, yy + 2), font(30), MUTED, a)
+        text_at(im, f"{v:.3f}".rstrip("0").rstrip(".") if v < 1 else str(v), (x + 205 + w, yy + 2), font(30, bold=True), c, a)
+
+
+def s_published(t):
+    im = background(t + 145).convert("RGBA")
+    if t < 2.8:
+        section(im, t, "DOES IT AGREE?", "Matches the published", "heritability, known causal variants, known loci", dur=2.8)
+        return im
+    t -= 2.8
+    a0 = fade(t, 0, 6.2, 0.45)
+    if a0 > 0:
+        text_center(im, "SNP-heritability (liability scale)", 130, font(56, bold=True), TEXT, a0)
+        bars(im, 120, 290, "Schizophrenia (PGC3)", 0.22, 0.24, a0 * ease((t - 0.4) / 1.0), MINT)
+        bars(im, 120, 560, "Type 2 diabetes (Xue 2018)", 0.204, 0.196, a0 * ease((t - 1.2) / 1.0), AMBER)
+        text_center(im, "consistent within every disease, and in the published range", 880, font(34), MUTED, a0)
+    a1 = fade(t, 6.2, 12.6, 0.45)
+    if a1 > 0:
+        text_center(im, "Known causal variants, recovered", 130, font(56, bold=True), TEXT, a1)
+        rows = [("PCSK9", "R46L · rs11591147", "single-SNP set, PIP 1.00, all 5 CAD datasets", RED),
+                ("SORT1", "rs12740374", "two-SNP joint set, PIP 0.94", ORANGE),
+                ("SH2B3", "R262W · rs3184504", "lead of a joint set across CAD and RA", AMBER)]
+        for i, (gene, snp, what, col) in enumerate(rows):
+            ar = a1 * ease((t - 6.6 - i * 0.7) / 0.5)
+            y = 300 + i * 170
+            layer = Image.new("RGBA", im.size, (0, 0, 0, 0))
+            ImageDraw.Draw(layer).rounded_rectangle((260, y, 1660, y + 130), 22, fill=(255, 255, 255, int(14 * ar)),
+                                                    outline=col + (int(140 * ar),), width=2)
+            im.alpha_composite(layer)
+            text_at(im, gene, (300, y + 30), font(60, bold=True, mono=False), col, ar)
+            text_at(im, snp, (640, y + 22), font(38, bold=True, mono=True), TEXT, ar)
+            text_at(im, what, (640, y + 76), font(30), MUTED, ar)
+        text_center(im, "and the classic loci: TCF7L2 · BIN1 · CTLA4 · IL23R · CACNA1C · DRD2", 860, font(34), MUTED,
+                    a1 * ease((t - 9) / 0.6))
+    return im
+
+
+def s_found(t):
+    im = background(t + 160).convert("RGBA")
+    if t < 2.8:
+        section(im, t, "WHAT IT FOUND", "Beyond one dataset", "what only a multi-dataset tool can show", dur=2.8)
+        return im
+    t -= 2.8
+    cards = [("60.8%", "of loci: the model's top SNP is the causal one", "vs 50.3% for SuSiE alone (FinnGen in-sample-LD truth)", AMBER),
+             ("47%", "of joint credible sets are smaller", "than any single dataset's set: replication narrows the candidates", MINT),
+             ("71%", "of which loci are shared is explained by disease", "PERMANOVA across the 30 datasets, p = 0.001", SKYBLUE),
+             ("OR 4.4", "enrichment in the disease's own tissue", "rheumatoid arthritis loci in immune-cell H3K4me3 peaks", RED)]
+    seg = 3.3
+    for i, (num, line, sub, col) in enumerate(cards):
+        a = fade(t, i * seg, (i + 1) * seg, 0.4)
+        if a <= 0:
+            continue
+        halo = Image.new("RGBA", im.size, (0, 0, 0, 0))
+        ImageDraw.Draw(halo).ellipse((W / 2 - 380, 230, W / 2 + 380, 560), fill=col + (int(55 * a),))
+        im.alpha_composite(halo.filter(ImageFilter.GaussianBlur(80)))
+        text_center(im, num, 250, font(190, bold=True), col, a)
+        text_center(im, line, 560, font(58, bold=True), TEXT, a)
+        text_center(im, sub, 650, font(34), MUTED, a)
     return im
 
 
@@ -331,222 +580,37 @@ DISEASES = [("scz-demo", "Schizophrenia"), ("t2d-demo", "Type 2 diabetes"), ("ca
 
 
 def s_corpus(t):
-    """The test: 30 public GWAS, 6 diseases. Six Manhattan plots fill the screen, then the counters."""
-    im = background(t + 40).convert("RGBA")
-    if t < 3.4:
-        section(im, t, "THE TEST", "30 public GWAS", "six diseases, five datasets each, every locus processed")
-        return im
-    t -= 3.4
-    a = ease(t / 0.5) * ease((11.6 - t) / 0.5)
-    pw, ph, gx, gy = 540, 160, 70, 120
+    """Everything above was shown on 30 public GWAS: they come with LYNXgwas as its example data."""
+    im = background(t + 175).convert("RGBA")
+    a = fade(t, 0, 9.6, 0.5)
+    text_center(im, "Everything shown here: 30 public GWAS, 6 diseases", 70, font(60, bold=True), TEXT, a)
+    pw, ph, gx, gy = 540, 150, 70, 110
     x0 = (W - (3 * pw + 2 * gx)) / 2
     for i, (pid, name) in enumerate(DISEASES):
-        k = ease((t - i * 0.35) / 1.6)
+        k = ease((t - 0.3 - i * 0.3) / 1.4)
         x = x0 + (i % 3) * (pw + gx)
-        y = 150 + (i // 3) * (ph + gy)
-        manhattan(im, pid, (x, y, pw, ph), progress=k, alpha=a * ease((t - i * 0.35) / 0.4), small=True,
-                  label=name, glow=False)
-        text_at(im, f"{SKY[pid]['loci']} loci", (x + pw - 120, y - 40), font(28, bold=True), AMBER,
-                a * ease((t - 1.4 - i * 0.35) / 0.4))
-    stats = [("30", "datasets"), ("6", "diseases"), ("2,387", "loci"), ("927", "loci aligned across them")]
-    for i, (num, lab) in enumerate(stats):
-        k = ease((t - 4.0 - i * 0.7) / 0.6) * a
-        cx = W * (i + 0.5) / 4
-        text_center(im, num, 770, font(96, bold=True), MINT if i < 3 else AMBER, k, x=cx)
-        text_center(im, lab, 890, font(32), MUTED, k, x=cx)
-    text_center(im, "all on GRCh37, all processed on one computer", 975, font(30), MUTED, ease((t - 7) / 0.6) * a)
-    return im
-
-
-PILLARS = [
-    ("🎯", "Fine-mapping", "SuSiE, Wakefield ABF and GCTA-COJO at every locus", MINT),
-    ("🔗", "Joint fine-mapping", "mvSuSiE across the datasets of a disease", SKYBLUE),
-    ("🏆", "Causal-SNP ranking", "one model combining all the evidence", AMBER),
-    ("🧬", "Genes & heritability", "MAGMA per locus, LDSC and local HESS", VIOLET),
-    ("🗺️", "Across datasets", "Locus Serpent Plot and Gene Constellation", ORANGE),
-    ("🔒", "Private by design", "runs on your computer; nothing is uploaded", RED),
-]
-
-
-def s_pillars(t):
-    im = background(t + 60).convert("RGBA")
-    a = ease(t / 0.6) * ease((15.4 - t) / 0.6)
-    text_center(im, "From summary statistics to the causal variant", 85, font(70, bold=True), TEXT, a)
-    text_center(im, "every method, on every locus, in one place", 185, font(36), MUTED, a)
-    tw, th, gx, gy = 540, 270, 40, 40
-    x0 = (W - (3 * tw + 2 * gx)) / 2
-    for i, (em, name, line, col) in enumerate(PILLARS):
-        ap = ease((t - 1.0 - i * 1.3) / 0.6) * a
-        if ap <= 0:
-            continue
-        x = x0 + (i % 3) * (tw + gx)
-        y = 290 + (i // 3) * (th + gy) + (1 - ap) * 40
-        card = Image.new("RGBA", im.size, (0, 0, 0, 0))
-        cd = ImageDraw.Draw(card)
-        cd.rounded_rectangle((x, y, x + tw, y + th), 26, fill=(255, 255, 255, int(16 * ap)),
-                             outline=col + (int(110 * ap),), width=2)
-        im.alpha_composite(card)
-        emoji(im, em, (x + 34, y + 40), 62, ap)
-        text_at(im, name, (x + 112, y + 48), font(40, bold=True), col, ap)
-        for j, ln in enumerate(wrap(line, font(33), tw - 70)):
-            text_at(im, ln, (x + 36, y + 138 + j * 46), font(33), (226, 232, 230), ap)
-    return im
-
-
-def s_home(t):
-    im = background(t + 80).convert("RGBA")
-    a = fade(t, 0, 8.0, 0.5)
-    box = lerp_box((160, 60, 1600, 760), (110, 40, 1700, 800), t / 8)
-    frame(im, "home.png", (0, 0, 1920, 1080), box, a, glow=TEAL)
-    caption(im, "All 30 datasets, one home page", "each one processed, annotated and up to date", a, y=890)
-    return im
-
-
-def s_pcsk9(t):
-    """The showcase: PCSK9 R46L, every method agrees, the ranking finds it, the LD triangle shows why."""
-    im = background(t + 90).convert("RGBA")
-    if t < 3.4:
-        section(im, t, "A LOCUS, CLOSE UP", "PCSK9", "coronary artery disease · chr1:55.5 Mb")
-        return im
-    t -= 3.4
-    seg = [(0, 6.5), (6.5, 12.5), (12.5, 18.6)]
-    a0 = fade(t, *seg[0], 0.5)
-    if a0 > 0:
-        crop = lerp_box((0, 0, 1920, 1080), (330, 200, 1910, 800), (t - 0.8) / 3.5)
-        frame(im, "viewer_pcsk9.png", crop, (100, 40, 1720, 780), a0, glow=TEAL)
-        caption(im, "Every method agrees on rs11591147", "SuSiE PIP 1.00 · ABF 1.00 · COJO selected · joint mvSuSiE 1.00 in 5 CAD datasets",
-                a0, y=880)
-    a1 = fade(t, *seg[1], 0.5)
-    if a1 > 0:
-        crop = lerp_box((336, 230, 1910, 640), (336, 325, 1340, 560), (t - 6.8) / 4.5)
-        frame(im, "viewer_pcsk9_rank.png", crop, (100, 80, 1720, 700), a1, glow=(120, 80, 20))
-        caption(im, "The causal-SNP ranking puts it first: score 0.993",
-                "PCSK9 R46L, a known causal missense variant, found from summary statistics alone", a1, y=880)
-    a2 = fade(t, *seg[2], 0.5)
-    if a2 > 0:
-        crop = lerp_box((330, 560, 1910, 1080), (600, 760, 1700, 1080), (t - 12.8) / 5)
-        frame(im, "viewer_pcsk9_ld.png", crop, (100, 60, 1720, 740), a2, glow=TEAL)
-        caption(im, "Regulatory tracks, genes and LD, zooming together",
-                "histone peaks of the disease tissue, and the LD triangle of the locus", a2, y=880)
-    return im
-
-
-MONTAGE = [("viewer_tcf7l2.png", "TCF7L2 · type 2 diabetes", "the strongest T2D signal; lead SNP rs7903146"),
-           ("viewer_il23r.png", "IL23R · Crohn's disease", "p = 6 × 10⁻⁹⁷"),
-           ("viewer_drd2.png", "DRD2 · schizophrenia", "the dopamine receptor locus"),
-           ("viewer_sort1.png", "SORT1 · coronary artery disease", "rs12740374, the LDL-cholesterol variant")]
-
-
-def s_montage(t):
-    im = background(t + 110).convert("RGBA")
-    seg = 3.4
-    for i, (shot, title, sub) in enumerate(MONTAGE):
-        a = fade(t, i * seg, (i + 1) * seg + 0.3, 0.45)
-        if a <= 0:
-            continue
-        k = (t - i * seg) / seg
-        crop = lerp_box((320, 40, 1920, 1080), (330, 200, 1910, 820), k)
-        frame(im, shot, crop, (160, 50, 1600, 760), a, glow=TEAL)
-        caption(im, title, sub, a, y=880)
-    return im
-
-
-def s_serpent(t):
-    im = background(t + 125).convert("RGBA")
-    if t < 3.2:
-        section(im, t, "ACROSS ALL 30 DATASETS", "Locus Serpent Plot", "927 loci, each one a serpent through every dataset", dur=3.2)
-        return im
-    t -= 3.2
-    a0 = fade(t, 0, 6.8, 0.5)
-    if a0 > 0:
-        crop = lerp_box((90, 240, 1830, 1060), (380, 280, 1250, 880), (t - 1.0) / 5)
-        frame(im, "serpent.png", crop, (90, 40, 1740, 790), a0, glow=(120, 30, 30))
-        caption(im, "Shared loci light up as long red serpents",
-                "color and thickness = significance in each dataset; drift = where its lead SNP sits", a0, y=880)
-    a1 = fade(t, 6.8, 12.2, 0.5)
-    if a1 > 0:
-        crop = lerp_box((820, 0, 1920, 760), (830, 0, 1920, 560), (t - 7) / 5)
-        frame(im, "serpent_pcsk9.png", crop, (240, 40, 1440, 790), a1, glow=(120, 30, 30))
-        caption(im, "Click a serpent: every dataset's lead SNP, OR and p",
-                "PCSK9: the same lead SNP in four coronary artery disease datasets", a1, y=880)
-    return im
-
-
-def s_constellation(t):
-    im = background(t + 140).convert("RGBA")
-    a = fade(t, 0, 9.0, 0.6)
-    s = img("constellation.png").crop((405, 92, 1265, 952))
-    zoom = 1 + 0.10 * ease(t / 9)
-    size = int(760 * zoom)
-    rot = s.rotate(-6 * t, resample=Image.BICUBIC, fillcolor=(255, 255, 255, 255)).resize((size, size), Image.BILINEAR)
-    m = Image.new("L", (size, size), 0)
-    ImageDraw.Draw(m).ellipse((8, 8, size - 8, size - 8), fill=int(255 * a))
-    rot.putalpha(m)
-    halo = Image.new("RGBA", im.size, (0, 0, 0, 0))
-    ImageDraw.Draw(halo).ellipse((560 - size / 2 - 40, 450 - size / 2 - 40, 560 + size / 2 + 40, 450 + size / 2 + 40),
-                                 fill=VIOLET + (int(70 * a),))
-    im.alpha_composite(halo.filter(ImageFilter.GaussianBlur(60)))
-    im.alpha_composite(rot, (int(560 - size / 2), int(450 - size / 2)))
-    text_at(im, "Gene Constellation", (1050, 290), font(80, bold=True), TEXT, a)
-    for j, ln in enumerate(["712 genes from 30 datasets", "inner ring: replicated in more datasets",
-                            "color: risk or protective", "150 co-significance links"]):
-        text_at(im, ln, (1056, 420 + j * 62), font(38), MUTED if j else AMBER, ease((t - 0.8 - j * 0.6) / 0.6) * a)
-    return im
-
-
-def s_summary(t):
-    """A project's summary page, scrolling: every analysis on every locus."""
-    im = background(t + 150).convert("RGBA")
-    a = fade(t, 0, 12.0, 0.5)
-    src = img("summary_t2d.png")
-    y0 = (src.height - 1080) * ease((t - 1.0) / 9.5) * 0.72
-    frame(im, "summary_t2d.png", (60, y0, 1860, y0 + 1000), (180, 40, 1560, 790), a, glow=TEAL)
-    caption(im, "Every analysis, every locus, at a glance",
-            "progress, heritability, credible sets, ranking, MAGMA and what still needs to run", a, y=880)
-    return im
-
-
-NUMBERS = [("60.8%", "of loci: the model's top SNP is the causal one", "vs 50.3% for SuSiE alone · FinnGen in-sample-LD truth", AMBER),
-           ("47%", "of joint credible sets are smaller", "than any single dataset's, from mvSuSiE across datasets", MINT),
-           ("3,226", "credible sets from 2,299 fine-mapped loci", "SuSiE, ABF and COJO agree on the lead SNP at most loci", SKYBLUE),
-           ("0 bytes", "uploaded anywhere", "every analysis ran on one desktop computer", RED)]
-
-
-def s_numbers(t):
-    im = background(t + 165).convert("RGBA")
-    seg = 3.6
-    for i, (num, line, sub, col) in enumerate(NUMBERS):
-        a = fade(t, i * seg, (i + 1) * seg, 0.45)
-        if a <= 0:
-            continue
-        k = ease((t - i * seg) / 1.2)
-        shown = num
-        digits = "".join(c for c in num if c.isdigit() or c == ".")
-        if digits and num != "0 bytes":
-            val = float(digits.replace(",", "")) * k
-            shown = (f"{val:.1f}%" if "." in num else (f"{int(val):,}" + ("%" if "%" in num else "")))
-        halo = Image.new("RGBA", im.size, (0, 0, 0, 0))
-        ImageDraw.Draw(halo).ellipse((W / 2 - 380, 230, W / 2 + 380, 560), fill=col + (int(55 * a),))
-        im.alpha_composite(halo.filter(ImageFilter.GaussianBlur(80)))
-        text_center(im, shown, 250, font(200, bold=True), col, a)
-        text_center(im, line, 560, font(58, bold=True), TEXT, a)
-        text_center(im, sub, 650, font(34), MUTED, a)
-    text_center(im, "Results of the LYNXgwas validation on the 30-dataset corpus", 960, font(28), MUTED, fade(t, 0, 4 * seg))
+        y = 240 + (i // 3) * (ph + gy)
+        manhattan(im, pid, (x, y, pw, ph), progress=k, alpha=a * ease((t - i * 0.3) / 0.4), small=True, label=name, glow=False)
+        text_at(im, f"{SKY[pid]['loci']} loci", (x + pw - 120, y - 40), font(28, bold=True), AMBER, a * ease((t - 1.2 - i * 0.3) / 0.4))
+    text_center(im, "2,387 loci · every analysis already run · one click to add them to your LYNXgwas", 800, font(38, bold=True),
+                MINT, a * ease((t - 3) / 0.6))
+    text_center(im, "the example data downloads from Zenodo; your own projects move as one .zip with Export and Import",
+                880, font(32), MUTED, a * ease((t - 4) / 0.6))
     return im
 
 
 def s_online(t):
-    im = background(t + 180).convert("RGBA")
-    if t < 3.4:
-        section(im, t, "ALSO ONLINE", "LYNXgwas Server", "the same app for a whole lab, or the world")
+    im = background(t + 185).convert("RGBA")
+    if t < 3.0:
+        section(im, t, "NO INSTALL NEEDED", "Use it online", "LYNXgwas Server: the same tool in your browser", dur=3.0)
         return im
-    t -= 3.4
+    t -= 3.0
     shots = [("server_home.png", (0, 0, 1920, 1080), (180, 40, 1560, 790),
-              "Public datasets, open to everyone", "read-only, with every result and plot"),
+              "Open the public datasets", "every result and plot, read-only, for anyone"),
              ("server_viewer.png", (320, 40, 1920, 1080), (160, 40, 1600, 790),
-              "The same viewer in the browser", "CTLA4 in rheumatoid arthritis, served by LYNXgwas Server"),
-             ("server_summary.png", (330, 90, 1590, 830), (180, 40, 1560, 790),
-              "Every summary, open in the browser", "visitors browse read-only; an account analyses its own data")]
+              "The same viewer in the browser", "CTLA4 in rheumatoid arthritis"),
+             ("server_summary.png", (270, 85, 1650, 860), (180, 40, 1560, 790),
+              "Create an account to analyse your own GWAS", "private projects kept for 15 days; or host it for your lab")]
     seg = 3.8
     for i, (shot, crop0, box, title, sub) in enumerate(shots):
         a = fade(t, i * seg, (i + 1) * seg + 0.3, 0.45)
@@ -556,22 +620,6 @@ def s_online(t):
         crop = lerp_box(crop0, (crop0[0] + 60, crop0[1] + 30, crop0[2] - 60, crop0[3] - 40), k)
         frame(im, shot, crop, box, a, glow=TEAL)
         caption(im, title, sub, a, y=880)
-    return im
-
-
-def s_data(t):
-    im = background(t + 195).convert("RGBA")
-    a0 = fade(t, 0, 6.6, 0.5)
-    if a0 > 0:
-        crop = lerp_box((0, 150, 1920, 520), (130, 160, 1800, 480), t / 6.6)
-        frame(im, "home_example.png", crop, (120, 160, 1680, 520), a0, glow=TEAL)
-        caption(im, "Start with the article's data in one click", "30 datasets with every result, downloaded from Zenodo and added for you",
-                a0, y=780)
-    a1 = fade(t, 6.6, 13.0, 0.5)
-    if a1 > 0:
-        crop = lerp_box((630, 40, 1290, 670), (640, 60, 1280, 650), (t - 6.6) / 6.4)
-        frame(im, "export_dialog.png", crop, (560, 40, 800, 760), a1, glow=TEAL)
-        caption(im, "Move projects as one .zip", "Export one dataset or many; Import them on any computer", a1, y=880)
     return im
 
 
@@ -597,13 +645,14 @@ def s_close(t):
     im.alpha_composite(layer)
     text_center(im, "pip install lynxgwas", 733, font(46, mono=True), MINT, pa)
     text_center(im, "github.com/AlsammanAlsamman/LYNXgwas", 870, font(44, bold=True), TEXT, ease((t - 2.6) / 0.7))
-    text_center(im, "example data on Zenodo · LYNXgwas Server for your lab", 940, font(32), MUTED, ease((t - 3.0) / 0.7))
+    text_center(im, "online: LYNXgwas Server · example data on Zenodo", 940, font(32), MUTED, ease((t - 3.0) / 0.7))
     return im
 
 
-SCENES = [(s_hook, 15.0), (s_problem, 11.4), (s_reveal, 7.0), (s_corpus, 15.4), (s_pillars, 16.0), (s_home, 8.0),
-          (s_pcsk9, 22.0), (s_montage, 13.9), (s_serpent, 15.4), (s_constellation, 9.0), (s_summary, 12.0),
-          (s_numbers, 14.4), (s_online, 15.2), (s_data, 13.0), (s_close, 10.0)]
+SCENES = ([(s_hook, 13.0), (s_problem, 9.8), (s_reveal, 6.6), (s_steps, 3.0 + 4 * 3.6 + 0.4)]
+          + [(chapter_scene(ch), TITLE_T + len(ch[4]) * ITEM + 0.3) for ch in CHAPTERS]
+          + [(s_agent, 7.0), (s_robust, 2.8 + 4 * 3.3), (s_published, 2.8 + 12.6), (s_found, 2.8 + 4 * 3.3),
+             (s_corpus, 9.6), (s_online, 3.0 + 3 * 3.8 + 0.3), (s_close, 10.0)])
 
 
 def scene_starts():
@@ -639,7 +688,7 @@ def soundtrack(path: Path, seconds: float, sr: int = 44100) -> None:
     t = np.arange(n) / sr
     out = np.zeros(n)
     starts = dict(scene_starts())
-    reveal, numbers, close = starts["s_reveal"], starts["s_numbers"], starts["s_close"]
+    reveal, numbers, close = starts["s_reveal"], starts["s_published"], starts["s_close"]
 
     def note(m):
         return 440.0 * 2 ** ((m - 69) / 12)
@@ -681,7 +730,7 @@ def soundtrack(path: Path, seconds: float, sr: int = 44100) -> None:
     out[hit] += 0.30 * np.sin(2 * np.pi * note(38) * t[hit]) * np.exp(-(t[hit] - reveal) * 1.2)
     out[hit] += 0.18 * np.sin(2 * np.pi * note(26) * t[hit]) * np.exp(-(t[hit] - reveal) * 0.8)
     # pulsing arpeggio from the corpus scene to the close
-    arp0, step = starts["s_corpus"], 0.25
+    arp0, step = starts["s_steps"], 0.25
     for j in range(int((close - arp0) / step)):
         s0 = arp0 + j * step
         b = int(s0 / bar) % 4

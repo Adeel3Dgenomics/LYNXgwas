@@ -4,44 +4,52 @@
 **Thumbnail:** `launch/video/youtube-thumbnail.png` (1280×720)
 
 ## Title (≤ 100)
-LYNXgwas: from GWAS summary statistics to the causal variant, on your own computer (30 GWAS, 6 diseases)
+LYNXgwas: fine-mapping, heritability and causal-SNP ranking for your GWAS, on your own computer
 
 ## Description
-One GWAS gives you hundreds of significant loci. Which variant is causal? Which gene does it act through? Does it replicate in other studies? Answering that usually takes a dozen tools, a dozen file formats and weeks of scripts, or uploading your data to a web server.
+One GWAS gives you hundreds of significant loci. Which variant is causal? Which gene does it act through? Does it replicate? Answering that usually takes a dozen tools, a dozen file formats and weeks of scripts, or uploading your data to a web server.
 
-LYNXgwas does it all in one app that runs on your computer:
-🎯 Fine-mapping at every locus: SuSiE, Wakefield ABF and GCTA-COJO
+LYNXgwas does it in one app that runs on your computer. Point it at your summary statistics and it finds the loci and runs every analysis:
+🔍 An interactive locus viewer: genome-wide skyline, regional plot, genes, regulatory tracks, LD triangle
+🎯 Fine-mapping at every locus: SuSiE, Wakefield ABF and GCTA-COJO, with credible sets on the plot
 🔗 Joint fine-mapping across datasets (mvSuSiE)
-🏆 A causal-SNP ranking that combines all the evidence
-🧬 MAGMA per locus, LD-score and local (HESS) heritability
-🗺️ Across datasets: the Locus Serpent Plot and the Gene Constellation
+🏆 A causal-SNP ranking that combines all the evidence, with its reasons
+🧬 SNP-heritability (built-in LDSC), local heritability (HESS), QC and a sample-size check
+🧪 MAGMA at every locus and regulatory-element enrichment
+🗺️ Many GWAS at once: the Locus Serpent Plot, the Gene Constellation and a search across every dataset
+🤖 A built-in AI agent, with a local model by default
 🔒 Private by design: nothing is uploaded
 
-Shown here on the article's corpus of 30 public GWAS across six diseases (schizophrenia, type 2 diabetes, coronary artery disease, Alzheimer's disease, rheumatoid arthritis and inflammatory bowel disease; 2,387 loci). At PCSK9, every method agrees on rs11591147 (R46L) and the ranking scores it 0.993. Across the corpus the model's top SNP is the causal one at 60.8% of loci, against 50.3% for SuSiE alone.
+Robust and fast: a 7.66-million-SNP GWAS is read in 4 seconds and all 177 of its loci are processed in 37 minutes on one desktop; the built-in LDSC matches the reference ldsc to within a tenth of a standard error; wrong sample sizes are caught from the standard errors (9 of the 30 datasets).
 
-Also online: LYNXgwas Server runs the same app in the browser for a lab or the public, with read-only public datasets and accounts for your own projects. The article's data can be added in one click from Zenodo, and projects move between computers as one .zip.
+It matches the published results: schizophrenia SNP-heritability 0.22 (published 0.24), type 2 diabetes 0.204 (published 0.196), and known causal variants recovered (PCSK9 R46L, SORT1 rs12740374, SH2B3 R262W). And it finds what only a multi-dataset tool can: the ranking's top SNP is the causal one at 60.8% of loci (50.3% for SuSiE alone), and joint fine-mapping narrows the credible set in 47% of cases.
+
+Every example in the video comes from the article's 30 public GWAS across six diseases, which install into LYNXgwas in one click. No install? LYNXgwas Server runs the same tool in the browser, with public datasets and accounts for your own projects.
 
 Free and open source (MIT).
 
 ⏱ Chapters
 0:00 One GWAS, 7.6 million SNPs
-0:15 The problem
-0:26 Meet LYNXgwas
-0:33 The test: 30 GWAS, 6 diseases
-0:48 What it does
-1:04 All 30 datasets
-1:12 A locus close up: PCSK9
-1:34 TCF7L2, IL23R, DRD2, SORT1
-1:48 Locus Serpent Plot
-2:04 Gene Constellation
-2:13 Every analysis at a glance
-2:25 The results
-2:39 Online: LYNXgwas Server
-2:54 Example data, Export and Import
-3:07 Get it
+0:13 The problem
+0:22 Meet LYNXgwas
+0:29 Three easy steps
+0:47 The locus viewer
+1:06 Fine-mapping: SuSiE, ABF, COJO, mvSuSiE
+1:25 Causal-SNP ranking
+1:45 Heritability and QC
+1:59 Genes and regulatory enrichment
+2:12 Across datasets: Serpent Plot, Gene Constellation, search
+2:37 The AI agent
+2:44 Robust and fast
+3:00 Matches the published results
+3:16 What it found
+3:32 The example data: 30 GWAS, 6 diseases
+3:41 Use it online: LYNXgwas Server
+3:56 Get it
 
 🔗 Links
 GitHub: https://github.com/AlsammanAlsamman/LYNXgwas
+LYNXgwas Server: https://github.com/AlsammanAlsamman/lynxgwas-server
 PyPI: https://pypi.org/project/lynxgwas/
 Example data (Zenodo): <add the DOI once the record is published>
 
@@ -68,10 +76,11 @@ Paste this into `README.md` after the paragraph about LYNXgwas Server, with the 
 <p align="center">
   <a href="https://www.youtube.com/watch?v=YOUTUBE_VIDEO_ID">
     <img src="https://raw.githubusercontent.com/AlsammanAlsamman/LYNXgwas/main/docs/images/video-thumbnail.png"
-         alt="LYNXgwas introduction video (3 minutes)" width="720">
+         alt="LYNXgwas introduction video (4 minutes)" width="720">
   </a>
 </p>
 
-Three minutes on the article's 30 GWAS datasets: fine-mapping, joint fine-mapping, the causal-SNP ranking,
-the Locus Serpent Plot and Gene Constellation, the online LYNXgwas Server, and the one-click example data.
+Four minutes on what LYNXgwas does, shown on the article's 30 GWAS datasets: the locus viewer, fine-mapping,
+the causal-SNP ranking, heritability and QC, cross-dataset views, speed, agreement with published results,
+and the online LYNXgwas Server.
 ```

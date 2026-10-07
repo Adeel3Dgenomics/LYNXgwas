@@ -710,7 +710,7 @@ async function loadN() {
                  ['Used by the analyses', fmtN(Math.round(d.configured)), d.n_effective_set > 0 ? 'effective N set for this project' : 'from the configured sample size'],
                  ['Ratio', fmt(d.ratio, 2), 'implied / used (1 = consistent)']];
   const owner = S.access === 'owner';
-  box.replaceChildren(
+  box.replaceChildren(...[
     h('div', { class: 'tiles', style: 'margin-bottom:0.4rem' }, ...tiles.map(([k, v, s2]) => h('div', { class: 'tile' },
       h('div', { class: 'k', text: k }), h('div', { class: 'v', text: v }), h('div', { class: 's', text: s2 })))),
     h('p', { class: 'fact' }, h('span', { class: 'pill ' + pillCls, text: pillTxt }), ' ', d.message),
@@ -721,7 +721,7 @@ async function loadN() {
     owner && d.n_effective_set > 0
       ? h('button', { class: 'btn', style: 'margin:0.4rem 0 0 0.4rem', text: 'Remove the effective N', onclick: () => applyN(0) }) : null,
     owner && (d.verdict === 'review' || d.verdict === 'mismatch')
-      ? h('button', { class: 'btn', style: 'margin:0.4rem 0 0 0.4rem', text: 'Mark as checked (the N is right)', onclick: () => confirmN() }) : null);
+      ? h('button', { class: 'btn', style: 'margin:0.4rem 0 0 0.4rem', text: 'Mark as checked (the N is right)', onclick: () => confirmN() }) : null].filter(Boolean));
   renderNext();
 }
 async function confirmN() {
