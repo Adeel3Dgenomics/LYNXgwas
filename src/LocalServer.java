@@ -6164,6 +6164,8 @@ public class LocalServer {
         }
         byte[] bytes = Files.readAllBytes(f.toPath());
         ex.getResponseHeaders().set("Content-Type", guessMime(p));
+        // pages must be re-checked, or a browser keeps showing the viewer from before an update
+        if (p.endsWith(".html") || p.equals("/")) ex.getResponseHeaders().set("Cache-Control", "no-cache");
         ex.sendResponseHeaders(200, bytes.length);
         try (OutputStream os = ex.getResponseBody()) { os.write(bytes); }
     }
