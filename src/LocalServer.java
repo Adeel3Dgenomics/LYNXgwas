@@ -239,6 +239,7 @@ public class LocalServer {
         // ── Example data (the article's 30 datasets, from Zenodo) ────────
         http.createContext("/api/example-data/", this::exampleDataEndpoint);
         http.createContext("/api/pack/", this::packEndpoint);
+        http.createContext("/api/sce2g/info", this::sce2gInfoEndpoint);
 
         // ── Project-scoped API (Step 6) ──────────────────────────────────
         http.createContext("/api/projects/process", this::processProjects);
@@ -538,6 +539,186 @@ public class LocalServer {
         respond(ex, 405, "application/json", "{\"error\":\"POST required\"}".getBytes());
     }
 
+    // ── scE2G enhancer-gene links (regulatory_links/sce2g, see Sce2gLinks) ──
+
+    private final Set<String> sce2gWarmed = ConcurrentHashMap.newKeySet();
+
+    /** Opening a project's viewer loads its default scE2G cell types in the background, so its first locus is quick. */
+    private void warmSce2g(String projectId, String projectDir) {
+        if (!Sce2gLinks.available() || !sce2gWarmed.add(projectId)) return;
+        Thread t = new Thread(() -> {
+            try {
+                Config cfg = Config.loadFromProject(projectDir);
+                String sel = Sce2gLinks.defaultPreset(GeneConstellationBuilder.diseaseGroupOf(projectId, cfg.diseaseName));
+                for (Sce2gLinks.CellType c : Sce2gLinks.select(sel)) Sce2gLinks.load(c);
+            } catch (Exception ignored) {}
+        }, "sce2g-warm");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    /** The cell-type selection for a request: ?cts=, else the default for the project's disease. */
+    private String sce2gSelection(HttpExchange ex, String projectId, Config cfg) throws IOException {
+        String q = queryParam(ex, "cts");
+        if (q != null && !q.trim().isEmpty()) return q.trim();
+        return Sce2gLinks.defaultPreset(GeneConstellationBuilder.diseaseGroupOf(projectId, cfg.diseaseName));
+    }
+
+    private static boolean isGrch38(Config cfg) {
+        String b = cfg.genomeBuild == null ? "" : cfg.genomeBuild.toLowerCase(Locale.ROOT);
+        return b.contains("38");
+    }
+
+    /** The latest SuSiE run's credible-set SNPs of a locus: {pos, pip}. */
+    private static List<double[]> credibleSetSnps(Config cfg, Locus locus) {
+        List<double[]> out = new ArrayList<>();
+        RunSummary rs = latestRuns(cfg, locus).get("susie_finemapping");
+        if (rs == null) return out;
+        File f = new File(new File(new File(BaseStepPipeline.analysisDir(cfg, locus), "runs"), rs.runId), "result.tsv");
+        try {
+            List<String> lines = Files.readAllLines(f.toPath());
+            List<String> h = Arrays.asList(lines.get(0).split("\t", -1));
+            int iP = h.indexOf("pos"), iPip = h.indexOf("susie_pip"), iCs = h.indexOf("susie_cs");
+            for (int r = 1; r < lines.size(); r++) {
+                String[] x = lines.get(r).split("\t", -1);
+                if (iCs < 0 || x.length <= iCs || x[iCs].isEmpty() || x[iCs].equals("NA") || x[iCs].equals("0")) continue;
+                try { out.add(new double[]{Long.parseLong(x[iP]), Double.parseDouble(x[iPip])}); } catch (NumberFormatException ignored) {}
+            }
+        } catch (Exception ignored) {}
+        return out;
+    }
+
+    private Map<String, Object> sce2gInfo(String preset) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("available", Sce2gLinks.available());
+        m.put("resource", "scE2G");
+        m.put("citation", Sce2gLinks.citation());
+        m.put("threshold", Sce2gLinks.thresholdText());
+        m.put("preset", preset);
+        List<Object> presets = new ArrayList<>();
+        for (String[] p : Sce2gLinks.presets()) {
+            Map<String, Object> e = new LinkedHashMap<>();
+            e.put("id", p[0]); e.put("label", p[1]); e.put("n", Sce2gLinks.select(p[0]).size());
+            presets.add(e);
+        }
+        m.put("presets", presets);
+        return m;
+    }
+
+    // GET /api/project/{id}/locus/{n}/sce2g?cts=<preset or ids> — elements, links and the cell-type strip of a locus
+    private void projectLocusSce2g(HttpExchange ex, String projectId, String projectDir, String n) throws IOException {
+        if (!Sce2gLinks.available()) { respond(ex, 200, "application/json", "{\"available\":false}".getBytes()); return; }
+        ProjectState ps = ensureProjectState(projectId, projectDir);
+        if (ps == null || ps.outputs == null) { respond(ex, 503, "application/json", "{\"error\":\"Project not loaded\"}".getBytes()); return; }
+        int idx;
+        try { idx = Integer.parseInt(n); } catch (NumberFormatException e) { respond(ex, 400, "application/json", "{\"error\":\"bad locus\"}".getBytes()); return; }
+        LocusOutput lo = null;
+        for (LocusOutput o : ps.outputs) if (o.locusIndex == idx) lo = o;
+        Locus locus = null;
+        for (Locus l : ps.loci) if (l.index == idx) locus = l;
+        if (lo == null || locus == null) { respond(ex, 404, "application/json", "{\"error\":\"locus not found\"}".getBytes()); return; }
+        String sel = sce2gSelection(ex, projectId, ps.config);
+        List<Sce2gLinks.CellType> cts = Sce2gLinks.select(sel);
+        boolean b38 = isGrch38(ps.config);
+        long lead = lo.topSnp != null ? lo.topSnp.pos : (lo.start + lo.end) / 2;
+        Map<String, Object> out = sce2gInfo(sel);
+        out.put("build", b38 ? "GRCh38" : "GRCh37");
+        out.put("lead", lead);
+        out.put("lead_snp", lo.topSnp != null ? lo.topSnp.id : "");
+        out.put("window", Arrays.asList(lo.paddedStart, lo.paddedEnd));
+        out.putAll(Sce2gLinks.locus(cts, b38, lo.chr, lo.paddedStart, lo.paddedEnd, lead, credibleSetSnps(ps.config, locus)));
+        respond(ex, 200, "application/json", MiniJson.encode(out).getBytes("UTF-8"));
+    }
+
+    // GET /api/project/{id}/sce2g-stats?cts=<preset or ids>[&refresh=1] — where the lead SNPs sit relative to the
+    // scE2G elements, per-cell-type enrichment against matched random SNPs, and credible-set SNPs in elements per locus.
+    // Cached in the project folder per selection.
+    private void projectSce2gStats(HttpExchange ex, String projectId, String projectDir) throws IOException {
+        if (!Sce2gLinks.available()) { respond(ex, 200, "application/json", "{\"available\":false}".getBytes()); return; }
+        ProjectState ps = ensureProjectState(projectId, projectDir);
+        if (ps == null || ps.outputs == null || ps.gff == null) {
+            respond(ex, 503, "application/json", "{\"error\":\"Project not loaded\"}".getBytes()); return;
+        }
+        String sel = sce2gSelection(ex, projectId, ps.config);
+        List<Sce2gLinks.CellType> cts = Sce2gLinks.select(sel);
+        boolean b38 = isGrch38(ps.config);
+        StringBuilder key = new StringBuilder("v1|" + sel + "|" + (b38 ? 38 : 37));
+        for (Sce2gLinks.CellType c : cts) key.append('|').append(c.id).append(':').append(c.pairs);
+        List<Sce2gLinks.Snp> snps = new ArrayList<>();
+        Map<Integer, Locus> lociByIndex = new HashMap<>();
+        for (Locus l : ps.loci) lociByIndex.put(l.index, l);
+        for (LocusOutput o : ps.outputs) {
+            Locus l = lociByIndex.get(o.locusIndex);
+            if (o.topSnp == null || l == null || BaseStepPipeline.overlapsMhc(l, ps.config.genomeBuild)) continue;
+            snps.add(new Sce2gLinks.Snp("Locus " + o.locusIndex, o.topSnp.id, o.chr, o.topSnp.pos,
+                o.nearestGenes.isEmpty() ? "" : o.nearestGenes.get(0)));
+            key.append('|').append(o.locusIndex).append(':').append(o.topSnp.pos);
+        }
+        String cacheKey = Integer.toHexString(key.toString().hashCode()) + "-" + snps.size();
+        File cache = new File(projectDir, "sce2g_stats." + sel.replaceAll("[^A-Za-z0-9_-]", "_") + ".json");
+        if (!"1".equals(queryParam(ex, "refresh")) && cache.isFile()) {
+            String j = new String(Files.readAllBytes(cache.toPath()), "UTF-8");
+            if (j.contains("\"cache_key\":\"" + cacheKey + "\"")) { respond(ex, 200, "application/json", j.getBytes("UTF-8")); return; }
+        }
+        Map<String, long[]> tss = new HashMap<>();
+        for (Map.Entry<String, List<Gene>> en : ps.gff.genesByChromosome().entrySet()) {
+            long[] t = new long[en.getValue().size()];
+            int k = 0;
+            for (Gene g : en.getValue()) t[k++] = "-".equals(g.strand) ? g.end : g.start;
+            Arrays.sort(t);
+            tss.put(en.getKey().startsWith("chr") ? en.getKey().substring(3) : en.getKey(), t);
+        }
+        Map<String, Object> out = sce2gInfo(sel);
+        out.putAll(Sce2gLinks.stats(cts, b38, snps, tss, 1000, 20261007L));
+        // credible-set SNPs inside elements, and the genes they link to, per locus
+        List<Object> csLoci = new ArrayList<>();
+        int withCs = 0, withCsIn = 0;
+        for (LocusOutput o : ps.outputs) {
+            Locus l = lociByIndex.get(o.locusIndex);
+            if (o.topSnp == null || l == null || BaseStepPipeline.overlapsMhc(l, ps.config.genomeBuild)) continue;
+            List<double[]> cs = credibleSetSnps(ps.config, l);
+            if (cs.isEmpty()) continue;
+            withCs++;
+            Map<String, Object> r = Sce2gLinks.locus(cts, b38, o.chr, o.paddedStart, o.paddedEnd, o.topSnp.pos, cs);
+            List<Object> in = MiniJson.asArray(r.get("cs_in_elements"));
+            if (in.isEmpty()) continue;
+            withCsIn++;
+            double pipIn = 0;
+            for (Object x : in) pipIn += ((Number) MiniJson.asObject(x).get("pip")).doubleValue();
+            List<Object> gs = MiniJson.asArray(r.get("cs_gene_scores"));
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("locus", o.locusIndex); row.put("gene", o.nearestGenes.isEmpty() ? "" : o.nearestGenes.get(0));
+            row.put("cs_snps", cs.size()); row.put("cs_snps_in_elements", in.size()); row.put("pip_in_elements", Sce2gLinks.round(pipIn));
+            row.put("top_target", gs.isEmpty() ? "" : MiniJson.asObject(gs.get(0)).get("gene"));
+            row.put("top_target_score", gs.isEmpty() ? 0 : MiniJson.asObject(gs.get(0)).get("score"));
+            row.put("targets", gs.size() > 5 ? gs.subList(0, 5) : gs);
+            csLoci.add(row);
+        }
+        csLoci.sort((a, b) -> Double.compare(((Number) MiniJson.asObject(b).get("pip_in_elements")).doubleValue(),
+                                             ((Number) MiniJson.asObject(a).get("pip_in_elements")).doubleValue()));
+        out.put("cs_loci_with_sets", withCs);
+        out.put("cs_loci_in_elements", withCsIn);
+        out.put("cs_loci", csLoci);
+        out.put("cache_key", cacheKey);
+        byte[] json = MiniJson.encode(out).getBytes("UTF-8");
+        try { Files.write(cache.toPath(), json); } catch (IOException ignored) {}
+        respond(ex, 200, "application/json", json);
+    }
+
+    // GET /api/sce2g/info — whether the scE2G links are installed, their citation and the cell-type selections
+    private void sce2gInfoEndpoint(HttpExchange ex) throws IOException {
+        cors(ex); if (preflight(ex)) return;
+        Map<String, Object> m = sce2gInfo("all");
+        List<Object> ctl = new ArrayList<>();
+        for (Sce2gLinks.CellType c : Sce2gLinks.cellTypes()) {
+            Map<String, Object> e = new LinkedHashMap<>();
+            e.put("id", c.id); e.put("label", c.label); e.put("group", c.group); e.put("lineage", c.lineage); e.put("pairs", c.pairs);
+            ctl.add(e);
+        }
+        m.put("cell_types", ctl);
+        respond(ex, 200, "application/json", MiniJson.encode(m).getBytes("UTF-8"));
+    }
+
     // ── Project packs: export / import ───────────────────────────────────
 
     private final ProjectPackExporter packExporter = new ProjectPackExporter();
@@ -627,6 +808,7 @@ public class LocalServer {
         }
 
         if (action.equals("manifest")) {
+            warmSce2g(projectId, projectDir);
             serveJson(ex, dataDir + "/manifest.json");
         } else if (action.equals("genome-skyline")) {
             serveJson(ex, dataDir + "/genome_skyline.json");
@@ -643,6 +825,11 @@ public class LocalServer {
             // a digit, so stripping all non-digits from e.g. "locus/2/l2g" corrupts "2" into "22".
             String n = action.replaceFirst("locus/(\\d+)/l2g", "$1");
             projectLocusL2G(ex, dataDir, projectDir, n);
+        } else if (action.matches("locus/\\d+/sce2g")) {
+            // not replaceAll("\\D+", ""): "sce2g" itself contains a digit (see the l2g route above)
+            projectLocusSce2g(ex, projectId, projectDir, action.replaceFirst("locus/(\\d+)/sce2g", "$1"));
+        } else if (action.equals("sce2g-stats")) {
+            projectSce2gStats(ex, projectId, projectDir);
         } else if (action.matches("locus/\\d+/regulatory")) {
             String n = action.replaceAll("\\D+", "");
             projectLocusRegulatory(ex, dataDir, projectId, n);

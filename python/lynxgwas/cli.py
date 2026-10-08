@@ -72,6 +72,9 @@ def ensure_workspace_assets(workspace: Path) -> None:
     # Tool descriptors are discovered from the workspace's tools/ folder; new tools (MAGMA, local
     # heritability, causal-SNP ranking...) must reach existing workspaces after an upgrade.
     sync_tree(bundled_path("tools"), workspace / "tools")
+    # The bundled scE2G enhancer-gene links (Sheth, Qiu et al.), read by the viewer track and the summary page
+    if bundled_path("regulatory_links").is_dir():
+        sync_tree(bundled_path("regulatory_links"), workspace / "regulatory_links")
     # Where "Add example data" finds the article's example data (a Zenodo record)
     example_cfg = bundled_path("config", "example_data.json")
     if example_cfg.is_file():

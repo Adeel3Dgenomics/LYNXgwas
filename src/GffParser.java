@@ -140,6 +140,9 @@ public class GffParser {
     // Public query API
 
     /** All genes overlapping [queryStart, queryEnd] on the given chromosome. */
+    /** Every gene of each chromosome (names without "chr"), sorted by start. */
+    public Map<String, List<Gene>> genesByChromosome() { return Collections.unmodifiableMap(chrGenes); }
+
     public List<Gene> overlapping(String chr, long queryStart, long queryEnd) {
         List<Gene> genes = chrGenes.get(chr);
         if (genes == null || genes.isEmpty()) return Collections.emptyList();

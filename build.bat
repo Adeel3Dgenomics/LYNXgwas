@@ -66,6 +66,7 @@ javac -encoding UTF-8 -d bin -cp "bin%LIBCP%" ^
   src\analysis\BaseStepPipeline.java ^
   src\analysis\EnrichmentAnalyzer.java ^
   src\analysis\RegulatoryPeakIndex.java ^
+  src\analysis\Sce2gLinks.java ^
   src\analysis\RegulatoryEnrichmentAnalyzer.java ^
   src\analysis\MiniJson.java ^
   src\analysis\LlmClient.java ^

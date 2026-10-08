@@ -76,6 +76,15 @@ def copy_config() -> None:
     shutil.copy2(ROOT / "config" / "example_data.json", dest / "example_data.json")
 
 
+def copy_regulatory_links() -> None:
+    """The bundled scE2G enhancer-gene links (regulatory_links/, built by scripts/regulatory/build_sce2g_pack.py)."""
+    src = ROOT / "regulatory_links"
+    dest = BUNDLED / "regulatory_links"
+    reset(dest)
+    if src.is_dir():
+        shutil.copytree(src, dest, dirs_exist_ok=True)
+
+
 def main() -> None:
     if not (ROOT / "bin").exists():
         raise SystemExit("bin/ not found — run build.bat first")
@@ -84,6 +93,7 @@ def main() -> None:
     copy_web()
     copy_tools()
     copy_config()
+    copy_regulatory_links()
     n_classes = len(list((BUNDLED / "classes").rglob("*.class")))
     n_jars = len(list((BUNDLED / "lib").glob("*.jar")))
     print(f"Bundled {n_classes} class files, {n_jars} jar(s), web assets, and tool descriptors "

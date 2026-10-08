@@ -180,6 +180,14 @@ table.list tr.click { cursor: pointer; } table.list tr.click:hover td { backgrou
   </div>
 
   <section class="card">
+    <h2>Enhancer–gene links (scE2G)</h2>
+    <p class="lead">Where the lead SNPs sit relative to the enhancers and promoters that scE2G links to genes in each cell type, whether that
+      is more often than for random SNPs matched on their distance to the nearest gene, which cell types are enriched, and which genes the
+      credible-set SNPs inside elements point to.</p>
+    <div id="sce"><p class="loading">Loading…</p></div>
+  </section>
+
+  <section class="card">
     <h2>Joint fine-mapping across datasets (mvSuSiE)</h2>
     <p class="lead">Loci of this dataset that were fine-mapped jointly with other datasets of a cross-dataset run. Joint runs are started from the Locus Serpent Plot.</p>
     <div id="joint"><p class="loading">Checking…</p></div>
@@ -275,6 +283,7 @@ async function loadSlow() {
   getJson(API + '/qc').then(renderQc);
   loadN();
   loadReg(true);
+  loadSce();
   // joint runs: one lookup per locus, a few at a time
   const out = [];
   const queue = S.loci.slice();
@@ -710,7 +719,7 @@ async function loadN() {
                  ['Used by the analyses', fmtN(Math.round(d.configured)), d.n_effective_set > 0 ? 'effective N set for this project' : 'from the configured sample size'],
                  ['Ratio', fmt(d.ratio, 2), 'implied / used (1 = consistent)']];
   const owner = S.access === 'owner';
-  box.replaceChildren(
+  box.replaceChildren(...[
     h('div', { class: 'tiles', style: 'margin-bottom:0.4rem' }, ...tiles.map(([k, v, s2]) => h('div', { class: 'tile' },
       h('div', { class: 'k', text: k }), h('div', { class: 'v', text: v }), h('div', { class: 's', text: s2 })))),
     h('p', { class: 'fact' }, h('span', { class: 'pill ' + pillCls, text: pillTxt }), ' ', d.message),
@@ -721,7 +730,7 @@ async function loadN() {
     owner && d.n_effective_set > 0
       ? h('button', { class: 'btn', style: 'margin:0.4rem 0 0 0.4rem', text: 'Remove the effective N', onclick: () => applyN(0) }) : null,
     owner && (d.verdict === 'review' || d.verdict === 'mismatch')
-      ? h('button', { class: 'btn', style: 'margin:0.4rem 0 0 0.4rem', text: 'Mark as checked (the N is right)', onclick: () => confirmN() }) : null);
+      ? h('button', { class: 'btn', style: 'margin:0.4rem 0 0 0.4rem', text: 'Mark as checked (the N is right)', onclick: () => confirmN() }) : null].filter(Boolean));
   renderNext();
 }
 async function confirmN() {
@@ -766,6 +775,184 @@ function renderReg(re) {
     svg.append('text').attr('x', x(d.odds_ratio) + 6).attr('y', y + 18).text('OR ' + fmt(d.odds_ratio, 2) + ' · p ' + sci(d.p_value));
   });
   box.replaceChildren(svg.node());
+}
+
+// ── scE2G enhancer-gene links: where the lead SNPs sit, cell-type enrichment, credible sets ──────────
+const SCE_COLORS = { promoter: '#f97316', genic: '#3b82f6', intergenic: '#10b981' };
+const SCE_DEFS = [['inside', 'Inside an element'], ['kb1', 'Within 1 kb'], ['kb10', 'Within 10 kb']];
+
+async function loadSce(sel, refresh) {
+  const box = document.getElementById('sce');
+  if (!box) return;
+  let s = sel;
+  if (s == null) { try { s = localStorage.getItem('lynx-sce2g-cts') || ''; } catch (e) { s = ''; } }
+  box.replaceChildren(h('p', { class: 'loading', text: 'Computing: lead SNPs against the scE2G elements of the selected cell types, and 1,000 sets of matched random SNPs…' }));
+  const q = new URLSearchParams();
+  if (s) q.set('cts', s);
+  if (refresh) q.set('refresh', '1');
+  const d = await getJson(API + '/sce2g-stats' + (q.toString() ? '?' + q : ''));
+  if (!d) { box.replaceChildren(h('p', { class: 'muted', text: 'The scE2G links could not be computed for this dataset.' })); return; }
+  if (d.available === false) { box.replaceChildren(h('p', { class: 'muted', text: 'The scE2G enhancer-gene links are not installed in this LYNXgwas.' })); return; }
+  S.sce = d;
+  renderSce(d);
+}
+
+function sceFoldColor(f) {
+  if (!(f > 0)) return '#f1f5f9';
+  const t = Math.max(-1, Math.min(1, Math.log2(f) / 2));          // log2 fold, capped at 4x either way
+  return t >= 0 ? d3.interpolateRgb('#f8fafc', '#b91c1c')(t) : d3.interpolateRgb('#f8fafc', '#1d4ed8')(-t);
+}
+
+function renderSce(d) {
+  const box = document.getElementById('sce');
+  const any = d.cell_types[0], cts = d.cell_types.slice(1);
+  const sel = h('select', { style: 'font-size:0.82rem', onchange: ev => {
+    try { localStorage.setItem('lynx-sce2g-cts', ev.target.value); } catch (e) {}
+    loadSce(ev.target.value, false);
+  } }, ...(d.presets || []).map(p => { const o = h('option', { value: p.id, text: p.label + ' (' + p.n + ')' }); if (p.id === d.preset) o.selected = true; return o; }));
+  const pct = (a, b) => b ? Math.round(100 * a / b) + '%' : '–';
+  const facts = h('p', { class: 'fact' },
+    h('b', { text: any.inside.obs + ' of ' + d.n_snps }), ' lead SNPs (' + pct(any.inside.obs, d.n_snps) + ') sit inside an scE2G element of at least one of the ',
+    String(d.n_cell_types) + ' selected cell types, against ' + fmt(any.inside.exp, 1) + ' expected for matched random SNPs (fold ',
+    h('b', { text: fmt(any.inside.fold, 2) }), ', p ' + sci(any.inside.p) + '). Within 1 kb: ' + any.kb1.obs + ' vs ' + fmt(any.kb1.exp, 1)
+    + ' (fold ' + fmt(any.kb1.fold, 2) + '); within 10 kb: ' + any.kb10.obs + ' vs ' + fmt(any.kb10.exp, 1) + ' (fold ' + fmt(any.kb10.fold, 2) + '). Median distance to the nearest element ',
+    h('b', { text: fmtN(d.median_dist) + ' bp' }), ' (matched random SNPs: ' + fmtN(d.median_dist_null) + ' bp).');
+
+  // distance bands, coloured by nothing in particular; class of the nearest element as a stacked bar
+  const bands = Object.entries(d.bands || {});
+  const W = 520, bh = 26, H1 = bands.length * bh + 30;
+  const x1 = d3.scaleLinear().domain([0, d3.max(bands, b => b[1]) || 1]).range([110, W - 50]);
+  const svg1 = d3.create('svg').attr('viewBox', `0 0 ${W} ${H1 + 54}`);
+  bands.forEach(([lab, v], i) => {
+    const y = i * bh + 4;
+    svg1.append('text').attr('x', 102).attr('y', y + 15).attr('text-anchor', 'end').text(lab);
+    svg1.append('rect').attr('x', 110).attr('y', y + 3).attr('height', bh - 9).attr('rx', 3).attr('width', Math.max(1, x1(v) - 110))
+      .attr('fill', i === 0 ? '#166534' : d3.interpolateBlues(0.85 - i * 0.13));
+    svg1.append('text').attr('x', x1(v) + 6).attr('y', y + 15).text(v + ' (' + pct(v, d.n_snps) + ')');
+  });
+  const cls = d.nearest_class || {}, tot = Object.values(cls).reduce((a, b) => a + b, 0) || 1;
+  let cx = 110;
+  svg1.append('text').attr('x', 102).attr('y', H1 + 18).attr('text-anchor', 'end').text('nearest is a');
+  ['promoter', 'genic', 'intergenic'].forEach(k => {
+    const w = (W - 160) * (cls[k] || 0) / tot;
+    svg1.append('rect').attr('x', cx).attr('y', H1 + 4).attr('width', Math.max(0, w)).attr('height', 18).attr('fill', SCE_COLORS[k]);
+    if (w > 60) svg1.append('text').attr('x', cx + 6).attr('y', H1 + 17).attr('fill', '#fff').attr('font-weight', 600)
+      .text((k === 'promoter' ? 'promoter ' : k + ' enh. ') + (cls[k] || 0));
+    cx += w;
+  });
+  svg1.append('text').attr('x', 110).attr('y', H1 + 42).text('promoter ' + (cls.promoter || 0) + ' · genic enhancer ' + (cls.genic || 0) + ' · intergenic enhancer ' + (cls.intergenic || 0));
+
+  // cumulative distance: lead SNPs vs matched random SNPs
+  const W2 = 520, H2 = 230, m = { l: 46, r: 14, t: 10, b: 36 };
+  const xs = d3.scaleLog().domain([30, 250000]).range([m.l, W2 - m.r]), ys = d3.scaleLinear().domain([0, 1]).range([H2 - m.b, m.t]);
+  const svg2 = d3.create('svg').attr('viewBox', `0 0 ${W2} ${H2}`);
+  svg2.append('g').attr('class', 'axis').attr('transform', `translate(0,${H2 - m.b})`).call(d3.axisBottom(xs).ticks(5, '~s'));
+  svg2.append('g').attr('class', 'axis').attr('transform', `translate(${m.l},0)`).call(d3.axisLeft(ys).ticks(5).tickFormat(d3.format('.0%')));
+  svg2.append('text').attr('x', (W2 + m.l) / 2).attr('y', H2 - 4).attr('text-anchor', 'middle').text('distance to the nearest element (bp)');
+  const line = d3.line().x(p => xs(Math.max(30, p.d))).y(p => ys(p.share)).curve(d3.curveMonotoneX);
+  [['cdf_null', '#94a3b8', 'matched random SNPs'], ['cdf_obs', '#7c3aed', 'lead SNPs']].forEach(([k, col, lab], i) => {
+    svg2.append('path').attr('d', line(d[k] || [])).attr('fill', 'none').attr('stroke', col).attr('stroke-width', i ? 2.6 : 2).attr('stroke-dasharray', i ? null : '5,4');
+    svg2.append('text').attr('x', m.l + 10).attr('y', m.t + 14 + i * 16).attr('fill', col).attr('font-weight', 600).text(lab);
+  });
+
+  // heatmap: cell types (grouped by tissue and lineage) x definitions, colour = log2 fold, * = q < 0.05
+  const groups = [];
+  cts.forEach(c => { const key = c.group + ' · ' + c.lineage; let g = groups.find(x => x.key === key); if (!g) groups.push(g = { key, cts: [] }); g.cts.push(c); });
+  const cw = 22, rowH = 26, top = 150, left = 110, gap = 8;
+  const totalW = left + cts.length * cw + (groups.length - 1) * gap + 110;   // room for the last rotated labels
+  const svg3 = d3.create('svg').attr('viewBox', `0 0 ${totalW} ${top + SCE_DEFS.length * rowH + 40}`);
+  let gx = left;
+  groups.forEach(g => {
+    // two header rows: the tissue once over its cell types, then the lineage (shortened to fit its columns)
+    const [tissue, lineage] = g.key.split(' · ');
+    const gw = g.cts.length * cw;
+    if (!groups.slice(0, groups.indexOf(g)).some(o => o.key.split(' · ')[0] === tissue))
+      svg3.append('text').attr('x', gx).attr('y', 12).attr('font-weight', 700).attr('font-size', 11).text(tissue);
+    const maxCh = Math.max(2, Math.floor(gw / 6));
+    svg3.append('text').attr('x', gx).attr('y', 28).attr('font-size', 9.5).attr('fill', '#64748b')
+      .text(lineage.length > maxCh ? lineage.slice(0, maxCh - 1) + '.' : lineage);
+    svg3.append('line').attr('x1', gx).attr('x2', gx + gw - 2).attr('y1', 33).attr('y2', 33).attr('stroke', '#cbd5e1');
+    g.cts.forEach((c, j) => {
+      const x = gx + j * cw;
+      svg3.append('text').attr('transform', `translate(${x + cw / 2 + 3},${top - 6}) rotate(-60)`).attr('font-size', 10).text(c.label);
+      SCE_DEFS.forEach(([k], r) => {
+        const v = c[k];
+        svg3.append('rect').attr('x', x + 1).attr('y', top + r * rowH).attr('width', cw - 2).attr('height', rowH - 2).attr('rx', 3)
+          .attr('fill', sceFoldColor(v.fold))
+          .on('mousemove', ev => showTip(ev, [c.label + ' · ' + SCE_DEFS[r][1].toLowerCase(), v.obs + ' lead SNPs vs ' + fmt(v.exp, 1) + ' expected',
+            'fold ' + fmt(v.fold, 2) + ' · p ' + sci(v.p) + ' · q ' + fmt(v.q, 3)])).on('mouseleave', hideTip);
+        if (v.q < 0.05) svg3.append('text').attr('x', x + cw / 2).attr('y', top + r * rowH + 17).attr('text-anchor', 'middle')
+          .attr('font-weight', 700).attr('fill', '#0f172a').attr('pointer-events', 'none').text('*');
+      });
+    });
+    gx += g.cts.length * cw + gap;
+  });
+  SCE_DEFS.forEach(([, lab], r) => svg3.append('text').attr('x', left - 8).attr('y', top + r * rowH + 17).attr('text-anchor', 'end').attr('font-weight', 600).text(lab));
+  svg3.append('text').attr('x', left).attr('y', top + SCE_DEFS.length * rowH + 22)
+    .text('colour = fold enrichment over matched random SNPs (blue < 1 < red, log scale, capped at 4×) · * = q < 0.05 (Benjamini–Hochberg across cell types)');
+
+  // the full table, sortable
+  let sortKey = 'kb1', sortAsc = false;
+  const tableBox = h('div', { class: 'scroll', style: 'max-height:320px' });
+  function drawTable() {
+    const rows = cts.slice().sort((a, b) => {
+      const va = sortKey === 'label' ? a.label : a[sortKey].fold, vb = sortKey === 'label' ? b.label : b[sortKey].fold;
+      return (va < vb ? -1 : va > vb ? 1 : 0) * (sortAsc ? 1 : -1);
+    });
+    const th = (t, k) => h('th', { text: t + (sortKey === k ? (sortAsc ? ' ▲' : ' ▼') : ''), style: k ? 'cursor:pointer' : '',
+      onclick: k ? () => { if (sortKey === k) sortAsc = !sortAsc; else { sortKey = k; sortAsc = k === 'label'; } drawTable(); } : null });
+    const cell = v => h('td', { style: v.q < 0.05 ? 'font-weight:700;color:#b91c1c' : '' }, v.obs + ' / ' + fmt(v.exp, 1) + ' · ×' + fmt(v.fold, 2) + ' · q ' + fmt(v.q, 3));
+    tableBox.replaceChildren(h('table', { class: 'list' },
+      h('tr', {}, th('Cell type', 'label'), th('Tissue · lineage'), th('Inside: obs / exp · fold · q', 'inside'), th('Within 1 kb', 'kb1'), th('Within 10 kb', 'kb10')),
+      ...rows.map(c => h('tr', {}, h('td', { text: c.label }), h('td', { text: c.group + ' · ' + c.lineage }), cell(c.inside), cell(c.kb1), cell(c.kb10)))));
+  }
+  drawTable();
+  const csv = () => {
+    const head = ['cell_type', 'group', 'lineage'].concat(...SCE_DEFS.map(([k]) => ['obs', 'exp', 'fold', 'p', 'q'].map(x => k + '_' + x)));
+    const lines = [head.join(',')].concat(cts.map(c => [JSON.stringify(c.label), JSON.stringify(c.group), JSON.stringify(c.lineage)]
+      .concat(...SCE_DEFS.map(([k]) => [c[k].obs, c[k].exp, c[k].fold, c[k].p, c[k].q])).join(',')));
+    const a = h('a', { href: URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/csv' })), download: PID + '_sce2g_celltype_enrichment.csv' });
+    a.click();
+  };
+
+  // credible sets in elements
+  const cs = d.cs_loci || [];
+  const csBox = h('div', {},
+    h('p', { class: 'fact' }, h('b', { text: (d.cs_loci_in_elements || 0) + ' of ' + (d.cs_loci_with_sets || 0) }),
+      ' loci with a SuSiE credible set have at least one credible-set SNP inside an scE2G element; the genes these SNPs link to are ranked by Σ PIP × E2G score.'),
+    cs.length ? h('div', { class: 'scroll', style: 'max-height:280px' }, h('table', { class: 'list' },
+      h('tr', {}, ...['Locus', 'Nearest gene', 'Credible-set SNPs in elements', 'PIP in elements', 'Top target gene', 'Other targets'].map(t => h('th', { text: t }))),
+      ...cs.map(r => h('tr', { class: 'click', onclick: () => { location.href = viewerUrl(r.locus); } },
+        h('td', { text: 'Locus ' + r.locus }), h('td', { text: r.gene }), h('td', { text: r.cs_snps_in_elements + ' of ' + r.cs_snps }),
+        h('td', { text: fmt(r.pip_in_elements, 2) }), h('td', {}, h('b', { text: r.top_target }), ' ' + fmt(r.top_target_score, 3)),
+        h('td', { text: (r.targets || []).slice(1).map(t => t.gene).join(', ') }))))) : h('p', { class: 'muted', text: 'Run SuSiE to see which credible-set SNPs sit in elements.' }));
+
+  // per-locus lead SNPs
+  const snpBox = h('div', { class: 'scroll', style: 'max-height:280px' }, h('table', { class: 'list' },
+    h('tr', {}, ...['Locus', 'Lead SNP', 'Nearest gene', 'Distance to nearest element', 'Class', 'Cell types with the SNP inside', 'Linked gene (E2G)'].map(t => h('th', { text: t }))),
+    ...(d.snps || []).slice().sort((a, b) => (a.dist ?? 1e12) - (b.dist ?? 1e12)).map(s => h('tr', { class: 'click', onclick: () => { location.href = viewerUrl(+String(s.locus).replace(/\D/g, '')); } },
+      h('td', { text: s.locus }), h('td', { text: s.snp }), h('td', { text: s.gene }),
+      h('td', { text: s.dist == null ? '–' : s.dist === 0 ? 'inside' : fmtN(s.dist) + ' bp', style: s.dist === 0 ? 'color:#166534;font-weight:700' : '' }),
+      h('td', {}, h('span', { style: 'color:' + (SCE_COLORS[s.cls] || '#64748b') + ';font-weight:600', text: s.cls })),
+      h('td', { text: s.n_ct_inside ? s.n_ct_inside + ': ' + s.cts_inside.slice(0, 4).join(', ') + (s.cts_inside.length > 4 ? ' …' : '') : '–' }),
+      h('td', { text: s.nearest_gene_link ? s.nearest_gene_link + ' (' + fmt(s.nearest_e2g, 2) + ')' : '–' })))));
+
+  const sub = (t, ...kids) => h('div', { style: 'margin-top:1rem' }, h('h3', { style: 'font-size:0.92rem;margin:0 0 0.3rem', text: t }), ...kids);
+  box.replaceChildren(
+    h('div', { style: 'display:flex;flex-wrap:wrap;gap:0.6rem;align-items:center' }, h('span', { class: 'muted', text: 'Cell types' }), sel,
+      h('button', { class: 'btn', text: 'Recompute', onclick: () => loadSce(d.preset, true) }),
+      h('button', { class: 'btn', text: 'Download CSV', onclick: csv })),
+    facts,
+    h('div', { class: 'grid2', style: 'margin-top:0.6rem' },
+      h('div', { class: 'chart' }, h('h3', { style: 'font-size:0.86rem;margin:0 0 0.3rem', text: 'Distance of each lead SNP to the nearest element' }), svg1.node()),
+      h('div', { class: 'chart' }, h('h3', { style: 'font-size:0.86rem;margin:0 0 0.3rem', text: 'Share of lead SNPs within a distance' }), svg2.node())),
+    sub('Cell-type enrichment', h('div', { class: 'chart', style: 'overflow-x:auto' }, svg3.node()), tableBox),
+    sub('Credible-set SNPs in elements', csBox),
+    sub('Every lead SNP', snpBox),
+    h('p', { class: 'muted', style: 'font-size:0.78rem;margin-top:0.8rem' },
+      'Method: elements = scE2G_multiome element-gene links with ' + (d.threshold || 'E2G.Score.qnorm ≥ 0.177') + ', ' + d.build + '. A lead SNP is inside an element when start < position ≤ end. '
+      + 'Null: ' + d.n_null.toLocaleString() + ' sets of ' + d.null_method + '; one-sided empirical p = (1 + #random sets ≥ observed) / (1 + sets); q by Benjamini–Hochberg across cell types. '
+      + 'MHC loci are excluded. Data: ' + (d.citation || 'scE2G')));
 }
 
 function renderJoint() {

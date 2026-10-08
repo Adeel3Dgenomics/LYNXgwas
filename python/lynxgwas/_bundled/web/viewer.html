@@ -1327,6 +1327,13 @@ async function loadLocus(idx) {
         const regResp = await fetchWithTimeout(`${PROJECT_API}/locus/${idx}/regulatory`, 4000);
         if (regResp.ok) data.regulatory = await regResp.json();
       } catch (e) { console.warn('[Regulatory] failed to load locus ' + idx + ':', e.message); }
+      // scE2G enhancer-gene links (bundled); the first locus of a session also loads the cell types (a few seconds)
+      data.sce2g = null;
+      try {
+        const sel = sce2gSelection();
+        const sr = await fetchWithTimeout(`${PROJECT_API}/locus/${idx}/sce2g` + (sel ? '?cts=' + encodeURIComponent(sel) : ''), 90000);
+        if (sr.ok) data.sce2g = await sr.json();
+      } catch (e) { console.warn('[scE2G] failed to load locus ' + idx + ':', e.message); }
     }
     locusCache.set(idx, data);
   }
@@ -1887,7 +1894,11 @@ function fillPanel(data, panelEl) {
     const doRegTrack = regMarks.length > 0;
     const regH = doRegTrack ? (regMarks.length * REG_ROW + 20 + 16) : 0; // header + rows + legend
 
-    svgH = annotH + MARGIN.top + PLOT_H + MARGIN.bottom + geneH + regH + evidH + 4;
+    // ── scE2G track sizing: only when the links are installed and answered for this locus ──
+    const doSceTrack = !!(data.sce2g && data.sce2g.available && data.sce2g.regions);
+    const sceH = doSceTrack ? SCE_H : 0;
+
+    svgH = annotH + MARGIN.top + PLOT_H + MARGIN.bottom + geneH + regH + sceH + evidH + 4;
 
     const svg = d3.select(plotWrap).append('svg')
       .attr('class', 'main-svg')
@@ -1943,6 +1954,15 @@ function fillPanel(data, panelEl) {
       curY += regH;
     }
 
+    // ── scE2G elements and enhancer-gene links, under the histone tracks ──
+    if (doSceTrack) {
+      const gSce = svg.append('g')
+        .attr('class', 'sce2g-group-root')
+        .attr('transform', `translate(0,${curY})`);
+      renderSce2gTrack(gSce, data.sce2g, xScale);
+      curY += sceH;
+    }
+
     // ── Evidence track (Feature A, below the gene track, above the LD triangle) ──
     const doEvidenceTrack = visGenes.length > 0 && evidenceRowDefs.length > 0;
     if (doEvidenceTrack) {
@@ -1966,6 +1986,11 @@ function fillPanel(data, panelEl) {
         redrawOnZoom(svg, data, xScale, yScale, geneRows, visGenes,
           visGenes.length > 0 && showGenes, hasLdData && showLd,
           evidenceRowDefs, doEvidenceTrack, regMarks, doRegTrack);
+        if (doSceTrack) {
+          const gSce = svg.select('.sce2g-group-root');
+          gSce.selectAll('*').remove();
+          renderSce2gTrack(gSce, data.sce2g, xScale);
+        }
         if (window.ANNOT && window.ANNOT.showAnnot) redrawAnnotationTracks(svg, data, xScale);
         if (hasLdTri) {
           const scrollW = plotWrap.querySelector('.ldt-inner-scroll');
@@ -2020,6 +2045,8 @@ function fillPanel(data, panelEl) {
     });
     panelEl.appendChild(leg);
   }
+
+  renderSce2gPanel(panelEl, data);
 
   // Handle toggle visibility via data attribute
   panelEl.dataset.hasLd    = hasLdData ? '1' : '0';
@@ -2567,6 +2594,153 @@ function renderRegulatoryTrack(g, regulatory, regMarks, xScale) {
       .attr('fill', '#64748b').text(mark);
     lx += 14 + (mark.length * 6) + 14;
   });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// scE2G enhancer-gene links (bundled; Sheth, Qiu et al., Engreitz lab). Track: the elements of the selected cell
+// types merged into regions (colour = class, height = number of cell types), the region nearest the lead SNP
+// outlined with its distance, arcs from it to its target genes' TSSs (width = E2G score), and the credible-set SNPs
+// that sit inside an element. Panel under the plot: cell-type selection, nearest element and target genes,
+// credible-set target genes, and the nearest element in every cell type.
+// ═══════════════════════════════════════════════════════════════
+const SCE_H = 168;
+const SCE_COLORS = { promoter: '#f97316', genic: '#3b82f6', intergenic: '#10b981' };
+const SCE_BASE = 74;        // y of the bars' baseline inside the track
+
+function sce2gSelection() {
+  try { return localStorage.getItem('lynx-sce2g-cts') || ''; } catch (e) { return ''; }
+}
+
+function renderSce2gTrack(g, sce, xScale) {
+  const x0 = MARGIN.left, x1 = xScale.range()[1];
+  g.append('line').attr('x1', x0).attr('x2', x1).attr('y1', 0).attr('y2', 0).attr('stroke', '#e5e7eb');
+  const preset = (sce.presets || []).find(p => p.id === sce.preset);
+  g.append('text').attr('x', 8).attr('y', 12).attr('font-size', 9).attr('fill', '#94a3b8')
+    .text('scE2G elements' + (preset ? ' · ' + preset.label + ' (' + preset.n + ' cell types)' : ''));
+  const regions = sce.regions || [];
+  const maxN = Math.max(1, d3.max(regions, r => r.n) || 1);
+  const tip = document.getElementById('tooltip');
+  const clip = v => Math.max(x0, Math.min(x1, v));
+  const showTip = (ev, title, pos, a, b) => {
+    if (!tip) return;
+    tip.querySelector('.tt-id').textContent = title;
+    tip.querySelector('.tt-pos').textContent = pos;
+    tip.querySelector('.tt-pval').textContent = a;
+    tip.querySelector('.tt-r2').textContent = b;
+    tip.style.display = 'block'; moveTip(tip, ev);
+  };
+  g.append('line').attr('x1', x0).attr('x2', x1).attr('y1', SCE_BASE).attr('y2', SCE_BASE).attr('stroke', '#e2e8f0');
+  regions.forEach((r, i) => {
+    const xa = xScale(r.s), xb = xScale(r.e);
+    if (xb < x0 || xa > x1) return;
+    const h = 6 + 40 * r.n / maxN;
+    g.append('rect').attr('x', clip(xa)).attr('y', SCE_BASE - h).attr('width', Math.max(2, clip(xb) - clip(xa)))
+      .attr('height', h).attr('fill', SCE_COLORS[r.cls] || '#94a3b8').attr('opacity', 0.9)
+      .on('mouseover', ev => showTip(ev, r.cls + ' element · ' + r.n + ' cell type' + (r.n === 1 ? '' : 's'),
+        fmtBp(r.s) + '–' + fmtBp(r.e) + ' (' + fmtN(r.e - r.s) + ' bp)', 'best E2G ' + r.score,
+        (r.cts || []).slice(0, 6).join(', ') + ((r.cts || []).length > 6 ? ' …' : '')))
+      .on('mousemove', ev => { if (tip) moveTip(tip, ev); })
+      .on('mouseout', () => { if (tip) hideTip(tip); });
+  });
+  // lead SNP
+  const xl = xScale(sce.lead);
+  if (xl >= x0 && xl <= x1)
+    g.append('line').attr('x1', xl).attr('x2', xl).attr('y1', 16).attr('y2', SCE_H - 18)
+      .attr('stroke', '#7c3aed').attr('stroke-dasharray', '3,3').attr('stroke-width', 1);
+  // credible-set SNPs inside an element
+  (sce.cs_in_elements || []).forEach(c => {
+    const x = xScale(c.pos);
+    if (x < x0 || x > x1) return;
+    g.append('path').attr('d', `M${x},${SCE_BASE - 50} l-5,-8 l10,0 z`).attr('fill', '#7c3aed')
+      .on('mouseover', ev => showTip(ev, 'Credible-set SNP in an element', fmtBp(c.pos), 'SuSiE PIP ' + c.pip,
+        'links: ' + (c.links || []).slice(0, 4).map(l => l.gene + ' ' + l.e2g).join(', ')))
+      .on('mouseout', () => { if (tip) hideTip(tip); });
+  });
+  // nearest element and its links
+  const nr = sce.nearest;
+  if (nr) {
+    const xa = xScale(nr.s), xb = xScale(nr.e), xm = (xa + xb) / 2;
+    if (xb >= x0 && xa <= x1) {
+      g.append('rect').attr('x', xa - 2).attr('y', SCE_BASE - 52).attr('width', Math.max(4, xb - xa + 4)).attr('height', 54)
+        .attr('fill', 'none').attr('stroke', '#111827').attr('stroke-width', 1.4);
+      g.append('text').attr('x', clip(xm)).attr('y', 26).attr('text-anchor', 'middle').attr('font-size', 9.5).attr('font-weight', 700)
+        .attr('fill', '#111827').text(nr.dist === 0 ? 'lead SNP inside the nearest element' : fmtN(nr.dist) + ' bp to the nearest element');
+    }
+    (nr.links || []).slice(0, 8).forEach((l, k) => {
+      const xt = xScale(l.tss);
+      if (!isFinite(xt)) return;
+      const xs = clip(xm), xe = clip(xt);
+      const depth = 18 + Math.min(60, Math.abs(xe - xs) / 6);
+      g.append('path').attr('d', `M${xs},${SCE_BASE} Q${(xs + xe) / 2},${SCE_BASE + depth} ${xe},${SCE_BASE}`)
+        .attr('fill', 'none').attr('stroke', '#334155').attr('stroke-opacity', 0.75).attr('stroke-width', 0.8 + 4 * l.e2g);
+      g.append('circle').attr('cx', xe).attr('cy', SCE_BASE).attr('r', 2.5).attr('fill', '#111827');
+      if (xt >= x0 && xt <= x1)
+        g.append('text').attr('x', xe).attr('y', SCE_BASE + depth / 2 + 14 + (k % 2) * 11).attr('text-anchor', 'middle')
+          .attr('font-size', 9).attr('font-style', 'italic').attr('font-weight', 700).attr('fill', '#111827')
+          .text(l.gene + ' ' + l.e2g.toFixed(2));
+    });
+  }
+  // legend
+  let lx = 8;
+  const ly = SCE_H - 4;
+  [['promoter', 'Promoter'], ['genic', 'Enhancer, genic'], ['intergenic', 'Enhancer, intergenic']].forEach(([k, lab]) => {
+    g.append('rect').attr('x', lx).attr('y', ly - 9).attr('width', 10).attr('height', 10).attr('rx', 2).attr('fill', SCE_COLORS[k]);
+    g.append('text').attr('x', lx + 14).attr('y', ly).attr('font-size', 8.5).attr('fill', '#64748b').text(lab);
+    lx += 26 + lab.length * 5.2;
+  });
+  g.append('path').attr('d', `M${lx + 5},${ly - 2} l-5,-8 l10,0 z`).attr('fill', '#7c3aed');
+  g.append('text').attr('x', lx + 14).attr('y', ly).attr('font-size', 8.5).attr('fill', '#64748b').text('credible-set SNP in an element');
+  lx += 170;
+  g.append('text').attr('x', lx).attr('y', ly).attr('font-size', 8.5).attr('fill', '#64748b')
+    .text('bar height = cell types calling it · arcs: target genes of the nearest element, width = E2G score');
+}
+
+function renderSce2gPanel(panelEl, data) {
+  const sce = data.sce2g;
+  if (!sce || !sce.available) return;
+  const box = document.createElement('div');
+  box.className = 'sce2g-panel';
+  box.style.cssText = 'margin:10px 0 4px;padding:10px 12px;border:1px solid #e2e8f0;border-radius:8px;background:#fbfdff;font-size:12px;color:#334155';
+  const opts = (sce.presets || []).map(p => `<option value="${p.id}"${p.id === sce.preset ? ' selected' : ''}>${escapeHtml(p.label)} (${p.n})</option>`).join('');
+  const nr = sce.nearest;
+  const links = nr ? (nr.links || []).slice(0, 5).map(l =>
+    `<b><i>${escapeHtml(l.gene)}</i></b> E2G ${l.e2g.toFixed(2)} · ABC ${l.abc.toFixed(2)} · Kendall ${l.kendall.toFixed(2)} <span style="color:#94a3b8">(${l.n} cell type${l.n === 1 ? '' : 's'}; best ${escapeHtml(l.top_ct)})</span>`).join('<br>') : '';
+  const csg = (sce.cs_gene_scores || []).slice(0, 5).map(g => `<b><i>${escapeHtml(g.gene)}</i></b> ${g.score.toFixed(3)} <span style="color:#94a3b8">(${g.snps} SNP${g.snps === 1 ? '' : 's'}, best E2G ${g.best_e2g.toFixed(2)})</span>`).join('<br>');
+  const ucsc = nr ? `https://genome.ucsc.edu/cgi-bin/hgTracks?db=${sce.build === 'GRCh38' ? 'hg38' : 'hg19'}&position=chr${encodeURIComponent(String(data.chr).replace(/^chr/, ''))}:${nr.s + 1}-${nr.e}&highlight=${sce.build === 'GRCh38' ? 'hg38' : 'hg19'}.chr${String(data.chr).replace(/^chr/, '')}:${nr.s + 1}-${nr.e}` : '';
+  const strip = (sce.cell_types || []).map(c => {
+    const col = SCE_COLORS[c.cls] || '#cbd5e1';
+    const shade = c.dist === 0 ? 1 : c.dist <= 1000 ? 0.85 : c.dist <= 10000 ? 0.6 : c.dist <= 50000 ? 0.4 : 0.22;
+    const txt = c.dist == null ? '—' : c.dist === 0 ? 'in' : c.dist < 1000 ? c.dist : (c.dist / 1000).toFixed(1) + 'k';
+    return `<div title="${escapeHtml(c.ct)}: ${c.dist == null ? 'no element' : (c.dist === 0 ? 'lead SNP inside' : fmtN(c.dist) + ' bp')} · ${escapeHtml(c.cls || '')}${c.gene ? ' · ' + escapeHtml(c.gene) + ' ' + c.e2g : ''}"
+      style="display:inline-flex;flex-direction:column;align-items:center;width:46px;margin:2px">
+      <span style="width:40px;height:22px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;background:${col};opacity:${shade};${c.dist === 0 ? 'box-shadow:0 0 0 2px #111827;' : ''}">${txt}</span>
+      <span style="font-size:8.5px;color:#64748b;line-height:1.1;text-align:center;margin-top:2px;height:22px;overflow:hidden">${escapeHtml(c.ct)}</span></div>`;
+  }).join('');
+  box.innerHTML = `
+    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:8px">
+      <b style="font-size:13px">Enhancer–gene links (scE2G)</b>
+      <label style="color:#64748b">cell types <select class="sce2g-sel" style="font-size:12px">${opts}</select></label>
+      <span style="color:#94a3b8;font-size:11px">${escapeHtml(sce.threshold || '')}</span>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px">
+      <div><div style="color:#64748b;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em">Nearest element to the lead SNP</div>
+        ${nr ? `<div style="font-size:15px;font-weight:700;color:${SCE_COLORS[nr.cls] || '#334155'}">${nr.cls === 'promoter' ? 'Promoter' : 'Enhancer, ' + nr.cls}</div>
+        ${nr.dist === 0 ? 'the lead SNP is inside it' : fmtN(nr.dist) + ' bp from the lead SNP'} · called in ${nr.n} of ${(sce.cell_types || []).length} cell types<br>
+        <a href="${ucsc}" target="_blank" rel="noopener">open in the UCSC Genome Browser ↗</a>` : '<i>no element in this window</i>'}</div>
+      <div><div style="color:#64748b;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em">Its target genes</div>${links || '<i>—</i>'}</div>
+      <div><div style="color:#64748b;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em">Genes linked to credible-set SNPs (Σ PIP × E2G)</div>
+        ${csg || '<i>no credible-set SNP inside an element' + ((sce.cs_in_elements || []).length ? '' : (data.analysis_cs_available === false ? ' (run SuSiE)' : '')) + '</i>'}</div>
+    </div>
+    <div style="margin-top:10px;color:#64748b;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em">Nearest element to the lead SNP in each cell type</div>
+    <div style="display:flex;flex-wrap:wrap">${strip}</div>
+    <div style="color:#94a3b8;font-size:10.5px;margin-top:6px">colour = class of the nearest element; shade = distance (dark = inside, light = far); ring = lead SNP inside.
+      Data: ${escapeHtml(sce.citation || 'scE2G')}</div>`;
+  box.querySelector('.sce2g-sel').addEventListener('change', ev => {
+    try { localStorage.setItem('lynx-sce2g-cts', ev.target.value); } catch (e) {}
+    locusCache.clear();
+    renderViewport(true);
+  });
+  panelEl.appendChild(box);
 }
 
 // ═══════════════════════════════════════════════════════════════

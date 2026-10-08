@@ -139,6 +139,11 @@ workspace or computer, with a progress bar, without touching projects that are a
 - **Regulatory-element integration** — stacked H3K27ac/H3K4me1/H3K4me3 ChIP-seq tracks per locus from
   public reference epigenomes, plus a real interval-overlap enrichment test against your project's
   own significant SNPs
+- **Enhancer–gene links (scE2G)** — bundled links for 40 cell types (immune cells and pancreatic
+  islets; Sheth, Qiu et al., Engreitz lab), GRCh37 and GRCh38: each locus shows its promoters and
+  enhancers, the element nearest the lead SNP, arcs to the genes it regulates, and the genes linked to
+  credible-set SNPs; the summary page tests, per cell type, whether lead SNPs sit in these elements more
+  often than matched random SNPs. See [docs/REGULATORY_LINKS.md](docs/REGULATORY_LINKS.md)
 
 **AI Agent**
 - A built-in, tool-calling agent panel drives project creation, pipeline runs, and analysis tools
