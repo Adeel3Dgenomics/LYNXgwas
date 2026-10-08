@@ -3598,6 +3598,13 @@ function redrawOnZoom(svg, data, newX, yScale, geneRows, visGenes, doGenes, doLd
   // Credible-set bands, labels and the side list follow the zoom
   const firstDot = svg.select('.snp-circle').node();
   if (analysisOverlay && firstDot) drawFmGroups(d3.select(firstDot.parentNode), data.gwas_snps || [], newX, yScale);
+  // SNP picked in the causal-SNP ranking table follows the zoom; keep the new scale for later picks too
+  svg.selectAll('g.rank-host').each(function() {
+    const st = this.__rankScales;
+    if (!st) return;
+    st.xScale = newX;
+    drawRankMark(d3.select(this), st.data, newX, st.yScale);
+  });
 
   // Locus boundary highlight
   const lr = svg.select('.locus-region');
