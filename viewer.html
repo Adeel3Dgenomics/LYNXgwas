@@ -2951,7 +2951,7 @@ function renderLdTriangle(wrap, ldData, data, xScale, yScale, svgW, svgH, plotWr
   let scaleType = 'continuous';
   let showBlocks = true, closeBlockTops = false, shadeBlocks = false, labelBlocks = false;
   const bp = {strongR2:0.70, recomR2:0.30, propThreshold:0.90, minInformPairs:3, minBlockSize:3};
-  let maxSnps = 120, heightPx = 260;
+  let maxSnps = 120, heightPct = 100;   // 100% = height half the width: square cells, as before
   const stored = { snps: ldData.snps, matrix: ldData.matrix, n: NS, own: false, inRange: NS };
   stored.blocks = detectLdBlocks(stored.matrix, NS, bp);
   let view = stored;
@@ -2966,7 +2966,8 @@ function renderLdTriangle(wrap, ldData, data, xScale, yScale, svgW, svgH, plotWr
       `<input type="checkbox" class="ldt-haploview-chk"> Haploview</label>` +
     `SNPs&thinsp;<input type="range" min="30" max="300" step="10" value="${maxSnps}" class="ldt-snps-slider" style="width:56px;cursor:pointer" title="At most this many SNPs, spread evenly over the range in view">` +
     `<span class="ldt-snps-val">${maxSnps}</span>` +
-    `Height&thinsp;<input type="range" min="120" max="600" step="20" value="${heightPx}" class="ldt-h-slider" style="width:56px;cursor:pointer">` +
+    `Height&thinsp;<input type="range" min="20" max="100" step="5" value="${heightPct}" class="ldt-h-slider" style="width:56px;cursor:pointer" title="100% keeps the cells square">` +
+    `<span class="ldt-h-val">${heightPct}%</span>` +
     `</span>`;
   wrap.appendChild(hdr);
 
@@ -3059,7 +3060,7 @@ function renderLdTriangle(wrap, ldData, data, xScale, yScale, svgW, svgH, plotWr
     for (let i = 1; i < n; i++) b[i] = (xs[i - 1] + xs[i]) / 2;
     b[n] = xs[n - 1] + Math.min(gaps[n - 2] || med, med) / 2;
     const span = Math.max(1, b[n] - b[0]);
-    const vf = Math.min(1, heightPx / (Math.max(span, W * 0.25) / 2));   // apex of the whole view at most heightPx
+    const vf = heightPct / 100;   // 1 = height half the width (square cells)
     const H = Math.ceil(span / 2 * vf) + 4;
     const dpr = window.devicePixelRatio || 1;
     canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
@@ -3224,7 +3225,8 @@ function renderLdTriangle(wrap, ldData, data, xScale, yScale, svgW, svgH, plotWr
     maxSnps = +this.value; hdr.querySelector('.ldt-snps-val').textContent = maxSnps; requestRegion(true);
   });
   hdr.querySelector('.ldt-snps-slider').addEventListener('input', function() { hdr.querySelector('.ldt-snps-val').textContent = this.value; });
-  hdr.querySelector('.ldt-h-slider').addEventListener('input', function() { heightPx = +this.value; buildTri(); connect(); });
+  hdr.querySelector('.ldt-h-slider').addEventListener('input', function() {
+    heightPct = +this.value; hdr.querySelector('.ldt-h-val').textContent = heightPct + '%'; buildTri(); connect(); });
   function redetect() { view.blocks = showBlocks && view.n >= 2 ? detectLdBlocks(view.matrix, view.n, bp) : []; buildTri(); }
   brow.querySelector('.ldt-showblocks').addEventListener('change', function() { showBlocks = this.checked; redetect(); });
   brow.querySelector('.ldt-strong').addEventListener('input', function() {
