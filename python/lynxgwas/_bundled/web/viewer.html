@@ -2941,47 +2941,36 @@ function renderLdTrack(g, snps, xScale, trackH, topSnp) {
 // Panel F — LD triangle heatmap (canvas-based, scrollable)
 // ═══════════════════════════════════════════════════════════════
 function renderLdTriangle(wrap, ldData, data, xScale, yScale, svgW, svgH, plotWrap) {
+  // The LD triangle is drawn on the locus plot's own x axis: each SNP's column sits under its dot, and zooming the
+  // plot stretches the triangle with it. The SNPs are those in view: LD computed by the app for the visible range
+  // (from the locus's reference-panel subset), or the stored matrix when that cannot be computed (results-only data).
   if (!ldData || !ldData.snps || !ldData.matrix) return;
-  const N = ldData.snp_count || ldData.snps.length;
-  if (N < 2) return;
+  const NS = ldData.snp_count || ldData.snps.length;
+  if (NS < 2) return;
 
-  // Auto-compute cell size to fill the available width (same content area as Manhattan plot)
-  const availW = svgW - MARGIN.left - MARGIN.right;
-  const autoCs = Math.max(3, Math.floor(availW / N));
-  let cs = autoCs;
   let scaleType = 'continuous';
   let showBlocks = true, closeBlockTops = false, shadeBlocks = false, labelBlocks = false;
   const bp = {strongR2:0.70, recomR2:0.30, propThreshold:0.90, minInformPairs:3, minBlockSize:3};
-  let ldBlocks = detectLdBlocks(ldData.matrix, N, bp);   // found on the whole locus, clipped to the zoomed range
-  // Zoom: the triangle shows the SNPs inside the plot's visible range only, with cells re-fitted to the width
-  let view = { snps: ldData.snps, matrix: ldData.matrix, i0: 0, n: N };
+  let maxSnps = 120, heightPx = 260;
+  const stored = { snps: ldData.snps, matrix: ldData.matrix, n: NS, own: false, inRange: NS };
+  stored.blocks = detectLdBlocks(stored.matrix, NS, bp);
+  let view = stored;
   let curX = xScale;
-  const ldView = () => ({ ...ldData, snps: view.snps, matrix: view.matrix, snp_count: view.n });
-  function viewBlocks() {
-    if (!showBlocks) return null;
-    if (view.own) return view.blocks || [];             // matrix computed for the zoomed range: its own blocks
-    if (view.i0 === 0 && view.n === N) return ldBlocks;
-    const out = [];
-    for (const bk of ldBlocks) {
-      const a = Math.max(bk.startIdx, view.i0), z = Math.min(bk.endIdx, view.i0 + view.n - 1);
-      if (z - a + 1 >= 2) out.push({ ...bk, startIdx: a - view.i0, endIdx: z - view.i0, snpCount: z - a + 1 });
-    }
-    return out;
-  }
 
-  // ── Row 1: rendering controls ──
+  // ── Row 1: what is shown, colours, size ──
   const hdr = div('ldt-header');
-  const csMax = Math.max(autoCs + 4, 16);
   hdr.innerHTML =
-    `<span class="ldt-count" style="font-size:9px;color:#94a3b8;line-height:22px">LD r² (pairwise) · ${N} SNPs</span>` +
+    `<span class="ldt-count" style="font-size:9px;color:#94a3b8;line-height:22px">LD r² (pairwise) · ${NS} SNPs</span>` +
     `<span style="font-size:9px;color:#64748b;margin-left:auto;display:flex;align-items:center;gap:8px">` +
     `<label style="display:flex;align-items:center;gap:3px;cursor:pointer;font-size:9px">` +
       `<input type="checkbox" class="ldt-haploview-chk"> Haploview</label>` +
-    `Cell&thinsp;<input type="range" min="3" max="${csMax}" value="${cs}" class="ldt-cell-slider" style="width:56px;cursor:pointer">` +
-    `<span class="ldt-cell-val">${cs}px</span></span>`;
+    `SNPs&thinsp;<input type="range" min="30" max="300" step="10" value="${maxSnps}" class="ldt-snps-slider" style="width:56px;cursor:pointer" title="At most this many SNPs, spread evenly over the range in view">` +
+    `<span class="ldt-snps-val">${maxSnps}</span>` +
+    `Height&thinsp;<input type="range" min="120" max="600" step="20" value="${heightPx}" class="ldt-h-slider" style="width:56px;cursor:pointer">` +
+    `</span>`;
   wrap.appendChild(hdr);
 
-  // ── Row 2: block detection controls ──
+  // ── Row 2: block detection ──
   const brow = div('ldt-header');
   brow.style.flexWrap = 'wrap';
   brow.innerHTML =
@@ -3007,230 +2996,258 @@ function renderLdTriangle(wrap, ldData, data, xScale, yScale, svgW, svgH, plotWr
       `<input type="checkbox" class="ldt-labels"> Labels</label>`;
   wrap.appendChild(brow);
 
-  // ── Block status line ──
   const bstat = div('');
   Object.assign(bstat.style, {fontSize:'9px', color:'#64748b', padding:'0 14px 4px'});
   wrap.appendChild(bstat);
-
   function updateBlockStatus() {
-    if (!showBlocks || ldBlocks.length === 0) {
-      bstat.textContent = showBlocks ? 'No blocks detected' : '';
-      return;
-    }
-    const largest = Math.max(...ldBlocks.map(b => b.snpCount));
-    const d = ldBlocks[0].diag;
-    bstat.textContent = `${ldBlocks.length} blocks · largest ${largest} SNPs` +
-      ` · block 1: ${d.strong}S/${d.recom}R/${d.uninform}U prop=${(d.prop*100).toFixed(0)}%`;
+    const bl = view.blocks || [];
+    if (!showBlocks || bl.length === 0) { bstat.textContent = showBlocks && view.n >= 2 ? 'No blocks detected' : ''; return; }
+    const largest = Math.max(...bl.map(b => b.snpCount));
+    const d = bl[0].diag;
+    bstat.textContent = `${bl.length} blocks · largest ${largest} SNPs` +
+      (d ? ` · block 1: ${d.strong}S/${d.recom}R/${d.uninform}U prop=${(d.prop*100).toFixed(0)}%` : '');
   }
-  updateBlockStatus();
 
-  // ── Scrollable container (canvas + axis share horizontal scroll) ──
+  // ── Canvas, placed under the plot area of the locus plot ──
   const scrollWrap = div('ldt-inner-scroll');
-  Object.assign(scrollWrap.style, {overflowX:'auto', overflowY:'hidden', position:'relative'});
+  Object.assign(scrollWrap.style, {overflow:'hidden', position:'relative'});
   wrap.appendChild(scrollWrap);
-
   const triInner = div('ldt-tri-inner');
-  Object.assign(triInner.style, {
-    display:'inline-block', verticalAlign:'top',
-    paddingLeft: MARGIN.left + 'px', paddingRight: MARGIN.right + 'px'
-  });
+  Object.assign(triInner.style, {display:'block', position:'relative'});
   scrollWrap.appendChild(triInner);
-
   const canvas = document.createElement('canvas');
   canvas.className = 'ldt-triangle-canvas';
   canvas.style.display = 'block';
   triInner.appendChild(canvas);
+  const note = div('');
+  Object.assign(note.style, {fontSize:'10px', color:'#94a3b8', padding:'6px 14px', display:'none'});
+  scrollWrap.appendChild(note);
 
-  const axisSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  axisSvg.style.display = 'block';
-  triInner.appendChild(axisSvg);
-
-  // ── Legend SVG (fixed right, outside scroll) ──
   wrap.style.position = 'relative';
   const legSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  Object.assign(legSvg.style, {
-    position:'absolute', right:'6px', top:'28px',
-    width:'22px', height:'120px', zIndex:'2', pointerEvents:'none'
-  });
+  Object.assign(legSvg.style, {position:'absolute', right:'6px', top:'28px', width:'22px', height:'120px', zIndex:'2', pointerEvents:'none'});
   wrap.appendChild(legSvg);
 
-  // ── Build / rebuild triangle ──
-  function buildTri(cellPx) {
-    scrollWrap._cs  = cellPx;
-    canvas._cellPx  = cellPx;
-    canvas._ldSnps = view.snps; canvas._ldMatrix = view.matrix;
-    drawLdTriangle(canvas, view.snps, view.matrix, cellPx, scaleType,
-      viewBlocks(), {closeBlockTops, shadeBlocks, labelBlocks});
-    drawTriangleAxis(axisSvg, view.snps, cellPx);
-    drawLdLegend(legSvg, scaleType);
-    // Center the triangle when it's narrower than the available area
-    const triW = view.n * cellPx;
-    const containerW = scrollWrap.clientWidth - MARGIN.left - MARGIN.right;
-    if (triW < containerW) {
-      const pad = MARGIN.left + Math.floor((containerW - triW) / 2);
-      triInner.style.paddingLeft = pad + 'px';
-    } else {
-      triInner.style.paddingLeft = MARGIN.left + 'px';
+  const countEl = hdr.querySelector('.ldt-count');
+  let geo = null;   // { b: column boundaries in canvas px, xs: SNP centres, vf: vertical factor, left, W }
+
+  // plot area of the locus plot, in screen px relative to scrollWrap
+  function plotArea() {
+    const mainSvgEl = plotWrap.querySelector('.main-svg');
+    if (!mainSvgEl) return null;
+    const mr = mainSvgEl.getBoundingClientRect(), sr = scrollWrap.getBoundingClientRect();
+    if (!mr.width || !sr.width) return null;
+    const k = Math.min(mr.width / svgW, mr.height / svgH);
+    const offX = mr.left + (mr.width - svgW * k) / 2;
+    const [x1, x2] = curX.range();
+    return { left: offX + x1 * k - sr.left, W: (x2 - x1) * k, k, x1 };
+  }
+
+  function buildTri() {
+    const pa = plotArea();
+    const S = view.snps, M = view.matrix, n = view.n;
+    if (!pa || n < 2) { canvas.style.display = 'none'; geo = null; drawLdLegend(legSvg, scaleType); updateBlockStatus(); return; }
+    canvas.style.display = 'block';
+    triInner.style.paddingLeft = Math.max(0, pa.left) + 'px';
+    const W = pa.W;
+    const xs = S.map(s => (curX(s.pos) - pa.x1) * pa.k);
+    // column boundaries: half-way between neighbouring SNPs; the outer ones half a typical gap out
+    const gaps = []; for (let i = 1; i < n; i++) gaps.push(Math.max(0, xs[i] - xs[i - 1]));
+    const med = gaps.slice().sort((a, b) => a - b)[Math.floor(gaps.length / 2)] || 4;
+    const b = new Array(n + 1);
+    b[0] = xs[0] - Math.min(gaps[0] || med, med) / 2;
+    for (let i = 1; i < n; i++) b[i] = (xs[i - 1] + xs[i]) / 2;
+    b[n] = xs[n - 1] + Math.min(gaps[n - 2] || med, med) / 2;
+    const span = Math.max(1, b[n] - b[0]);
+    const vf = Math.min(1, heightPx / (Math.max(span, W * 0.25) / 2));   // apex of the whole view at most heightPx
+    const H = Math.ceil(span / 2 * vf) + 4;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+    canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+    const P = (u, v) => [(u + v) / 2, (v - u) / 2 * vf];
+    for (let i = 0; i < n; i++) {
+      const row = M[i]; if (!row) continue;
+      if (b[i + 1] < -W || b[i] > 2 * W) continue;
+      for (let j = i + 1; j < n; j++) {
+        let v = row[j];
+        if (v === undefined || v === null || isNaN(v)) v = null;
+        const p1 = P(b[i], b[j]), p2 = P(b[i + 1], b[j]), p3 = P(b[i + 1], b[j + 1]), p4 = P(b[i], b[j + 1]);
+        if (Math.max(p1[0], p3[0], p4[0]) < 0 || Math.min(p1[0], p2[0], p3[0]) > W) continue;
+        ctx.fillStyle = r2Color(v, scaleType);
+        ctx.beginPath();
+        ctx.moveTo(p1[0], p1[1]); ctx.lineTo(p2[0], p2[1]); ctx.lineTo(p3[0], p3[1]); ctx.lineTo(p4[0], p4[1]);
+        ctx.closePath(); ctx.fill();
+      }
     }
-  }
-
-  function redetect() {
-    ldBlocks = showBlocks ? detectLdBlocks(ldData.matrix, N, bp) : [];
-    if (view.own) view.blocks = showBlocks ? detectLdBlocks(view.matrix, view.n, bp) : [];
+    // lead SNP
+    const k = S.findIndex(s => s.is_top_snp);
+    if (k >= 0) {
+      ctx.save(); ctx.setLineDash([4, 3]); ctx.strokeStyle = '#7B2D8B'; ctx.lineWidth = 1.4;
+      ctx.beginPath(); ctx.moveTo(xs[k], 0); ctx.lineTo(xs[k], H); ctx.stroke(); ctx.restore();
+    }
+    // blocks
+    if (showBlocks && view.blocks && view.blocks.length) {
+      ctx.save(); ctx.setLineDash([]); ctx.lineJoin = 'round';
+      for (const bk of view.blocks) {
+        const L = P(b[bk.startIdx], b[bk.startIdx]), R = P(b[bk.endIdx + 1], b[bk.endIdx + 1]), A = P(b[bk.startIdx], b[bk.endIdx + 1]);
+        if (shadeBlocks) {
+          ctx.fillStyle = 'rgba(0,0,0,0.04)';
+          ctx.beginPath(); ctx.moveTo(L[0], L[1]); ctx.lineTo(R[0], R[1]); ctx.lineTo(A[0], A[1]); ctx.closePath(); ctx.fill();
+        }
+        ctx.strokeStyle = '#1a1a2e'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(L[0], L[1]); ctx.lineTo(A[0], A[1]); ctx.lineTo(R[0], R[1]);
+        if (closeBlockTops) ctx.closePath();
+        ctx.stroke();
+        if (labelBlocks) {
+          const d = bk.diag;
+          const txt = d ? `${bk.snpCount} SNPs · r̄²${bk.meanR2.toFixed(2)} · ${d.strong}S/${d.recom}R/${d.uninform}U ${(d.prop*100).toFixed(0)}%`
+                        : `${bk.snpCount} SNPs · r̄² ${bk.meanR2.toFixed(2)}`;
+          ctx.font = '9px -apple-system, BlinkMacSystemFont, sans-serif';
+          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          const tw = ctx.measureText(txt).width;
+          ctx.fillStyle = 'rgba(255,255,255,0.88)'; ctx.fillRect(A[0] - tw / 2 - 3, A[1] + 4, tw + 6, 12);
+          ctx.fillStyle = '#1a1a2e'; ctx.fillText(txt, A[0], A[1] + 10);
+        }
+      }
+      ctx.restore();
+    }
+    geo = { b, xs, vf, n };
+    drawLdLegend(legSvg, scaleType);
     updateBlockStatus();
-    buildTri(scrollWrap._cs || cs);
   }
-  buildTri(cs);
 
-  // ── Hover interaction on canvas ──
-  initTriangleHover(canvas, ldData.snps, ldData.matrix, plotWrap);
-
-  // ── Initial connector draw (after browser layout) ──
-  requestAnimationFrame(() => requestAnimationFrame(() =>
-    drawConnectors(plotWrap, ldView(), data, curX, yScale, svgW, svgH, scrollWrap, cs)
-  ));
-
-  // ── Redraw connectors on horizontal scroll ──
-  scrollWrap.addEventListener('scroll', () =>
-    requestAnimationFrame(() =>
-      drawConnectors(plotWrap, ldView(), data, curX, yScale, svgW, svgH, scrollWrap, scrollWrap._cs || cs)
-    )
-  );
-
-  // ── Follow the locus plot's zoom (called from its zoom handler) ──
-  // Straight away: the stored matrix cut to the visible range. A moment after the zoom stops: LD computed by
-  // the app for the GWAS SNPs actually on screen (from the locus's reference-panel subset, which covers the
-  // whole window), so the triangle follows the zoom everywhere, not only around the lead SNP.
-  const countEl = hdr.querySelector('.ldt-count'), slider = hdr.querySelector('.ldt-cell-slider');
-  const fullSpan = (data.padded_end - data.padded_start) || 1;
-  const LD_REGION_MAX = 150;
-  let zoomPending = null, regionTimer = null, regionKey = '', regionOff = false;
-
-  function fit(n, label) {
-    cs = Math.max(3, Math.min(40, Math.floor(availW / n)));
-    slider.max = Math.max(+slider.max, cs); slider.value = cs;
-    hdr.querySelector('.ldt-cell-val').textContent = cs + 'px';
-    countEl.textContent = label;
-    triInner.style.display = '';
-    buildTri(cs);
+  function label() {
+    const v = view;
+    if (v.n < 2) return;
+    const thinned = v.inRange - (v.noLd || 0) > v.n;   // more informative SNPs in view than shown
+    countEl.textContent = `LD r² (pairwise) · ${v.n} SNPs` +
+      (thinned ? ` of ${v.inRange} in view, spread evenly` : ' in view') +
+      (!thinned && v.noLd ? ` (${v.noLd} monomorphic in the reference panel left out)` : '') +
+      (v.own ? '' : ' · stored matrix (around the lead SNP)');
   }
-  function showEmpty(label) {
-    triInner.style.display = 'none';
-    countEl.textContent = label;
-    view = { snps: [], matrix: [], i0: -1, n: 0 };
-  }
-  const connect = () => drawConnectors(plotWrap, ldView(), data, curX, yScale, svgW, svgH, scrollWrap, scrollWrap._cs || cs);
 
-  function storedView(d0, d1) {
-    const S = ldData.snps;
-    let i0 = 0; while (i0 < N && S[i0].pos < d0) i0++;
-    let i1 = N - 1; while (i1 >= 0 && S[i1].pos > d1) i1--;
-    const n = i1 - i0 + 1;
-    if (n < 2) {
-      if (view.n || view.own || triInner.style.display !== 'none')
-        showEmpty(regionOff
-          ? `LD r² (pairwise) · no LD SNPs in the zoomed range (the matrix covers ${fmtBp(S[0].pos)}–${fmtBp(S[N - 1].pos)})`
-          : 'LD r² (pairwise) · computing LD for the zoomed range…');
+  // ── Hover: which pair is under the mouse ──
+  canvas.addEventListener('mousemove', (e) => {
+    const tip = document.getElementById('tooltip');
+    if (!geo) return;
+    const r = canvas.getBoundingClientRect();
+    const mx = e.clientX - r.left, my = (e.clientY - r.top) / geo.vf;
+    const u = mx - my, v = mx + my, b = geo.b;
+    const find = (x) => { let lo = 0, hi = geo.n; if (x < b[0] || x >= b[hi]) return -1;
+      while (hi - lo > 1) { const m = (lo + hi) >> 1; if (b[m] <= x) lo = m; else hi = m; } return lo; };
+    const i = find(u), j = find(v);
+    if (i >= 0 && j > i) {
+      const a = view.snps[i], c = view.snps[j], row = view.matrix[i];
+      const r2 = row && row[j] != null && !isNaN(row[j]) ? row[j] : null;
+      tip.querySelector('.tt-id').textContent = `${a.id}  ×  ${c.id}`;
+      tip.querySelector('.tt-pos').textContent = `${fmtBp(a.pos)}  /  ${fmtBp(c.pos)}`;
+      tip.querySelector('.tt-pval').textContent = `Δpos = ${fmtBp(Math.abs(c.pos - a.pos))}`;
+      tip.querySelector('.tt-r2').textContent = r2 != null ? `r² = ${r2.toFixed(3)}` : 'r² = N/A';
+      tip.style.display = 'block'; tip.style.left = (e.clientX + 14) + 'px'; tip.style.top = (e.clientY - 32) + 'px';
+      highlightConnectors(plotWrap, [i, j]);
+    } else { hideTip(tip); resetConnectors(plotWrap); }
+  });
+  canvas.addEventListener('mouseleave', () => { hideTip(document.getElementById('tooltip')); resetConnectors(plotWrap); });
+
+  // connectors run straight down from each dot to its column (drawConnectors reads _xOf)
+  scrollWrap._xOf = (i) => (geo ? geo.xs[i] : 0);
+  const ldView = () => ({ ...ldData, snps: view.snps, matrix: view.matrix, snp_count: view.n });
+  const connect = () => drawConnectors(plotWrap, ldView(), data, curX, yScale, svgW, svgH, scrollWrap, 0);
+  scrollWrap._ldView = ldView;
+
+  function show(v) {
+    view = v;
+    if (!view.blocks) view.blocks = showBlocks && view.n >= 2 ? detectLdBlocks(view.matrix, view.n, bp) : [];
+    note.style.display = view.n >= 2 ? 'none' : 'block';
+    if (view.n < 2) { note.textContent = view.msg || 'Fewer than two SNPs with genotypes in this range.'; countEl.textContent = 'LD r² (pairwise)'; }
+    label(); buildTri(); connect();
+  }
+
+  // ── LD for the range in view, computed by the app (cached per range) ──
+  let regionOff = !PROJECT_API || !data.locus_index, regionTimer = null, regionKey = '';
+  const regionCache = new Map();
+  function requestRegion(immediate) {
+    clearTimeout(regionTimer);
+    if (regionOff) return;
+    const [d0, d1] = curX.domain();
+    const from = Math.max(data.padded_start, Math.floor(d0)), to = Math.min(data.padded_end, Math.ceil(d1));
+    const key = from + '-' + to + '-' + maxSnps;
+    regionKey = key;
+    const run = async () => {
+      try {
+        let j = regionCache.get(key);
+        if (!j) {
+          const r = await fetchWithTimeout(`${PROJECT_API}/locus/${data.locus_index}/ld-region?from=${from}&to=${to}&max=${maxSnps}`, 30000);
+          j = r.ok ? await r.json() : null;
+          if (j && j.available !== false) regionCache.set(key, j);
+        }
+        if (regionKey !== key) return;                    // the view moved on meanwhile
+        if (!j || j.available === false) { regionOff = true; showStoredInView(); return; }
+        show({ snps: j.snps, matrix: j.matrix, n: j.snp_count, inRange: j.in_range, noLd: j.no_ld || 0, own: true,
+               msg: 'Fewer than two GWAS SNPs with reference-panel genotypes in the zoomed range.' });
+      } catch (e) { console.warn('[LD] range in view:', e.message); }
+    };
+    if (immediate) run(); else regionTimer = setTimeout(run, 300);
+  }
+  // without genotypes on disk (results-only data): the stored matrix, the part of it in view
+  function showStoredInView() {
+    const [d0, d1] = curX.domain();
+    const S = stored.snps;
+    let i0 = 0; while (i0 < NS && S[i0].pos < d0) i0++;
+    let i1 = NS - 1; while (i1 >= 0 && S[i1].pos > d1) i1--;
+    if (i1 - i0 + 1 < 2) {
+      show({ snps: [], matrix: [], n: 0, msg: `No LD SNPs in this range: the stored matrix covers ${fmtBp(S[0].pos)}–${fmtBp(S[NS - 1].pos)}.` });
       return;
     }
-    if (!view.own && n === view.n && i0 === view.i0) return;
-    view = (i0 === 0 && n === N) ? { snps: S, matrix: ldData.matrix, i0: 0, n: N }
-      : { snps: S.slice(i0, i1 + 1), i0, n, matrix: ldData.matrix.slice(i0, i1 + 1).map(r => r ? r.slice(i0, i1 + 1) : r) };
-    fit(n, n === N ? `LD r² (pairwise) · ${N} SNPs` : `LD r² (pairwise) · ${n} of ${N} SNPs (zoomed)`);
+    if (i0 === 0 && i1 === NS - 1) { show(stored); return; }
+    show({ snps: S.slice(i0, i1 + 1), matrix: stored.matrix.slice(i0, i1 + 1).map(r => r ? r.slice(i0, i1 + 1) : r),
+           n: i1 - i0 + 1, inRange: i1 - i0 + 1, own: false });
   }
 
-  function requestRegion(d0, d1) {
-    clearTimeout(regionTimer);
-    if (regionOff || !PROJECT_API || !data.locus_index) return;
-    const from = Math.max(data.padded_start, Math.floor(d0)), to = Math.min(data.padded_end, Math.ceil(d1));
-    const key = from + '-' + to;
-    regionKey = key;
-    regionTimer = setTimeout(async () => {
-      try {
-        const r = await fetchWithTimeout(`${PROJECT_API}/locus/${data.locus_index}/ld-region?from=${from}&to=${to}&max=${LD_REGION_MAX}`, 30000);
-        const j = r.ok ? await r.json() : null;
-        if (regionKey !== key) return;                    // zoomed again meanwhile
-        if (!j || j.available === false) {              // e.g. a results-only project: keep the stored matrix
-          regionOff = true;
-          const [a, b] = curX.domain(); view = { snps: [], matrix: [], i0: -1, n: 0 }; storedView(a, b); connect();
-          return;
-        }
-        if (j.snp_count < 2) { showEmpty('LD r² (pairwise) · fewer than two GWAS SNPs with genotypes in the zoomed range'); connect(); return; }
-        view = { snps: j.snps, matrix: j.matrix, i0: -2, n: j.snp_count, own: true,
-                 blocks: showBlocks ? detectLdBlocks(j.matrix, j.snp_count, bp) : [] };
-        fit(j.snp_count, `LD r² (pairwise) · ${j.snp_count} SNPs in the zoomed range` +
-          (j.in_range > j.snp_count ? ` (${j.in_range} there, spread evenly)` : '') + ' · computed for this view');
-        connect();
-      } catch (e) { console.warn('[LD] zoomed range:', e.message); }
-    }, 350);
-  }
-
-  scrollWrap._ldView = ldView;
+  // ── Follow the locus plot's zoom: stretch at once, then the SNPs of the new range ──
+  let frame = 0;
   scrollWrap._zoom = (xs) => {
     curX = xs;
-    if (zoomPending) { zoomPending = xs; return; }
-    zoomPending = xs;
-    requestAnimationFrame(() => {
-      const x = zoomPending; zoomPending = null;
-      const [d0, d1] = x.domain();
-      const zoomed = (d1 - d0) < 0.98 * fullSpan;
-      if (!zoomed) {                                     // back to the whole locus: the stored matrix
-        clearTimeout(regionTimer); regionKey = '';
-        if (view.own || view.n !== N) { view = { snps: [], matrix: [], i0: -1, n: 0 }; storedView(d0, d1); }
-      } else {
-        if (!view.own) storedView(d0, d1);               // instant, until the computed one arrives
-        requestRegion(d0, d1);
-      }
-      connect();
+    if (!frame) frame = requestAnimationFrame(() => {
+      frame = 0;
+      if (regionOff) showStoredInView();
+      else { buildTri(); connect(); requestRegion(false); }
     });
   };
 
-  // ── Row 1 controls ──
-  hdr.querySelector('.ldt-cell-slider').addEventListener('input', function() {
-    cs = +this.value;
-    hdr.querySelector('.ldt-cell-val').textContent = cs + 'px';
-    buildTri(cs);
-    requestAnimationFrame(() => requestAnimationFrame(() =>
-      drawConnectors(plotWrap, ldView(), data, curX, yScale, svgW, svgH, scrollWrap, cs)
-    ));
+  // ── Controls ──
+  hdr.querySelector('.ldt-haploview-chk').addEventListener('change', function() { scaleType = this.checked ? 'haploview' : 'continuous'; buildTri(); });
+  hdr.querySelector('.ldt-snps-slider').addEventListener('change', function() {
+    maxSnps = +this.value; hdr.querySelector('.ldt-snps-val').textContent = maxSnps; requestRegion(true);
   });
-  hdr.querySelector('.ldt-haploview-chk').addEventListener('change', function() {
-    scaleType = this.checked ? 'haploview' : 'continuous';
-    buildTri(scrollWrap._cs || cs);
-  });
-
-  // ── Row 2 controls — block detection ──
-  brow.querySelector('.ldt-showblocks').addEventListener('change', function() {
-    showBlocks = this.checked; redetect();
-  });
+  hdr.querySelector('.ldt-snps-slider').addEventListener('input', function() { hdr.querySelector('.ldt-snps-val').textContent = this.value; });
+  hdr.querySelector('.ldt-h-slider').addEventListener('input', function() { heightPx = +this.value; buildTri(); connect(); });
+  function redetect() { view.blocks = showBlocks && view.n >= 2 ? detectLdBlocks(view.matrix, view.n, bp) : []; buildTri(); }
+  brow.querySelector('.ldt-showblocks').addEventListener('change', function() { showBlocks = this.checked; redetect(); });
   brow.querySelector('.ldt-strong').addEventListener('input', function() {
-    bp.strongR2 = +this.value;
-    brow.querySelector('.ldt-strong-val').textContent = (+this.value).toFixed(2);
-    redetect();
-  });
+    bp.strongR2 = +this.value; brow.querySelector('.ldt-strong-val').textContent = (+this.value).toFixed(2); redetect(); });
   brow.querySelector('.ldt-recom').addEventListener('input', function() {
-    bp.recomR2 = +this.value;
-    brow.querySelector('.ldt-recom-val').textContent = (+this.value).toFixed(2);
-    redetect();
-  });
+    bp.recomR2 = +this.value; brow.querySelector('.ldt-recom-val').textContent = (+this.value).toFixed(2); redetect(); });
   brow.querySelector('.ldt-prop').addEventListener('input', function() {
-    bp.propThreshold = +this.value;
-    brow.querySelector('.ldt-prop-val').textContent = Math.round(+this.value * 100) + '%';
-    redetect();
-  });
-  brow.querySelector('.ldt-minblk').addEventListener('input', function() {
-    bp.minBlockSize = Math.max(2, +this.value || 2);
-    redetect();
-  });
-  brow.querySelector('.ldt-closetops').addEventListener('change', function() {
-    closeBlockTops = this.checked; buildTri(scrollWrap._cs || cs);
-  });
-  brow.querySelector('.ldt-shade').addEventListener('change', function() {
-    shadeBlocks = this.checked; buildTri(scrollWrap._cs || cs);
-  });
-  brow.querySelector('.ldt-labels').addEventListener('change', function() {
-    labelBlocks = this.checked; buildTri(scrollWrap._cs || cs);
-  });
+    bp.propThreshold = +this.value; brow.querySelector('.ldt-prop-val').textContent = Math.round(+this.value * 100) + '%'; redetect(); });
+  brow.querySelector('.ldt-minblk').addEventListener('input', function() { bp.minBlockSize = Math.max(2, +this.value || 2); redetect(); });
+  brow.querySelector('.ldt-closetops').addEventListener('change', function() { closeBlockTops = this.checked; buildTri(); });
+  brow.querySelector('.ldt-shade').addEventListener('change', function() { shadeBlocks = this.checked; buildTri(); });
+  brow.querySelector('.ldt-labels').addEventListener('change', function() { labelBlocks = this.checked; buildTri(); });
+
+  // ── First draw after layout (positions come from the drawn plot); redraw when the page width changes ──
+  label();
+  requestAnimationFrame(() => requestAnimationFrame(() => { buildTri(); connect(); requestRegion(true); }));
+  if (window.ResizeObserver) {
+    let lastW = 0;
+    new ResizeObserver(() => {
+      const w = scrollWrap.clientWidth;
+      if (w && Math.abs(w - lastW) > 1) { lastW = w; requestAnimationFrame(() => { buildTri(); connect(); }); }
+    }).observe(scrollWrap);
+  }
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -3596,8 +3613,7 @@ function drawConnectors(plotWrap, ldData, data, xScale, yScale, svgW, svgH, scro
     const canvas = scrollWrap.querySelector('canvas');
     const canvasRect = canvas ? canvas.getBoundingClientRect() : triRect;
     const triBaseX = (canvasRect.left - plotRect.left)
-                   + (i + 0.5) * cs
-                   - scrollLeft;
+                   + (scrollWrap._xOf ? scrollWrap._xOf(i) : (i + 0.5) * cs - scrollLeft);
     const triBaseY = triTop;
 
     const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');

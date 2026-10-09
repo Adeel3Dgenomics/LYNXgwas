@@ -372,19 +372,8 @@ public class LdCalculator {
         }
         if (inRangeOut != null && inRangeOut.length > 0) inRangeOut[0] = rows.size();
         if (rows.size() < 2) return null;
-        // thin evenly by position order, keeping the lead SNP
-        if (rows.size() > max) {
-            List<String[]> byPos = new ArrayList<>(rows);
-            byPos.sort(Comparator.comparingLong(r -> Long.parseLong(r[3])));
-            Set<String> keep = new HashSet<>();
-            for (int k = 0; k < max; k++) keep.add(byPos.get((int) Math.round(k * (byPos.size() - 1) / (double) (max - 1)))[1]);
-            if (topBimId != null) {
-                for (String[] r : byPos) if (r[1].equals(topBimId)) { keep.add(topBimId); break; }
-            }
-            List<String[]> kept = new ArrayList<>();
-            for (String[] r : rows) if (keep.contains(r[1])) kept.add(r);
-            rows = kept;
-        }
+        // candidates: twice the limit, spread evenly (SNPs monomorphic in the panel are dropped below)
+        rows = thinEvenly(rows, 2 * max, topBimId);
         tmpDir.mkdirs();
         File tmp = File.createTempFile("ldregion_", "", tmpDir);
         String prefix = tmp.getAbsolutePath();
@@ -397,8 +386,26 @@ public class LdCalculator {
             File pair = new File(prefix + ".ld");
             if (!pair.exists() || pair.length() == 0) return null;
             // rows and columns come out in .bim order, which is the order of rows
-            double[][] m = parsePairwiseMatrix(pair, rows.size());
+            double[][] m0 = parsePairwiseMatrix(pair, rows.size());
             pair.delete();
+            // drop SNPs without any r2 (monomorphic in the reference panel: a blank row and column), then thin to max
+            List<Integer> informative = new ArrayList<>();
+            for (int i = 0; i < rows.size(); i++) {
+                boolean any = false;
+                for (int j = 0; j < rows.size() && !any; j++) any = j != i && !Double.isNaN(m0[i][j]);
+                if (any || rows.get(i)[1].equals(topBimId)) informative.add(i);
+            }
+            List<String[]> inf = new ArrayList<>();
+            for (int i : informative) inf.add(rows.get(i));
+            if (inRangeOut != null && inRangeOut.length > 1) inRangeOut[1] = rows.size() - inf.size();   // left out: no LD
+            List<String[]> kept = thinEvenly(inf, max, topBimId);
+            Map<String, Integer> at = new HashMap<>();
+            for (int i = 0; i < rows.size(); i++) at.put(rows.get(i)[1], i);
+            double[][] m = new double[kept.size()][kept.size()];
+            for (int i = 0; i < kept.size(); i++)
+                for (int j = 0; j < kept.size(); j++) m[i][j] = m0[at.get(kept.get(i)[1])][at.get(kept.get(j)[1])];
+            rows = kept;
+            if (rows.size() < 2) return null;
             // order by position for the viewer (the .bim is normally sorted already)
             Integer[] ord = new Integer[rows.size()];
             for (int i = 0; i < ord.length; i++) ord[i] = i;
@@ -425,6 +432,21 @@ public class LdCalculator {
             extract.delete();
             cleanupPlink(prefix);
         }
+    }
+
+    /** At most {@code max} rows, spread evenly by position (input order kept), the lead SNP always kept. */
+    private static List<String[]> thinEvenly(List<String[]> rows, int max, String topBimId) {
+        if (rows.size() <= max) return rows;
+        List<String[]> byPos = new ArrayList<>(rows);
+        byPos.sort(Comparator.comparingLong(r -> Long.parseLong(r[3])));
+        Set<String> keep = new HashSet<>();
+        for (int k = 0; k < max; k++) keep.add(byPos.get((int) Math.round(k * (byPos.size() - 1) / (double) (max - 1)))[1]);
+        if (topBimId != null) {
+            for (String[] r : byPos) if (r[1].equals(topBimId)) { keep.add(topBimId); break; }
+        }
+        List<String[]> kept = new ArrayList<>();
+        for (String[] r : rows) if (keep.contains(r[1])) kept.add(r);
+        return kept;
     }
 
     static double[][] parsePairwiseMatrix(File f, int n) throws IOException {   // package-visible for LdCalculatorTest

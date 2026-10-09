@@ -682,11 +682,12 @@ public class LocalServer {
             }
             Map<String, Object> top = MiniJson.asObject(d.get("top_snp"));
             String topBim = top != null && top.get("bim_id") != null ? String.valueOf(top.get("bim_id")) : null;
-            int[] inRange = new int[1];
+            int[] inRange = new int[2];
             LocusOutput.LdTriangle tri = LdCalculator.regionTriangle(subPrefix, plink, from, to, idByPos, topBim, max,
                 new File(projectDir, "tmp"), inRange);
             out.put("available", true);
             out.put("in_range", inRange[0]);
+            out.put("no_ld", inRange[1]);   // of the candidates, SNPs monomorphic in the reference panel (left out)
             if (tri == null) { out.put("snp_count", 0); out.put("snps", new ArrayList<>()); out.put("matrix", new ArrayList<>()); }
             else {
                 out.put("snp_count", tri.snpCount);
