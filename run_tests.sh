@@ -22,6 +22,7 @@ javac -encoding UTF-8 -d bin -cp "bin$LIBCP" \
   src/analysis/OllamaPuller.java \
   tests/MultiLocusScannerTest.java \
   tests/LdCalculatorTest.java \
+  tests/GffParserTest.java \
   tests/GwasQcTest.java \
   tests/GlobalConfigTest.java \
   tests/SharedStorageResolverTest.java \
@@ -60,6 +61,9 @@ java -cp "bin$LIBCP" MultiLocusScannerTest || FAILED=1
 echo
 echo "--- LdCalculatorTest ---"
 java -cp "bin$LIBCP" LdCalculatorTest || FAILED=1
+
+echo "--- GffParserTest ---"
+java -cp "bin$LIBCP" GffParserTest || FAILED=1
 
 echo
 echo "--- GwasQcTest ---"

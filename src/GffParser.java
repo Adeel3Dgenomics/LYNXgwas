@@ -9,6 +9,8 @@ public class GffParser {
 
     /** Per-chromosome gene lists, sorted by start position for binary search. */
     private final Map<String, List<Gene>> chrGenes = new HashMap<>();
+    /** Per chromosome: the largest gene end among genes 0..i (genes sorted by start), for the overlap search. */
+    private final Map<String, long[]> chrMaxEnd = new HashMap<>();
     private final Map<String, Transcript> txMap    = new HashMap<>();
     private final Map<String, Gene>       geneMap  = new HashMap<>();
 
@@ -76,8 +78,13 @@ public class GffParser {
         }
 
         // Sort each chromosome's gene list by start for overlap binary search
-        for (List<Gene> genes : chrGenes.values()) {
+        for (Map.Entry<String, List<Gene>> en : chrGenes.entrySet()) {
+            List<Gene> genes = en.getValue();
             genes.sort(Comparator.comparingLong(g -> g.start));
+            long[] maxEnd = new long[genes.size()];
+            long m = Long.MIN_VALUE;
+            for (int i = 0; i < genes.size(); i++) { m = Math.max(m, genes.get(i).end); maxEnd[i] = m; }
+            chrMaxEnd.put(en.getKey(), maxEnd);
         }
         txMap.clear(); // free memory — no longer needed
 
@@ -139,10 +146,10 @@ public class GffParser {
     // -----------------------------------------------------------------------
     // Public query API
 
-    /** All genes overlapping [queryStart, queryEnd] on the given chromosome. */
     /** Every gene of each chromosome (names without "chr"), sorted by start. */
     public Map<String, List<Gene>> genesByChromosome() { return Collections.unmodifiableMap(chrGenes); }
 
+    /** All genes overlapping [queryStart, queryEnd] on the given chromosome. */
     public List<Gene> overlapping(String chr, long queryStart, long queryEnd) {
         List<Gene> genes = chrGenes.get(chr);
         if (genes == null || genes.isEmpty()) return Collections.emptyList();
@@ -150,18 +157,22 @@ public class GffParser {
         List<Gene> result = new ArrayList<>();
         int lo = 0, hi = genes.size() - 1;
         // Find the rightmost gene with start <= queryEnd
-        int pivot = genes.size();
+        int pivot = -1;   // none starts at or before queryEnd (the old genes.size() read past the end)
         while (lo <= hi) {
             int mid = (lo + hi) >>> 1;
             if (genes.get(mid).start <= queryEnd) { pivot = mid; lo = mid + 1; }
             else hi = mid - 1;
         }
-        // Scan left from pivot to collect all overlapping
+        // Scan left from pivot to collect all overlapping. Genes are sorted by start, not end: a short gene that
+        // ends before the query does not mean every gene further left does too (a long gene can start earlier and
+        // still cover the query). Stop only when no gene at or left of i reaches the query (running max of ends).
+        long[] maxEnd = chrMaxEnd.get(chr);
         for (int i = pivot; i >= 0; i--) {
+            if (maxEnd != null && maxEnd[i] < queryStart) break;
             Gene g = genes.get(i);
-            if (g.end < queryStart) break;
-            if (g.end >= queryStart) result.add(g);
+            if (g.start <= queryEnd && g.end >= queryStart) result.add(g);
         }
+        Collections.reverse(result);   // by start, as before
         // Scan right from pivot+1 (genes with later starts that still overlap)
         for (int i = pivot + 1; i < genes.size(); i++) {
             Gene g = genes.get(i);
