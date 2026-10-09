@@ -78,7 +78,7 @@ python scripts/export_example_data.py \
   --out ../LYNXgwas-example-data --version 1
 ```
 
-It gave `lynxgwas-example-data-v1.zip`: 801 MB, 3.25 GB unpacked, 111,923 files, 30 projects.
+It gave `lynxgwas-example-data-v1.zip`: 803 MB, 3.25 GB unpacked, 112,042 files, 30 projects (rebuilt on 9 Oct 2026 with the corrected LD triangles).
 Publish a new pack as a new version of the same Zenodo record; the app always takes the latest.
 
 To test without Zenodo, serve the zip locally and point a workspace's `config/example_data.json` at it
