@@ -1285,9 +1285,31 @@ function sanitizeLdMatrix(data) {
   }
 }
 
-async function loadLocus(idx) {
-  if (locusCache.has(idx)) return locusCache.get(idx);
+// Loads in flight, so a locus being preloaded is not fetched a second time when it is opened
+const locusPending = new Map();
+const SCE2G_WAIT_MS = 1200;   // the plot waits this long for scE2G at most; a later answer is drawn when it comes
+
+function loadLocus(idx) {
+  if (locusCache.has(idx)) return Promise.resolve(locusCache.get(idx));
+  if (locusPending.has(idx)) return locusPending.get(idx);
+  const pr = loadLocusFresh(idx).finally(() => locusPending.delete(idx));
+  locusPending.set(idx, pr);
+  return pr;
+}
+
+async function loadLocusFresh(idx) {
   let data = null;
+  // The regulatory marks and the scE2G links do not depend on the locus JSON: ask for all three at once
+  const regP = PROJECT_API
+    ? fetchWithTimeout(`${PROJECT_API}/locus/${idx}/regulatory`, 4000).then(r => r.ok ? r.json() : null)
+        .catch(e => { console.warn('[Regulatory] failed to load locus ' + idx + ':', e.message); return null; })
+    : Promise.resolve(null);
+  const sel = sce2gSelection();
+  const sceP = PROJECT_API
+    ? fetchWithTimeout(`${PROJECT_API}/locus/${idx}/sce2g` + (sel ? '?cts=' + encodeURIComponent(sel) : ''), 90000)
+        .then(r => r.ok ? r.json() : null)
+        .catch(e => { console.warn('[scE2G] failed to load locus ' + idx + ':', e.message); return null; })
+    : Promise.resolve(null);
   // Try HTTP server — fetch raw text so we can sanitize double-comma artifacts
   try {
     const res = await fetchWithTimeout(PROJECT_API ? `${PROJECT_API}/locus/${idx}` : `${SERVER}/locus/${idx}`, 2000);
@@ -1321,20 +1343,18 @@ async function loadLocus(idx) {
     // never re-fetches it). Missing/failed fetch or an unmapped-disease project both degrade to
     // {marks:{}} rather than throwing, so every existing project without regulatory data renders
     // exactly as before.
-    data.regulatory = { eid: null, tissue: null, marks: {} };
-    if (PROJECT_API) {
-      try {
-        const regResp = await fetchWithTimeout(`${PROJECT_API}/locus/${idx}/regulatory`, 4000);
-        if (regResp.ok) data.regulatory = await regResp.json();
-      } catch (e) { console.warn('[Regulatory] failed to load locus ' + idx + ':', e.message); }
-      // scE2G enhancer-gene links (bundled); the first locus of a session also loads the cell types (a few seconds)
-      data.sce2g = null;
-      try {
-        const sel = sce2gSelection();
-        const sr = await fetchWithTimeout(`${PROJECT_API}/locus/${idx}/sce2g` + (sel ? '?cts=' + encodeURIComponent(sel) : ''), 90000);
-        if (sr.ok) data.sce2g = await sr.json();
-      } catch (e) { console.warn('[scE2G] failed to load locus ' + idx + ':', e.message); }
-    }
+    data.regulatory = (await regP) || { eid: null, tissue: null, marks: {} };
+    // scE2G enhancer-gene links (bundled). Normally instant; while the server is still reading the cell types
+    // (right after it starts) the locus is drawn without them, and redrawn once they arrive.
+    data.sce2g = null;
+    const LATE = {};
+    const sce = await Promise.race([sceP, new Promise(r => setTimeout(() => r(LATE), SCE2G_WAIT_MS))]);
+    if (sce !== LATE) data.sce2g = sce;
+    else sceP.then(late => {
+      if (!late || locusCache.get(idx) !== data) return;
+      data.sce2g = late;
+      if (lociOrder[currentStart] === idx) renderViewport(false);   // only the locus on screen is redrawn
+    });
     locusCache.set(idx, data);
   }
   return data;

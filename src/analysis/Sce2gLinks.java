@@ -42,6 +42,7 @@ public class Sce2gLinks {
     private static final Map<String, Integer> GENE_IDX = new HashMap<>();
     private static volatile List<CellType> cellTypes;
     private static final Map<String, Map<String, Chrom>> LOADED = new ConcurrentHashMap<>();
+    private static final Map<String, Object> LOCKS = new ConcurrentHashMap<>();   // one per cell type: files load in parallel
     private static String citation = "", threshold = "";
 
     // ── Manifest and selection ──────────────────────────────────────────
@@ -135,7 +136,7 @@ public class Sce2gLinks {
     static Map<String, Chrom> load(CellType ct) {
         Map<String, Chrom> got = LOADED.get(ct.id);
         if (got != null) return got;
-        synchronized (Sce2gLinks.class) {
+        synchronized (LOCKS.computeIfAbsent(ct.id, k -> new Object())) {
             got = LOADED.get(ct.id);
             if (got != null) return got;
             long t0 = System.currentTimeMillis();
@@ -162,6 +163,9 @@ public class Sce2gLinks {
                 iD = h.indexOf("d38"), iDT = h.indexOf("dtss38"), iDL = h.indexOf("dlen38");
             boolean delta = iS8 < 0 && iD >= 0;
             Map<String, Chrom> out = new HashMap<>();
+            // genes are numbered within the file, then mapped to the shared table in one step (no lock per row)
+            Map<String, Integer> localIdx = new HashMap<>();
+            List<String> localGenes = new ArrayList<>();
             for (Map.Entry<String, List<String[]>> en : byChr.entrySet()) {
                 List<String[]> rows = en.getValue();
                 Chrom c = new Chrom();
@@ -182,7 +186,9 @@ public class Sce2gLinks {
                         c.s38[r] = Integer.parseInt(f[iS8]); c.e38[r] = Integer.parseInt(f[iE8]);
                         c.tss38[r] = Integer.parseInt(f[iT8]);
                     }
-                    c.gene[r] = geneIndex(f[iG]);
+                    Integer gi = localIdx.get(f[iG]);
+                    if (gi == null) { gi = localGenes.size(); localGenes.add(f[iG]); localIdx.put(f[iG], gi); }
+                    c.gene[r] = gi;
                     c.cls[r] = (byte) Math.max(0, Arrays.asList(CLASSES).indexOf(f[iC]));
                     c.e2g[r] = num(f[iQ]); c.abc[r] = num(f[iA]); c.kendall[r] = num(f[iK]);
                     c.self[r] = "1".equals(f[iSelf]);
@@ -191,16 +197,39 @@ public class Sce2gLinks {
                 c.el38 = elements(c, true);
                 out.put(en.getKey(), c);
             }
+            int[] map = geneIndices(localGenes);
+            for (Chrom c : out.values()) for (int r = 0; r < c.n; r++) c.gene[r] = map[c.gene[r]];
             LOADED.put(ct.id, out);
             System.out.printf("[scE2G] loaded %s (%d ms)%n", ct.label, System.currentTimeMillis() - t0);
             return out;
         }
     }
 
-    private static synchronized int geneIndex(String g) {
-        Integer i = GENE_IDX.get(g);
-        if (i == null) { i = GENES.size(); GENES.add(g); GENE_IDX.put(g, i); }
-        return i;
+    private static synchronized int[] geneIndices(List<String> genes) {
+        int[] out = new int[genes.size()];
+        for (int k = 0; k < out.length; k++) {
+            Integer i = GENE_IDX.get(genes.get(k));
+            if (i == null) { i = GENES.size(); GENES.add(genes.get(k)); GENE_IDX.put(genes.get(k), i); }
+            out[k] = i;
+        }
+        return out;
+    }
+
+    /** Gene name of a shared index (synchronized: another cell type may be adding genes meanwhile). */
+    private static synchronized String geneName(int i) { return GENES.get(i); }
+
+    /** Loads the given cell types, 4 files at a time (each file once); returns when all are in memory.
+     *  Capped because reading a file briefly takes ~100 MB of text; more at once only adds memory, not much speed. */
+    private static final java.util.concurrent.ExecutorService POOL = java.util.concurrent.Executors.newFixedThreadPool(
+        Math.max(1, Math.min(4, Runtime.getRuntime().availableProcessors())), r -> {
+            Thread t = new Thread(r, "sce2g-load"); t.setDaemon(true); return t; });
+
+    static void loadAll(List<CellType> cts) {
+        List<java.util.concurrent.Future<?>> fs = new ArrayList<>();
+        for (CellType ct : cts) if (!LOADED.containsKey(ct.id)) fs.add(POOL.submit(() -> load(ct)));
+        for (java.util.concurrent.Future<?> f : fs) {
+            try { f.get(); } catch (Exception e) { System.err.println("[scE2G] load failed: " + e.getMessage()); }
+        }
     }
 
     private static float num(String s) {
@@ -250,6 +279,7 @@ public class Sce2gLinks {
      */
     public static Map<String, Object> locus(List<CellType> cts, boolean b38, String chr, long from, long to,
                                             long leadPos, List<double[]> csSnps) {
+        loadAll(cts);
         String ck = chrKey(chr);
         List<int[]> calls = new ArrayList<>();          // [start, end, class, ctIndex, row]
         for (int ci = 0; ci < cts.size(); ci++) {
@@ -341,7 +371,7 @@ public class Sce2gLinks {
                 int[] el = (b38 ? c.el38 : c.el37)[idx[0]];
                 s.put("dist", d); s.put("cls", CLASSES[el[2]]);
                 int br = bestRow(c, el, b38);
-                s.put("gene", GENES.get(c.gene[br])); s.put("e2g", round(c.e2g[br]));
+                s.put("gene", geneName(c.gene[br])); s.put("e2g", round(c.e2g[br]));
             }
             strip.add(s);
         }
@@ -391,7 +421,7 @@ public class Sce2gLinks {
             for (int r = 0; r < c.n; r++) {
                 int rs = b38 ? c.s38[r] : c.s37[r], re = b38 ? c.e38[r] : c.e37[r];
                 if (re <= s || rs >= e) continue;
-                String g = GENES.get(c.gene[r]);
+                String g = geneName(c.gene[r]);
                 Object[] b = best.get(g);
                 if (b == null) { b = new Object[]{0f, 0f, 0f, 0, 0, "", false}; best.put(g, b); }
                 if (genesHere.add(c.gene[r])) b[4] = (int) b[4] + 1;
@@ -441,6 +471,7 @@ public class Sce2gLinks {
      */
     public static Map<String, Object> stats(List<CellType> cts, boolean b38, List<Snp> snps, Map<String, long[]> tssByChr,
                                             int nNull, long seed) {
+        loadAll(cts);
         int nS = snps.size(), nC = cts.size();
         List<Map<String, Chrom>> data = new ArrayList<>();
         for (CellType ct : cts) data.add(load(ct));
@@ -468,7 +499,7 @@ public class Sce2gLinks {
                     int[] el = (b38 ? ch.el38 : ch.el37)[idx[0]];
                     bestCls = el[2];
                     int r = bestRow(ch, el, b38);
-                    bestGene = GENES.get(ch.gene[r]); bestE2g = ch.e2g[r];
+                    bestGene = geneName(ch.gene[r]); bestE2g = ch.e2g[r];
                 }
             }
             minDist[i] = best;

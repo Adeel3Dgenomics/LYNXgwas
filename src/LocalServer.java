@@ -135,7 +135,7 @@ public class LocalServer {
         if (ps != null && ps.config != null && ps.loci != null) return ps;
         try {
             Config cfg = Config.loadFromProject(projectDir);
-            GffParser gff = GffParser.parse(cfg);
+            GffParser gff = sharedGff(cfg);
             List<Locus> loci = new ArrayList<>();
             List<LocusOutput> outputs = new ArrayList<>();
             // Reconstruct state from manifest + locus JSON files
@@ -312,7 +312,21 @@ public class LocalServer {
         http.setExecutor(Executors.newFixedThreadPool(8));
     }
 
-    public void start() { http.start(); }
+    public void start() {
+        http.start();
+        warmProjectsGeneAnnotation();
+        // scE2G links into memory in the background (~150 MB, a few seconds), so the first locus does not wait on them
+        if (Sce2gLinks.available()) {
+            Thread t = new Thread(() -> {
+                long t0 = System.currentTimeMillis();
+                try { Sce2gLinks.loadAll(Sce2gLinks.select("all")); } catch (Exception ignored) {}
+                System.out.printf("[scE2G] all cell types loaded (%d ms)%n", System.currentTimeMillis() - t0);
+                System.gc();   // hand the file-reading memory back to the system (the links themselves are ~150 MB)
+            }, "sce2g-preload");
+            t.setDaemon(true);
+            t.start();
+        }
+    }
     public void stop()  { http.stop(0); }
 
     // ══════════════════════════════════════════════════════════════════════
@@ -550,7 +564,8 @@ public class LocalServer {
             try {
                 Config cfg = Config.loadFromProject(projectDir);
                 String sel = Sce2gLinks.defaultPreset(GeneConstellationBuilder.diseaseGroupOf(projectId, cfg.diseaseName));
-                for (Sce2gLinks.CellType c : Sce2gLinks.select(sel)) Sce2gLinks.load(c);
+                Sce2gLinks.loadAll(Sce2gLinks.select(sel));          // this project's cell types first
+                Sce2gLinks.loadAll(Sce2gLinks.select("all"));        // then the rest, for the cell-type selector
             } catch (Exception ignored) {}
         }, "sce2g-warm");
         t.setDaemon(true);
@@ -4918,7 +4933,7 @@ public class LocalServer {
                     mergedFile.getAbsolutePath(), "chrom", "pos", "p", "", params, progress.identifyProgress);
                 progress.lociFound = loci.size();
 
-                GffParser gff = GffParser.parse(configs.get(0));
+                GffParser gff = sharedGff(configs.get(0));
 
                 MultiLocusResult result = MultiLocusScanner.scan(configs, finalProjectIds, loci, gff, progress);
                 result.name = finalJobName;
@@ -5239,6 +5254,27 @@ public class LocalServer {
             Thread t = new Thread(task, "gff-load"); t.setDaemon(true); t.start();
             return task;
         });
+    }
+
+    /** The project's gene annotation, read once per file and shared by every project that uses it (read-only). */
+    private GffParser sharedGff(Config cfg) throws Exception {
+        if (cfg.gff3File != null && new File(cfg.gff3File).isFile())
+            return gffFuture(new File(cfg.gff3File).getAbsolutePath()).get();
+        return GffParser.parse(cfg);
+    }
+
+    /** At startup: start reading the gene annotation of the projects in the background, before anyone opens one. */
+    private void warmProjectsGeneAnnotation() {
+        File[] dirs = new File("projects").listFiles(File::isDirectory);
+        if (dirs == null) return;
+        Set<String> seen = new HashSet<>();
+        for (File d : dirs) {
+            try {
+                Config c = Config.loadFromProject(d.getAbsolutePath());
+                if (c.gff3File != null && new File(c.gff3File).isFile() && seen.add(new File(c.gff3File).getAbsolutePath()))
+                    gffFuture(new File(c.gff3File).getAbsolutePath());
+            } catch (Exception ignored) {}
+        }
     }
 
     private void warmGeneAnnotation(String jobId) {
