@@ -16,6 +16,24 @@ public class LdCalculatorTest {
         failures += check("cap value itself is a sane, non-degenerate size",
             LdCalculator.MAX_LD_WINDOW_KB > 0 && LdCalculator.MAX_LD_WINDOW_KB <= 5000 ? 1 : 0, 1);
 
+        // PLINK --r2 square output whose first SNP is monomorphic: its row starts with "nan". That row is data,
+        // not a header; reading it as a header shifted every row of the LD triangle up by one.
+        try {
+            java.io.File f = java.io.File.createTempFile("ldsq", ".ld");
+            try (java.io.PrintWriter pw = new java.io.PrintWriter(f)) {
+                pw.println("nan	nan	nan");
+                pw.println("nan	1	0.25");
+                pw.println("nan	0.25	1");
+            }
+            double[][] m = LdCalculator.parsePairwiseMatrix(f, 3);
+            f.delete();
+            failures += check("monomorphic first SNP: its pairs stay missing", Double.isNaN(m[0][1]) && Double.isNaN(m[0][2]) ? 1 : 0, 1);
+            failures += check("monomorphic first SNP: rows are not shifted (r2 of SNPs 2 and 3)", Math.round(m[1][2] * 100), 25);
+            failures += check("monomorphic first SNP: matrix stays symmetric", m[2][1] == m[1][2] ? 1 : 0, 1);
+        } catch (java.io.IOException e) {
+            failures += check("square LD file could be written: " + e.getMessage(), 0, 1);
+        }
+
         if (failures == 0) {
             System.out.println("PASS: all LdCalculator tests passed");
         } else {

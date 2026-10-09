@@ -1353,7 +1353,10 @@ async function loadLocusFresh(idx) {
     else sceP.then(late => {
       if (!late || locusCache.get(idx) !== data) return;
       data.sce2g = late;
-      if (lociOrder[currentStart] === idx) renderViewport(false);   // only the locus on screen is redrawn
+      // only the locus on screen is redrawn, and not while it is zoomed (a redraw would reset the zoom);
+      // the track then shows the next time the locus is drawn
+      const sv = document.querySelector('#panel-' + idx + ' .main-svg');
+      if (lociOrder[currentStart] === idx && !(sv && d3.zoomTransform(sv).k !== 1)) renderViewport(false);
     });
     locusCache.set(idx, data);
   }
@@ -1950,7 +1953,7 @@ function fillPanel(data, panelEl) {
 
     const xAxisG = svg.append('g').attr('class','axis')
       .attr('transform', `translate(0,${mhTop + PLOT_H})`)
-      .call(d3.axisBottom(xScale).ticks(8).tickFormat(d => fmtBp(d)));
+      .call(d3.axisBottom(xScale).ticks(8).tickFormat(axisBpFormat(xScale, 8)));
     xAxisG.select('.domain').remove();
 
     curY = mhTop + PLOT_H + MARGIN.bottom;
@@ -2001,7 +2004,7 @@ function fillPanel(data, panelEl) {
       .translateExtent([[xRange[0], -Infinity],[xRange[1], Infinity]])
       .on('zoom', ({transform}) => {
         xScale = transform.rescaleX(xBase);
-        xAxisG.call(d3.axisBottom(xScale).ticks(8).tickFormat(d => fmtBp(d)));
+        xAxisG.call(d3.axisBottom(xScale).ticks(8).tickFormat(axisBpFormat(xScale, 8)));
         xAxisG.select('.domain').remove();
         redrawOnZoom(svg, data, xScale, yScale, geneRows, visGenes,
           visGenes.length > 0 && showGenes, hasLdData && showLd,
@@ -2956,6 +2959,7 @@ function renderLdTriangle(wrap, ldData, data, xScale, yScale, svgW, svgH, plotWr
   const ldView = () => ({ ...ldData, snps: view.snps, matrix: view.matrix, snp_count: view.n });
   function viewBlocks() {
     if (!showBlocks) return null;
+    if (view.own) return view.blocks || [];             // matrix computed for the zoomed range: its own blocks
     if (view.i0 === 0 && view.n === N) return ldBlocks;
     const out = [];
     for (const bk of ldBlocks) {
@@ -3072,6 +3076,7 @@ function renderLdTriangle(wrap, ldData, data, xScale, yScale, svgW, svgH, plotWr
 
   function redetect() {
     ldBlocks = showBlocks ? detectLdBlocks(ldData.matrix, N, bp) : [];
+    if (view.own) view.blocks = showBlocks ? detectLdBlocks(view.matrix, view.n, bp) : [];
     updateBlockStatus();
     buildTri(scrollWrap._cs || cs);
   }
@@ -3092,9 +3097,74 @@ function renderLdTriangle(wrap, ldData, data, xScale, yScale, svgW, svgH, plotWr
     )
   );
 
-  // ── Follow the locus plot's zoom (called from its zoom handler, at most once per frame) ──
+  // ── Follow the locus plot's zoom (called from its zoom handler) ──
+  // Straight away: the stored matrix cut to the visible range. A moment after the zoom stops: LD computed by
+  // the app for the GWAS SNPs actually on screen (from the locus's reference-panel subset, which covers the
+  // whole window), so the triangle follows the zoom everywhere, not only around the lead SNP.
   const countEl = hdr.querySelector('.ldt-count'), slider = hdr.querySelector('.ldt-cell-slider');
-  let zoomPending = null;
+  const fullSpan = (data.padded_end - data.padded_start) || 1;
+  const LD_REGION_MAX = 150;
+  let zoomPending = null, regionTimer = null, regionKey = '', regionOff = false;
+
+  function fit(n, label) {
+    cs = Math.max(3, Math.min(40, Math.floor(availW / n)));
+    slider.max = Math.max(+slider.max, cs); slider.value = cs;
+    hdr.querySelector('.ldt-cell-val').textContent = cs + 'px';
+    countEl.textContent = label;
+    triInner.style.display = '';
+    buildTri(cs);
+  }
+  function showEmpty(label) {
+    triInner.style.display = 'none';
+    countEl.textContent = label;
+    view = { snps: [], matrix: [], i0: -1, n: 0 };
+  }
+  const connect = () => drawConnectors(plotWrap, ldView(), data, curX, yScale, svgW, svgH, scrollWrap, scrollWrap._cs || cs);
+
+  function storedView(d0, d1) {
+    const S = ldData.snps;
+    let i0 = 0; while (i0 < N && S[i0].pos < d0) i0++;
+    let i1 = N - 1; while (i1 >= 0 && S[i1].pos > d1) i1--;
+    const n = i1 - i0 + 1;
+    if (n < 2) {
+      if (view.n || view.own || triInner.style.display !== 'none')
+        showEmpty(regionOff
+          ? `LD r² (pairwise) · no LD SNPs in the zoomed range (the matrix covers ${fmtBp(S[0].pos)}–${fmtBp(S[N - 1].pos)})`
+          : 'LD r² (pairwise) · computing LD for the zoomed range…');
+      return;
+    }
+    if (!view.own && n === view.n && i0 === view.i0) return;
+    view = (i0 === 0 && n === N) ? { snps: S, matrix: ldData.matrix, i0: 0, n: N }
+      : { snps: S.slice(i0, i1 + 1), i0, n, matrix: ldData.matrix.slice(i0, i1 + 1).map(r => r ? r.slice(i0, i1 + 1) : r) };
+    fit(n, n === N ? `LD r² (pairwise) · ${N} SNPs` : `LD r² (pairwise) · ${n} of ${N} SNPs (zoomed)`);
+  }
+
+  function requestRegion(d0, d1) {
+    clearTimeout(regionTimer);
+    if (regionOff || !PROJECT_API || !data.locus_index) return;
+    const from = Math.max(data.padded_start, Math.floor(d0)), to = Math.min(data.padded_end, Math.ceil(d1));
+    const key = from + '-' + to;
+    regionKey = key;
+    regionTimer = setTimeout(async () => {
+      try {
+        const r = await fetchWithTimeout(`${PROJECT_API}/locus/${data.locus_index}/ld-region?from=${from}&to=${to}&max=${LD_REGION_MAX}`, 30000);
+        const j = r.ok ? await r.json() : null;
+        if (regionKey !== key) return;                    // zoomed again meanwhile
+        if (!j || j.available === false) {              // e.g. a results-only project: keep the stored matrix
+          regionOff = true;
+          const [a, b] = curX.domain(); view = { snps: [], matrix: [], i0: -1, n: 0 }; storedView(a, b); connect();
+          return;
+        }
+        if (j.snp_count < 2) { showEmpty('LD r² (pairwise) · fewer than two GWAS SNPs with genotypes in the zoomed range'); connect(); return; }
+        view = { snps: j.snps, matrix: j.matrix, i0: -2, n: j.snp_count, own: true,
+                 blocks: showBlocks ? detectLdBlocks(j.matrix, j.snp_count, bp) : [] };
+        fit(j.snp_count, `LD r² (pairwise) · ${j.snp_count} SNPs in the zoomed range` +
+          (j.in_range > j.snp_count ? ` (${j.in_range} there, spread evenly)` : '') + ' · computed for this view');
+        connect();
+      } catch (e) { console.warn('[LD] zoomed range:', e.message); }
+    }, 350);
+  }
+
   scrollWrap._ldView = ldView;
   scrollWrap._zoom = (xs) => {
     curX = xs;
@@ -3103,31 +3173,15 @@ function renderLdTriangle(wrap, ldData, data, xScale, yScale, svgW, svgH, plotWr
     requestAnimationFrame(() => {
       const x = zoomPending; zoomPending = null;
       const [d0, d1] = x.domain();
-      const S = ldData.snps;
-      let i0 = 0; while (i0 < N && S[i0].pos < d0) i0++;
-      let i1 = N - 1; while (i1 >= 0 && S[i1].pos > d1) i1--;
-      const empty = i1 - i0 + 1 < 2;   // no pair of LD SNPs in the zoomed range: say so instead of drawing
-      triInner.style.display = empty ? 'none' : '';
-      if (empty) {
-        countEl.textContent = `LD r² (pairwise) · no LD SNPs in the zoomed range (the matrix covers ${fmtBp(S[0].pos)}–${fmtBp(S[N - 1].pos)})`;
-        view = { snps: [], matrix: [], i0: -1, n: 0 };
-        drawConnectors(plotWrap, ldView(), data, curX, yScale, svgW, svgH, scrollWrap, scrollWrap._cs || cs);
-        return;
+      const zoomed = (d1 - d0) < 0.98 * fullSpan;
+      if (!zoomed) {                                     // back to the whole locus: the stored matrix
+        clearTimeout(regionTimer); regionKey = '';
+        if (view.own || view.n !== N) { view = { snps: [], matrix: [], i0: -1, n: 0 }; storedView(d0, d1); }
+      } else {
+        if (!view.own) storedView(d0, d1);               // instant, until the computed one arrives
+        requestRegion(d0, d1);
       }
-      const n = i1 - i0 + 1;
-      if (n !== view.n || i0 !== view.i0) {
-        view = (i0 === 0 && n === N) ? { snps: S, matrix: ldData.matrix, i0: 0, n: N }
-          : { snps: S.slice(i0, i1 + 1), i0, n,
-              matrix: ldData.matrix.slice(i0, i1 + 1).map(r => r ? r.slice(i0, i1 + 1) : r) };
-        // re-fit the cells to the width, up to 40 px
-        cs = Math.max(3, Math.min(40, Math.floor(availW / n)));
-        slider.max = Math.max(+slider.max, cs); slider.value = cs;
-        hdr.querySelector('.ldt-cell-val').textContent = cs + 'px';
-        countEl.textContent = n === N ? `LD r² (pairwise) · ${N} SNPs`
-          : `LD r² (pairwise) · ${n} of ${N} SNPs (zoomed)`;
-        buildTri(cs);
-      }
-      drawConnectors(plotWrap, ldView(), data, curX, yScale, svgW, svgH, scrollWrap, scrollWrap._cs || cs);
+      connect();
     });
   };
 
@@ -3661,14 +3715,16 @@ function redrawOnZoom(svg, data, newX, yScale, geneRows, visGenes, doGenes, doLd
   const x1 = newX.range()[0], x2 = newX.range()[1];
 
   // SNP circles — x only (y scale unchanged)
-  svg.selectAll('.snp-circle').attr('cx', s => newX(s.pos));
+  const outside = pos => { const x = newX(pos); return x < x1 - 4 || x > x2 + 4; };
+  svg.selectAll('.snp-circle').attr('cx', s => newX(s.pos)).attr('display', s => outside(s.pos) ? 'none' : null);
 
   // Top SNP diamond — recompute path from bound datum + unchanged yScale
   svg.selectAll('.top-snp-diamond').each(function(s) {
     if (!s) return;
     const tx = newX(s.pos), ty = yScale(s.neg_log10_p), r = 8;
-    d3.select(this).attr('d', `M${tx},${ty-r} L${tx+r},${ty} L${tx},${ty+r} L${tx-r},${ty}Z`);
-    svg.selectAll('.fm-top-ring').attr('cx', tx);
+    d3.select(this).attr('d', `M${tx},${ty-r} L${tx+r},${ty} L${tx},${ty+r} L${tx-r},${ty}Z`)
+      .attr('display', outside(s.pos) ? 'none' : null);
+    svg.selectAll('.fm-top-ring').attr('cx', tx).attr('display', outside(s.pos) ? 'none' : null);
   });
   // Credible-set bands, labels and the side list follow the zoom
   const firstDot = svg.select('.snp-circle').node();
@@ -4172,6 +4228,16 @@ function showToast(msg, ms=3000) {
 
 function fmtP(p) { return p == null || isNaN(p) ? '' : p.toExponential(2); }
 function fmtN(n) { return (+n).toLocaleString(); }
+function axisBpFormat(scale, nTicks) {
+  const [a, z] = scale.domain();
+  const step = Math.abs(z - a) / (nTicks || 8);
+  if (!(step > 0)) return d => fmtBp(d);
+  if (Math.max(Math.abs(a), Math.abs(z)) >= 1e6) {
+    const dec = Math.max(2, Math.min(6, Math.ceil(-Math.log10(step / 1e6))));
+    return d => (d / 1e6).toFixed(dec) + ' Mb';
+  }
+  return d => fmtBp(d);
+}
 function fmtBp(b) {
   b = +b;
   if (b >= 1e6) return (b/1e6).toFixed(2)+' Mb';

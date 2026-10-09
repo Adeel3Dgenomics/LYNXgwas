@@ -345,7 +345,89 @@ public class LdCalculator {
         return rows;
     }
 
-    private static double[][] parsePairwiseMatrix(File f, int n) throws IOException {
+    /**
+     * Pairwise LD for the GWAS SNPs of one stretch of a locus (the viewer's zoomed range), from the locus's
+     * reference-panel subset — the same PLINK call and filtering as Step C, for any range. At most {@code max}
+     * SNPs, spread evenly along the range, the lead SNP always kept. Null when fewer than two SNPs qualify.
+     *
+     * @param gwasIdByPos position -> display id of the locus's GWAS SNPs (only these are kept, as in Step C)
+     */
+    public static LocusOutput.LdTriangle regionTriangle(String subPrefix, String plinkBin, long from, long to,
+                                                        Map<Long, String> gwasIdByPos, String topBimId, int max,
+                                                        File tmpDir, int[] inRangeOut)
+            throws IOException, InterruptedException {
+        // the locus's GWAS SNPs in range, in .bim order (PLINK's output order), one per position
+        List<String[]> rows = new ArrayList<>();
+        Set<Long> seen = new HashSet<>();
+        try (BufferedReader br = new BufferedReader(new FileReader(subPrefix + ".bim"))) {
+            String bl;
+            while ((bl = br.readLine()) != null) {
+                String[] f = bl.trim().split("\\s+");
+                if (f.length < 4) continue;
+                long pos;
+                try { pos = Long.parseLong(f[3]); } catch (NumberFormatException e) { continue; }
+                if (pos < from || pos > to || !gwasIdByPos.containsKey(pos) || !seen.add(pos)) continue;
+                rows.add(f);
+            }
+        }
+        if (inRangeOut != null && inRangeOut.length > 0) inRangeOut[0] = rows.size();
+        if (rows.size() < 2) return null;
+        // thin evenly by position order, keeping the lead SNP
+        if (rows.size() > max) {
+            List<String[]> byPos = new ArrayList<>(rows);
+            byPos.sort(Comparator.comparingLong(r -> Long.parseLong(r[3])));
+            Set<String> keep = new HashSet<>();
+            for (int k = 0; k < max; k++) keep.add(byPos.get((int) Math.round(k * (byPos.size() - 1) / (double) (max - 1)))[1]);
+            if (topBimId != null) {
+                for (String[] r : byPos) if (r[1].equals(topBimId)) { keep.add(topBimId); break; }
+            }
+            List<String[]> kept = new ArrayList<>();
+            for (String[] r : rows) if (keep.contains(r[1])) kept.add(r);
+            rows = kept;
+        }
+        tmpDir.mkdirs();
+        File tmp = File.createTempFile("ldregion_", "", tmpDir);
+        String prefix = tmp.getAbsolutePath();
+        tmp.delete();
+        File extract = new File(prefix + "_snps.txt");
+        try (PrintWriter pw = new PrintWriter(extract)) { for (String[] r : rows) pw.println(r[1]); }
+        try {
+            runPlinkCapture(Arrays.asList(plinkBin, "--bfile", subPrefix, "--r2", "square", "--extract",
+                extract.getAbsolutePath(), "--allow-extra-chr", "--out", prefix, "--silent"));
+            File pair = new File(prefix + ".ld");
+            if (!pair.exists() || pair.length() == 0) return null;
+            // rows and columns come out in .bim order, which is the order of rows
+            double[][] m = parsePairwiseMatrix(pair, rows.size());
+            pair.delete();
+            // order by position for the viewer (the .bim is normally sorted already)
+            Integer[] ord = new Integer[rows.size()];
+            for (int i = 0; i < ord.length; i++) ord[i] = i;
+            final List<String[]> rr = rows;
+            Arrays.sort(ord, Comparator.comparingLong(i -> Long.parseLong(rr.get(i)[3])));
+            LocusOutput.LdTriangle tri = new LocusOutput.LdTriangle();
+            int n = ord.length;
+            tri.snpCount = n;
+            tri.matrix = new double[n][n];
+            for (int i = 0; i < n; i++) for (int j = 0; j < n; j++) tri.matrix[i][j] = m[ord[i]][ord[j]];
+            for (int ni = 0; ni < n; ni++) {
+                String[] r = rows.get(ord[ni]);
+                LocusOutput.LdTriangle.LdSnp s = new LocusOutput.LdTriangle.LdSnp();
+                s.bimId = r[1];
+                s.pos = Long.parseLong(r[3]);
+                s.id = gwasIdByPos.getOrDefault(s.pos, s.bimId);
+                s.isTopSnp = r[1].equals(topBimId);
+                s.rank = ni;
+                if (s.isTopSnp) tri.topSnpRank = ni;
+                tri.snps.add(s);
+            }
+            return tri;
+        } finally {
+            extract.delete();
+            cleanupPlink(prefix);
+        }
+    }
+
+    static double[][] parsePairwiseMatrix(File f, int n) throws IOException {   // package-visible for LdCalculatorTest
         double[][] m = new double[n][n];
         for (double[] row : m) Arrays.fill(row, Double.NaN);
 
@@ -362,12 +444,19 @@ public class LdCalculator {
         String firstLine = lines.get(0);
         String sep = firstLine.contains("\t") ? "\t" : "\\s+";
 
-        // Skip header row if first token is non-numeric
+        // Skip a header row if the first token is not a value. PLINK's --r2 square output has no header, and a
+        // monomorphic first SNP makes its row start with "nan", which Double.parseDouble rejects: that is a value,
+        // not a header (treating it as one shifted every row of the matrix up by one).
         int startLine = 0;
         String[] probe = firstLine.trim().split(sep, 2);
         if (probe.length > 0) {
-            try { Double.parseDouble(probe[0].trim()); }
-            catch (NumberFormatException e) { startLine = 1; }
+            String t = probe[0].trim();
+            boolean missing = t.isEmpty() || t.equalsIgnoreCase("nan") || t.equalsIgnoreCase("na") || t.equals(".")
+                || t.equalsIgnoreCase("inf") || t.equalsIgnoreCase("-inf");
+            if (!missing) {
+                try { Double.parseDouble(t); }
+                catch (NumberFormatException e) { startLine = 1; }
+            }
         }
 
         for (int i = startLine; i < lines.size() && (i - startLine) < n; i++) {

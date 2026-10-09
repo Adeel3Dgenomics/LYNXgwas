@@ -621,6 +621,99 @@ public class LocalServer {
     }
 
     // GET /api/project/{id}/locus/{n}/sce2g?cts=<preset or ids> — elements, links and the cell-type strip of a locus
+    // ── LD for a zoomed range: the locus's reference-panel subset (plink_subsets/locus_N) covers the whole
+    //    plot window, so the triangle can show the SNPs actually on screen, not only the stored ~100 around the lead ──
+    private final Map<String, String> ldRegionCache = Collections.synchronizedMap(new LinkedHashMap<String, String>(64, 0.75f, true) {
+        @Override protected boolean removeEldestEntry(Map.Entry<String, String> e) { return size() > 200; }
+    });
+
+    private static String plinkForLd(Config cfg) {
+        String p = PlinkSubsetter.findPlink(cfg);
+        if (p != null) return p;
+        try {   // the app's own bin/ folder (the working directory may be a separate workspace)
+            File codeDir = new File(LocalServer.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+            for (String c : new String[]{"plink.exe", "plink"}) {
+                File f = new File(codeDir.isDirectory() ? codeDir : codeDir.getParentFile(), c);
+                if (f.isFile()) return f.getAbsolutePath();
+            }
+        } catch (Exception ignored) {}
+        return null;
+    }
+
+    // GET /api/project/{id}/locus/{n}/ld-region?from=&to=&max=150 — {available, snps, matrix, snp_count, in_range}
+    private void projectLocusLdRegion(HttpExchange ex, String projectId, String projectDir, String n) throws IOException {
+        Map<String, String> q = new HashMap<>();
+        String rq = ex.getRequestURI().getRawQuery();
+        if (rq != null) for (String kv : rq.split("&")) {
+            int e = kv.indexOf('=');
+            if (e > 0) q.put(kv.substring(0, e), URLDecoder.decode(kv.substring(e + 1), "UTF-8"));
+        }
+        long from, to;
+        int max;
+        try {
+            from = (long) Double.parseDouble(q.getOrDefault("from", ""));
+            to = (long) Double.parseDouble(q.getOrDefault("to", ""));
+            max = Math.max(2, Math.min(300, Integer.parseInt(q.getOrDefault("max", "150"))));
+        } catch (NumberFormatException e) {
+            respond(ex, 400, "application/json", "{\"error\":\"from and to are required\"}".getBytes("UTF-8"));
+            return;
+        }
+        String subPrefix = new File(projectDir, "plink_subsets/locus_" + n).getAbsolutePath();
+        File locusJson = new File(projectDir, "data/locus_" + n + ".json");
+        String key = projectId + "|" + n + "|" + from + "|" + to + "|" + max;
+        String cached = ldRegionCache.get(key);
+        if (cached != null) { respond(ex, 200, "application/json", cached.getBytes("UTF-8")); return; }
+        Map<String, Object> out = new LinkedHashMap<>();
+        try {
+            Config cfg = Config.loadFromProject(projectDir);
+            String plink = plinkForLd(cfg);
+            if (!new File(subPrefix + ".bed").isFile() || !locusJson.isFile() || plink == null) {
+                // e.g. a results-only project (example pack): no genotypes to compute from; the viewer keeps the stored matrix
+                out.put("available", false);
+                out.put("reason", plink == null ? "PLINK not found" : "no reference-panel subset for this locus");
+                respond(ex, 200, "application/json", MiniJson.encode(out).getBytes("UTF-8"));
+                return;
+            }
+            Map<String, Object> d = MiniJson.asObject(MiniJson.parse(new String(Files.readAllBytes(locusJson.toPath()), "UTF-8")));
+            Map<Long, String> idByPos = new HashMap<>();
+            for (Object o : MiniJson.asArray(d.get("gwas_snps"))) {
+                Map<String, Object> g = MiniJson.asObject(o);
+                idByPos.putIfAbsent(((Number) g.get("pos")).longValue(), String.valueOf(g.get("id")));
+            }
+            Map<String, Object> top = MiniJson.asObject(d.get("top_snp"));
+            String topBim = top != null && top.get("bim_id") != null ? String.valueOf(top.get("bim_id")) : null;
+            int[] inRange = new int[1];
+            LocusOutput.LdTriangle tri = LdCalculator.regionTriangle(subPrefix, plink, from, to, idByPos, topBim, max,
+                new File(projectDir, "tmp"), inRange);
+            out.put("available", true);
+            out.put("in_range", inRange[0]);
+            if (tri == null) { out.put("snp_count", 0); out.put("snps", new ArrayList<>()); out.put("matrix", new ArrayList<>()); }
+            else {
+                out.put("snp_count", tri.snpCount);
+                List<Object> snps = new ArrayList<>();
+                for (LocusOutput.LdTriangle.LdSnp sn : tri.snps) {
+                    Map<String, Object> m = new LinkedHashMap<>();
+                    m.put("id", sn.id); m.put("rank", sn.rank); m.put("bim_id", sn.bimId); m.put("pos", sn.pos);
+                    m.put("is_top_snp", sn.isTopSnp);
+                    snps.add(m);
+                }
+                out.put("snps", snps);
+                List<Object> rows = new ArrayList<>();
+                for (double[] r : tri.matrix) {
+                    List<Object> row = new ArrayList<>(r.length);
+                    for (double v : r) row.add(Double.isNaN(v) ? null : Math.round(v * 1000) / 1000.0);
+                    rows.add(row);
+                }
+                out.put("matrix", rows);
+            }
+            String body = MiniJson.encode(out);
+            ldRegionCache.put(key, body);
+            respond(ex, 200, "application/json", body.getBytes("UTF-8"));
+        } catch (Exception e) {
+            respond(ex, 500, "application/json", ("{\"error\":\"" + escJ(String.valueOf(e.getMessage())) + "\"}").getBytes("UTF-8"));
+        }
+    }
+
     private void projectLocusSce2g(HttpExchange ex, String projectId, String projectDir, String n) throws IOException {
         if (!Sce2gLinks.available()) { respond(ex, 200, "application/json", "{\"available\":false}".getBytes()); return; }
         ProjectState ps = ensureProjectState(projectId, projectDir);
@@ -840,6 +933,8 @@ public class LocalServer {
             // a digit, so stripping all non-digits from e.g. "locus/2/l2g" corrupts "2" into "22".
             String n = action.replaceFirst("locus/(\\d+)/l2g", "$1");
             projectLocusL2G(ex, dataDir, projectDir, n);
+        } else if (action.matches("locus/\\d+/ld-region")) {
+            projectLocusLdRegion(ex, projectId, projectDir, action.replaceFirst("locus/(\\d+)/ld-region", "$1"));
         } else if (action.matches("locus/\\d+/sce2g")) {
             // not replaceAll("\\D+", ""): "sce2g" itself contains a digit (see the l2g route above)
             projectLocusSce2g(ex, projectId, projectDir, action.replaceFirst("locus/(\\d+)/sce2g", "$1"));
