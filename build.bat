@@ -110,6 +110,7 @@ javac -encoding UTF-8 -d bin -cp "bin%LIBCP%" ^
   src\ExampleDataInstaller.java ^
   src\ProjectPackExporter.java ^
   src\JsonExporter.java ^
+  src\RepairLocusGenes.java ^
   src\LocusUpdater.java ^
   src\LociMutationService.java ^
   src\LocalServer.java ^

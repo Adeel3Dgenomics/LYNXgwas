@@ -88,24 +88,7 @@ public class JsonExporter {
             })));
 
             j.key("genes");
-            j.arr(() -> lo.genes.forEach(g -> j.obj(() -> {
-                j.kv("gene_name", g.geneName);
-                j.kv("gene_id",   g.geneId);
-                j.kv("strand",    g.strand);
-                j.kv("start",     g.start);
-                j.kv("end",       g.end);
-                j.key("transcripts");
-                j.arr(() -> g.transcripts.forEach(tx -> j.obj(() -> {
-                    j.kv("transcript_id",   tx.transcriptId);
-                    j.kv("transcript_type", tx.transcriptType);
-                    j.kv("strand",          tx.strand);
-                    j.kv("start",           tx.start);
-                    j.kv("end",             tx.end);
-                    j.key("exons"); j.arr(() -> tx.exons.forEach(e -> exonObj(j, e)));
-                    j.key("cds");   j.arr(() -> tx.cds.forEach(e   -> exonObj(j, e)));
-                    j.key("utrs");  j.arr(() -> tx.utrs.forEach(e  -> exonObj(j, e)));
-                })));
-            })));
+            writeGenes(j, lo.genes);
 
             // Diagnostic: count real r² values before export
             if (lo.ldTriangle != null && lo.ldTriangle.matrix != null) {
@@ -132,6 +115,41 @@ public class JsonExporter {
                 });
             } else { j.raw("null"); }
         });
+        return j.toString();
+    }
+
+    private static void writeGenes(Jb j, List<Gene> genes) {
+        j.arr(() -> genes.forEach(g -> j.obj(() -> {
+            j.kv("gene_name", g.geneName);
+            j.kv("gene_id",   g.geneId);
+            j.kv("strand",    g.strand);
+            j.kv("start",     g.start);
+            j.kv("end",       g.end);
+            j.key("transcripts");
+            j.arr(() -> g.transcripts.forEach(tx -> j.obj(() -> {
+                j.kv("transcript_id",   tx.transcriptId);
+                j.kv("transcript_type", tx.transcriptType);
+                j.kv("strand",          tx.strand);
+                j.kv("start",           tx.start);
+                j.kv("end",             tx.end);
+                j.key("exons"); j.arr(() -> tx.exons.forEach(e -> exonObj(j, e)));
+                j.key("cds");   j.arr(() -> tx.cds.forEach(e   -> exonObj(j, e)));
+                j.key("utrs");  j.arr(() -> tx.utrs.forEach(e  -> exonObj(j, e)));
+            })));
+        })));
+    }
+
+    /** The "genes" array of a locus, exactly as locusToJson writes it (used by RepairLocusGenes). */
+    static String genesToJson(List<Gene> genes) {
+        Jb j = new Jb();
+        writeGenes(j, genes);
+        return j.toString();
+    }
+
+    /** A JSON array of strings, as locusToJson writes nearest_genes. */
+    static String stringsToJson(List<String> xs) {
+        Jb j = new Jb();
+        j.arr(() -> xs.forEach(j::str));
         return j.toString();
     }
 

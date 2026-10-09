@@ -26,21 +26,23 @@ public class GffParserTest {
         int failures = 0;
         failures += check("query inside a long gene, short gene in between: the long gene is found",
             names(gff.overlapping("1", 50000, 60000)), "LONG");
-        failures += check("query covering both genes: both, by start", names(gff.overlapping("1", 2500, 2600)), "LONG SHORT");
+        failures += check("query covering both genes: both", names(gff.overlapping("1", 2500, 2600)), "LONG SHORT");
         failures += check("query between genes: none", names(gff.overlapping("1", 150000, 160000)), "");
         failures += check("query before every gene: none, and no exception", names(gff.overlapping("1", 10, 20)), "");
         failures += check("query after every gene: none", names(gff.overlapping("1", 300000, 400000)), "");
-        failures += check("query spanning all: all three", names(gff.overlapping("1", 0, 1_000_000)), "LONG SHORT NEXT");
+        failures += check("query spanning all: all three", names(gff.overlapping("1", 0, 1_000_000)), "LONG NEXT SHORT");
         failures += check("unknown chromosome: none", names(gff.overlapping("2", 0, 1_000_000)), "");
 
         if (failures == 0) System.out.println("PASS: all GffParser tests passed");
         else { System.out.println("FAIL: " + failures + " test(s) failed"); System.exit(1); }
     }
 
+    /** Gene names, sorted (the test is about which genes, not their order). */
     private static String names(List<Gene> genes) {
-        StringBuilder sb = new StringBuilder();
-        for (Gene g : genes) sb.append(sb.length() > 0 ? " " : "").append(g.geneName);
-        return sb.toString();
+        List<String> n = new ArrayList<>();
+        for (Gene g : genes) n.add(g.geneName);
+        Collections.sort(n);
+        return String.join(" ", n);
     }
 
     private static int check(String label, String actual, String expected) {

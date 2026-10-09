@@ -172,7 +172,8 @@ public class GffParser {
             Gene g = genes.get(i);
             if (g.start <= queryEnd && g.end >= queryStart) result.add(g);
         }
-        Collections.reverse(result);   // by start, as before
+        // (order as before the fix: from the last gene starting before the region leftwards; callers that pick
+        //  the nearest gene break ties by this order, so it is kept)
         // Scan right from pivot+1 (genes with later starts that still overlap)
         for (int i = pivot + 1; i < genes.size(); i++) {
             Gene g = genes.get(i);
