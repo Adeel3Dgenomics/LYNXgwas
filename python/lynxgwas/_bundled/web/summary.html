@@ -10,7 +10,7 @@
 :root {
   --ink: #0f172a; --ink2: #475569; --ink3: #94a3b8; --line: #e2e8f0; --surface: #ffffff; --page: #f1f5f9;
   --brand: #0F6E56; --brand2: #1a3a4a; --accent: #2563eb;
-  --done: #16a34a; --stale: #f59e0b; --missing: #e2e8f0; --mhc: #c4b5fd; --blocked: #fca5a5; --failed: #e11d48;
+  --done: #16a34a; --stale: #f59e0b; --missing: #e2e8f0; --mhc: #c4b5fd; --intergenic: #94a3b8; --blocked: #fca5a5; --failed: #e11d48;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--page); color: var(--ink); font-size: 14px; }
@@ -306,6 +306,7 @@ const N_CHANGED = () => Number(S.cfg && S.cfg['sample.size.changed']) || 0;
 function status(l, t) {
   const r = l.runs[t.tool];
   if (r) {
+    if (r.intergenic) return 'intergenic';
     if (r.timestamp < N_CHANGED()) return 'stale';
     if (t.inputs && t.inputs.some(i => l.runs[i] && l.runs[i].timestamp > r.timestamp)) return 'stale';
     return 'done';
@@ -316,7 +317,7 @@ function status(l, t) {
   return 'missing';
 }
 function counts(t) {
-  const c = { done: 0, stale: 0, missing: 0, mhc: 0, blocked: 0, failed: 0 };
+  const c = { done: 0, stale: 0, missing: 0, mhc: 0, intergenic: 0, blocked: 0, failed: 0 };
   S.loci.forEach(l => c[status(l, t)]++);
   return c;
 }
@@ -359,7 +360,7 @@ function renderSteps() {
   const rows = TOOLS.map(t => {
     const c = counts(t), total = S.loci.length;
     const bar = h('div', { class: 'bar', title: c.done + ' done, ' + c.stale + ' to re-run, ' + c.failed + ' failed, ' + c.missing + ' not run, ' + c.mhc + ' MHC, ' + c.blocked + ' without inputs' },
-      ...[['done', 'var(--done)'], ['stale', 'var(--stale)'], ['failed', 'var(--failed)'], ['mhc', 'var(--mhc)'], ['blocked', 'var(--blocked)']]
+      ...[['done', 'var(--done)'], ['stale', 'var(--stale)'], ['failed', 'var(--failed)'], ['mhc', 'var(--mhc)'], ['intergenic', 'var(--intergenic)'], ['blocked', 'var(--blocked)']]
         .map(([k, col]) => h('span', { style: 'width:' + (100 * c[k] / total) + '%;background:' + col })));
     const todo = c.missing + c.stale;
     const run = S.running[t.tool];
@@ -504,8 +505,8 @@ async function reloadSummary() {
 }
 
 // ── charts ────────────────────────────────────────────────────────────
-const COLOR = { done: '#16a34a', stale: '#f59e0b', missing: '#e2e8f0', mhc: '#c4b5fd', blocked: '#fca5a5', failed: '#e11d48' };
-const SAY = { done: 'done', stale: 'outdated (older than its inputs or the sample size)', missing: 'not run yet', mhc: 'MHC locus, skipped by default', blocked: 'inputs not built', failed: 'failed' };
+const COLOR = { done: '#16a34a', stale: '#f59e0b', missing: '#e2e8f0', mhc: '#c4b5fd', intergenic: '#94a3b8', blocked: '#fca5a5', failed: '#e11d48' };
+const SAY = { done: 'done', stale: 'outdated (older than its inputs or the sample size)', missing: 'not run yet', mhc: 'MHC locus, skipped by default', intergenic: 'intergenic: no gene within 10 kb, nothing for MAGMA to test', blocked: 'inputs not built', failed: 'failed' };
 
 function renderMatrix() {
   const box = document.getElementById('matrix');

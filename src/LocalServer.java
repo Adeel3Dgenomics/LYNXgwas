@@ -2777,7 +2777,14 @@ public class LocalServer {
         pt.update("MAGMA: assigning SNPs to genes", 2, 4);
         long start = Math.max(0, locus.start - windowKb * 1000), end = locus.end + windowKb * 1000;
         MagmaAdapter.AnnotateResult ann = MagmaAdapter.annotate(matchedDir, gff, runDir, locus.chr, start, end, windowKb, magmaBin);
-        if (!ann.ok) throw new IOException(ann.error);
+        if (!ann.ok) {
+            // No gene within the window (a gene desert), or genes but none of the locus SNPs within the window of one:
+            // there is nothing for MAGMA to test. That is a property of the locus, not a failure.
+            File alog = new File(runDir, "magma_annotate.log");
+            boolean noSnpMapped = alog.isFile() && new String(Files.readAllBytes(alog.toPath()), "UTF-8").contains("no SNPs mapped to a gene");
+            if (ann.nGenes == 0 || noSnpMapped) return magmaIntergenic(res, gff, locus, runDir, jobId, windowKb, cfg, ann.nGenes);
+            throw new IOException(ann.error);
+        }
 
         pt.update("MAGMA: gene-based test", 3, 4);
         MagmaAdapter.GeneAnalysisResult ga = MagmaAdapter.geneAnalysis(harmonizedDir, matchedDir, ann, runDir, cfg.analysisN(), magmaBin);
@@ -2811,6 +2818,32 @@ public class LocalServer {
         }
         res.ok = true;
         res.resultRows = nTested;
+        return res;
+    }
+
+    /** Completed MAGMA run for a locus with no gene to test: empty result table, the nearest gene in provenance. */
+    private PluginEngine.RunResult magmaIntergenic(PluginEngine.RunResult res, GffParser gff, Locus locus, File runDir,
+                                                   String jobId, long windowKb, Config cfg, int nGenesNear) throws IOException {
+        String chr = locus.chr.replaceFirst("^chr", "");
+        Gene best = null;
+        long bestD = Long.MAX_VALUE;
+        for (Gene g : gff.genesByChromosome().getOrDefault(chr, Collections.emptyList())) {
+            long d = g.end < locus.start ? locus.start - g.end : g.start > locus.end ? g.start - locus.end : 0;
+            if (d < bestD) { bestD = d; best = g; }
+        }
+        try (PrintWriter pw = new PrintWriter(new OutputStreamWriter(new FileOutputStream(new File(runDir, "result.tsv")), "UTF-8"))) {
+            pw.println("gene_id\tgene\tchr\tstart\tstop\tnsnps\tmagma_z\tmagma_p\tsignificant");
+        }
+        try (PrintWriter pw = new PrintWriter(new OutputStreamWriter(new FileOutputStream(new File(runDir, "provenance.json")), "UTF-8"))) {
+            pw.printf(Locale.ROOT, "{%n  \"job_id\": \"%s\",%n  \"tool\": \"magma_gene\",%n  \"tool_version\": \"1.10\",%n"
+                + "  \"timestamp\": %d,%n  \"params\": {\"window_kb\": \"%d\", \"sample_n\": \"%d\"},%n"
+                + "  \"intergenic\": true,%n  \"genes_near\": %d,%n  \"nearest_gene\": \"%s\",%n  \"nearest_gene_distance_bp\": %d,%n"
+                + "  \"genes_tested\": 0%n}%n",
+                escJ(jobId), System.currentTimeMillis(), windowKb, cfg.sampleN, nGenesNear,
+                escJ(best == null ? "" : best.geneName), best == null ? -1 : bestD);
+        }
+        res.ok = true;
+        res.resultRows = 0;
         return res;
     }
 
@@ -2986,6 +3019,7 @@ public class LocalServer {
         int nSets;                                   // SuSiE/FINEMAP credible sets, COJO independent signals
         String reliability = "";                     // COJO: ok | suspect | likely_artifact
         String note = "";                            // COJO: why it is not reliable
+        boolean intergenic;                          // MAGMA: no gene within the window, nothing to test
         double localH2 = Double.NaN, localH2Se = Double.NaN;   // heritability_local
         final List<String> setLines = new ArrayList<>();   // "CS1: 9 SNPs, lead rs123 (PIP 0.26)" / "rs123 (pJ 1e-12)"
 
@@ -3001,6 +3035,7 @@ public class LocalServer {
             j.append(",\"n_sets\":").append(nSets);
             j.append(",\"reliability\":\"").append(escJ(reliability)).append('"');
             j.append(",\"note\":\"").append(escJ(note)).append('"');
+            if (intergenic) j.append(",\"intergenic\":true");
             if (!Double.isNaN(localH2)) j.append(String.format(Locale.ROOT, ",\"h2_local\":%.6g,\"h2_local_se\":%s", localH2,
                 Double.isNaN(localH2Se) ? "null" : String.format(Locale.ROOT, "%.6g", localH2Se)));
             j.append(",\"sets\":[");
@@ -3024,6 +3059,14 @@ public class LocalServer {
                 RunSummary prev = latest.get(tool);
                 if (prev != null && prev.timestamp >= ts) continue;
                 RunSummary rs = summarise(tool, d.getName(), ts, res);
+                if (rs != null && Boolean.TRUE.equals(p.get("intergenic"))) {
+                    rs.intergenic = true;
+                    String ng = MiniJson.getStr(p, "nearest_gene", "");
+                    long dist = p.get("nearest_gene_distance_bp") instanceof Number ? ((Number) p.get("nearest_gene_distance_bp")).longValue() : -1;
+                    Object w = p.get("params") instanceof Map ? ((Map<?, ?>) p.get("params")).get("window_kb") : null;
+                    rs.note = "intergenic: no gene within " + (w != null ? w : "10") + " kb, nothing to test"
+                        + (ng.isEmpty() ? "" : String.format(Locale.ROOT, "; nearest gene %s (%.1f kb away)", ng, dist / 1000.0));
+                }
                 if (rs != null) latest.put(tool, rs);
             } catch (Exception ignored) {}
         }
