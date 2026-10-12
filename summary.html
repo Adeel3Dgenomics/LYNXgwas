@@ -860,8 +860,11 @@ function renderSce(d) {
   const groups = [];
   cts.forEach(c => { const key = c.group + ' · ' + c.lineage; let g = groups.find(x => x.key === key); if (!g) groups.push(g = { key, cts: [] }); g.cts.push(c); });
   const cw = 22, rowH = 26, top = 150, left = 110, gap = 8;
-  const totalW = left + cts.length * cw + (groups.length - 1) * gap + 110;   // room for the last rotated labels
-  const svg3 = d3.create('svg').attr('viewBox', `0 0 ${totalW} ${top + SCE_DEFS.length * rowH + 40}`);
+  // room for the last rotated labels, and for the colour legend when only a few cell types are selected
+  const totalW = Math.max(640, left + cts.length * cw + (groups.length - 1) * gap + 110);
+  // drawn at most a little above its natural size: with a few cell types a full-width heatmap has giant labels
+  const svg3 = d3.create('svg').attr('viewBox', `0 0 ${totalW} ${top + SCE_DEFS.length * rowH + 40}`)
+    .style('max-width', Math.round(totalW * 1.25) + 'px');
   let gx = left;
   groups.forEach(g => {
     // two header rows: the tissue once over its cell types, then the lineage (shortened to fit its columns)

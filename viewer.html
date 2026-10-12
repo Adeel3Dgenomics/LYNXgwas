@@ -772,16 +772,14 @@ async function loadFinemapStrip(data, panelEl) {
     panelEl.querySelector('.locus-header').insertAdjacentElement('afterend', strip);
   }
   strip.dataset.locusId = data.id;
+  // the strip is redrawn on every overlay toggle: only the newest call may fill it, or two calls that
+  // overlap in their fetches both append their chips and every chip shows twice
+  const gen = strip._gen = (strip._gen || 0) + 1;
   let runs = [];
   try {
     const r = await fetch(PROJECT_API + '/analysis/latest?locus_id=' + encodeURIComponent(data.id));
     if (r.ok) runs = (await r.json()).runs || [];
   } catch (e) {}
-  strip.textContent = '';
-  const title = document.createElement('span');
-  title.className = 'fm-title';
-  title.textContent = 'Fine-mapping';
-  strip.appendChild(title);
   const magma = runs.find(r => r.tool === 'magma_gene');
   const hLocal = runs.find(r => r.tool === 'heritability_local');
   const rank = runs.find(r => r.tool === 'snp_rank');
@@ -794,6 +792,12 @@ async function loadFinemapStrip(data, panelEl) {
       if (r.ok) joint = (await r.json()).runs || [];
     } catch (e) {}
   }
+  if (strip._gen !== gen) return;
+  strip.textContent = '';
+  const title = document.createElement('span');
+  title.className = 'fm-title';
+  title.textContent = 'Fine-mapping';
+  strip.appendChild(title);
   if (!runs.length && !joint.length && !magma && !hLocal && !rank) {
     const none = document.createElement('span');
     none.className = 'fm-none';
