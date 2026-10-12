@@ -361,9 +361,9 @@ CHAPTERS = [
         ("viewer_pcsk9.png", V, "The genome, then the locus", [
             "genome-wide skyline with every locus marked", "regional plot coloured by LD with the lead SNP",
             "genes, and SNP-heritability in the header"]),
-        ("viewer_pcsk9_ld.png", (330, 260, 1910, 1080), "Genes, regulation and LD, together", [
-            "histone peaks of the disease's own tissue", "pairwise LD triangle with LD blocks",
-            "they zoom together; export as PDF or Excel"]),
+        ("viewer_pcsk9_ld.png", (330, 200, 1910, 870), "Regulation and LD, on one axis", [
+            "enhancer–gene links and histone peaks", "the LD triangle on the plot's own axis, with LD blocks",
+            "zoom in and LD is recomputed for the SNPs in view"]),
         ("viewer_tcf7l2_magma.png", V, "Genes, and the likely causal one", [
             "MAGMA ranks the genes of every locus", "nearest genes and the likely causal gene",
             "split, merge or resize loci live, with undo"]),
@@ -398,10 +398,16 @@ CHAPTERS = [
             "λGC, the LDSC intercept and the ratio", "the sample size implied by the standard errors",
             "a wrong N is flagged and can be corrected"]),
     ]),
-    ("GENES & REGULATION", "From SNPs to genes", "gene tests and regulatory enrichment", ORANGE, [
+    ("GENES & REGULATION", "From SNPs to genes", "gene tests, enhancer–gene links and regulatory enrichment", ORANGE, [
         ("sum_magma.png", None, "MAGMA at every locus", [
-            "which genes of the locus carry the association", "125 of 125 tested loci have a significant gene",
-            "the strongest gene of each locus"]),
+            "which genes of the locus carry the association", "129 of 133 tested T2D loci have a significant gene",
+            "a locus with no gene nearby is reported as intergenic"]),
+        ("viewer_ctla4_sce2g.png", (700, 200, 1910, 830), "Enhancer–gene links (scE2G)", [
+            "40 cell types: immune cells and pancreatic islets", "CTLA4: the lead SNP sits inside an enhancer",
+            "arcs to the genes it regulates: CTLA4 and ICOS"]),
+        ("sum_sce2g.png", (0, 0, 2656, 1880), "Which cell types?", [
+            "lead SNPs against matched random SNPs, cell type by cell type",
+            "T2D: 23 of 133 lead SNPs inside islet elements, 2.2× expected", "strongest in PP and delta cells"]),
         ("sum_regulatory.png", None, "Regulatory enrichment", [
             "do significant SNPs fall in active chromatin?", "Fisher's exact test per histone mark",
             "T2D in pancreas: OR 2.86 at H3K27ac"]),

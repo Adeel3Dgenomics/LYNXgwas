@@ -5,7 +5,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 OUT = Path(__file__).parent / "shots"
-DESK = "http://localhost:8765"
+DESK = "http://127.0.0.1:8765"
 
 
 def main():
@@ -15,8 +15,11 @@ def main():
 
         page.goto(f"{DESK}/viewer.html?project=cad-demo&locus=1", wait_until="domcontentloaded", timeout=180_000)
         time.sleep(14)
-        page.get_by_text("LD r²", exact=False).first.scroll_into_view_if_needed()
-        page.mouse.wheel(0, 500)
+        # the LD triangle near the top of the screen, with the regulatory and scE2G tracks above it
+        page.get_by_text("LD r²", exact=False).first.evaluate("el => el.scrollIntoView({block: 'start'})")
+        page.mouse.move(1100, 600)
+        page.mouse.wheel(0, -330)
+        page.mouse.move(5, 1070)   # off the triangle, so no hover tooltip
         time.sleep(3)
         page.screenshot(path=str(OUT / "viewer_pcsk9_ld.png"))
         print("  viewer_pcsk9_ld")
@@ -34,6 +37,19 @@ def main():
         time.sleep(4)
         page.screenshot(path=str(OUT / "viewer_tcf7l2_magma.png"))
         print("  viewer_tcf7l2_magma")
+        # scE2G enhancer-gene links: the track under the genes, and the panel (CTLA4 in rheumatoid arthritis)
+        page.goto(f"{DESK}/viewer.html?project=ra-demo&locus=16", wait_until="domcontentloaded", timeout=180_000)
+        page.wait_for_selector(".sce2g-panel", timeout=120_000)
+        time.sleep(6)
+        page.locator(".sce2g-group-root").first.scroll_into_view_if_needed()
+        page.mouse.wheel(0, 250)
+        time.sleep(3)
+        page.screenshot(path=str(OUT / "viewer_ctla4_sce2g.png"))
+        print("  viewer_ctla4_sce2g")
+        page.locator(".sce2g-panel").first.scroll_into_view_if_needed()
+        time.sleep(2)
+        page.locator(".sce2g-panel").first.screenshot(path=str(OUT / "sce2g_panel_ctla4.png"))
+        print("  sce2g_panel_ctla4")
         b.close()
 
 

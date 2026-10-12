@@ -10,12 +10,13 @@ LYNXgwas: fine-mapping, heritability and causal-SNP ranking for your GWAS, on yo
 One GWAS gives you hundreds of significant loci. Which variant is causal? Which gene does it act through? Does it replicate? Answering that usually takes a dozen tools, a dozen file formats and weeks of scripts, or uploading your data to a web server.
 
 LYNXgwas does it in one app that runs on your computer. Point it at your summary statistics and it finds the loci and runs every analysis:
-🔍 An interactive locus viewer: genome-wide skyline, regional plot, genes, regulatory tracks, LD triangle
+🔍 An interactive locus viewer: genome-wide skyline, regional plot, genes, regulatory tracks and an LD triangle on the same axis
 🎯 Fine-mapping at every locus: SuSiE, Wakefield ABF and GCTA-COJO, with credible sets on the plot
 🔗 Joint fine-mapping across datasets (mvSuSiE)
 🏆 A causal-SNP ranking that combines all the evidence, with its reasons
 🧬 SNP-heritability (built-in LDSC), local heritability (HESS), QC and a sample-size check
 🧪 MAGMA at every locus and regulatory-element enrichment
+🧫 Enhancer–gene links (scE2G) for 40 immune and pancreatic-islet cell types, with a per-cell-type enrichment test
 🗺️ Many GWAS at once: the Locus Serpent Plot, the Gene Constellation and a search across every dataset
 🤖 A built-in AI agent, with a local model by default
 🔒 Private by design: nothing is uploaded
@@ -37,15 +38,15 @@ Free and open source (MIT).
 1:06 Fine-mapping: SuSiE, ABF, COJO, mvSuSiE
 1:25 Causal-SNP ranking
 1:45 Heritability and QC
-1:59 Genes and regulatory enrichment
-2:12 Across datasets: Serpent Plot, Gene Constellation, search
-2:37 The AI agent
-2:44 Robust and fast
-3:00 Matches the published results
-3:16 What it found
-3:32 The example data: 30 GWAS, 6 diseases
-3:41 Use it online: LYNXgwas Server
-3:56 Get it
+1:59 Genes, enhancer–gene links and regulatory enrichment
+2:23 Across datasets: Serpent Plot, Gene Constellation, search
+2:48 The AI agent
+2:55 Robust and fast
+3:11 Matches the published results
+3:26 What it found
+3:42 The example data: 30 GWAS, 6 diseases
+3:52 Use it online: LYNXgwas Server
+4:07 Get it
 
 🔗 Links
 GitHub: https://github.com/AlsammanAlsamman/LYNXgwas

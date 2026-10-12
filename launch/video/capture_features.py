@@ -8,12 +8,13 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 OUT = Path(__file__).parent / "shots"
-DESK = "http://localhost:8765"
+DESK = "http://127.0.0.1:8765"
 SECTIONS = {"sum_heritability": "Heritability", "sum_qc": "Quality control",
             "sum_signals": "Fine-mapping: how many signals per locus", "sum_precision": "Fine-mapping: how precise are the credible sets",
             "sum_rankconf": "Causal-SNP ranking: confidence per locus", "sum_topsnps": "Top causal-SNP candidates",
             "sum_magma": "Genes (MAGMA)", "sum_regulatory": "Regulatory enrichment", "sum_progress": "Analysis progress",
-            "sum_matrix": "Which loci have which results", "sum_joint": "Joint fine-mapping across datasets (mvSuSiE)"}
+            "sum_matrix": "Which loci have which results", "sum_joint": "Joint fine-mapping across datasets (mvSuSiE)",
+            "sum_sce2g": "Enhancer–gene links (scE2G)"}
 
 
 def save(page, name):
@@ -38,7 +39,8 @@ def main():
             try:
                 page.click("#wiz-next", timeout=5000)
                 time.sleep(2.5)
-                save(page, f"wizard_{i}")
+                if i != 2:   # step 2 shows the local file paths (user name, folders): never saved
+                    save(page, f"wizard_{i}")
             except Exception as e:
                 print("   wizard step", i, e)
                 break
@@ -79,6 +81,12 @@ def main():
                 sec.scroll_into_view_if_needed()
                 time.sleep(1.5)
                 sec.screenshot(path=str(OUT / f"{name}.png"))
+                if name == "sum_sce2g":   # a white margin, so the video's slow zoom on its top part clips nothing
+                    from PIL import Image
+                    im = Image.open(OUT / f"{name}.png")
+                    pad = Image.new("RGB", (im.width + 160, im.height + 80), "white")
+                    pad.paste(im, (80, 80))
+                    pad.save(OUT / f"{name}.png")
                 print("  ", name, flush=True)
             except Exception as e:
                 print("   section", name, e)

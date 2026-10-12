@@ -12,8 +12,8 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 OUT = Path(__file__).parent / "shots"
-DESK = "http://localhost:8765"
-SERVER = "http://localhost:8780"
+DESK = "http://127.0.0.1:8765"
+SERVER = "http://127.0.0.1:8780"
 SERPENT = "d5924980-27fb-497a-8443-1ebc69d076e1"
 CONSTELLATION = "ef832895-6854-454d-9265-bcd5f7acf9f5"
 
