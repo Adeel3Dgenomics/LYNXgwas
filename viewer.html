@@ -2734,11 +2734,13 @@ function renderSce2gPanel(panelEl, data) {
   const strip = (sce.cell_types || []).map(c => {
     const col = SCE_COLORS[c.cls] || '#cbd5e1';
     const shade = c.dist === 0 ? 1 : c.dist <= 1000 ? 0.85 : c.dist <= 10000 ? 0.6 : c.dist <= 50000 ? 0.4 : 0.22;
+    const m = /^(.*?)\s*\(([^)]*)\)\s*$/.exec(c.ct || '');   // 'CD14 Mono1 (PBMC)' -> name + tissue on its own line
+    const ctName = m ? m[1] : (c.ct || ''), ctTissue = m ? m[2] : '';
     const txt = c.dist == null ? '—' : c.dist === 0 ? 'in' : c.dist < 1000 ? c.dist : (c.dist / 1000).toFixed(1) + 'k';
     return `<div title="${escapeHtml(c.ct)}: ${c.dist == null ? 'no element' : (c.dist === 0 ? 'lead SNP inside' : fmtN(c.dist) + ' bp')} · ${escapeHtml(c.cls || '')}${c.gene ? ' · ' + escapeHtml(c.gene) + ' ' + c.e2g : ''}"
-      style="display:inline-flex;flex-direction:column;align-items:center;width:46px;margin:2px">
+      style="display:inline-flex;flex-direction:column;align-items:center;width:66px;margin:2px 1px">
       <span style="width:40px;height:22px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;background:${col};opacity:${shade};${c.dist === 0 ? 'box-shadow:0 0 0 2px #111827;' : ''}">${txt}</span>
-      <span style="font-size:8.5px;color:#64748b;line-height:1.1;text-align:center;margin-top:2px;height:22px;overflow:hidden">${escapeHtml(c.ct)}</span></div>`;
+      <span style="font-size:8.5px;color:#475569;line-height:1.15;text-align:center;margin-top:2px;overflow-wrap:anywhere">${escapeHtml(ctName)}</span>${ctTissue ? `<span style="font-size:7.5px;color:#94a3b8;line-height:1.1;text-align:center;overflow-wrap:anywhere">${escapeHtml(ctTissue)}</span>` : ''}</div>`;
   }).join('');
   box.innerHTML = `
     <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:8px">
@@ -2756,7 +2758,7 @@ function renderSce2gPanel(panelEl, data) {
         ${csg || '<i>no credible-set SNP inside an element' + ((sce.cs_in_elements || []).length ? '' : (data.analysis_cs_available === false ? ' (run SuSiE)' : '')) + '</i>'}</div>
     </div>
     <div style="margin-top:10px;color:#64748b;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em">Nearest element to the lead SNP in each cell type</div>
-    <div style="display:flex;flex-wrap:wrap">${strip}</div>
+    <div style="display:flex;flex-wrap:wrap;align-items:flex-start">${strip}</div>
     <div style="color:#94a3b8;font-size:10.5px;margin-top:6px">colour = class of the nearest element; shade = distance (dark = inside, light = far); ring = lead SNP inside.
       Data: ${escapeHtml(sce.citation || 'scE2G')}</div>`;
   box.querySelector('.sce2g-sel').addEventListener('change', ev => {
