@@ -46,18 +46,30 @@ projects at once.
 
 ## Screenshots
 
-**Home page** — manage multiple GWAS projects, see status and locus/SNP counts at a glance:
+**Home page** — manage many GWAS projects, see their status and locus/SNP counts at a glance:
 
 ![LYNXgwas home page](https://raw.githubusercontent.com/AlsammanAlsamman/LYNXgwas/main/assets/screenshots/homepage.png)
 
-**Locus viewer** — Manhattan plot, gene track, and LD triangle for a single locus:
+**Locus viewer** — association plot, genes, regulatory marks, scE2G enhancer–gene links and the LD
+triangle, all on one genomic axis, with the fine-mapping and causal-rank results above:
 
 ![LYNXgwas locus viewer](https://raw.githubusercontent.com/AlsammanAlsamman/LYNXgwas/main/assets/screenshots/viewer.png)
 
-*Screenshots use real public data: the [PGC3 schizophrenia GWAS](https://doi.org/10.6084/m9.figshare.19426775)
-(Trubetskoy et al. 2022, [Nature](https://doi.org/10.1038/s41586-022-04434-5)) at the well-known
-CACNA1C locus (lead SNP rs2238057, p=8.5×10⁻²²), with LD from the 1000 Genomes Phase 3 EUR panel
-and gene annotation from GENCODE.*
+**Enhancer–gene links** — the element nearest the lead SNP, the genes it regulates, and the nearest
+element in each cell type:
+
+![scE2G enhancer-gene links for a locus](https://raw.githubusercontent.com/AlsammanAlsamman/LYNXgwas/main/assets/screenshots/sce2g.png)
+
+**Project summary** — what has run on which loci, heritability, quality control, and the
+project-wide fine-mapping, MAGMA and scE2G results:
+
+![LYNXgwas project summary](https://raw.githubusercontent.com/AlsammanAlsamman/LYNXgwas/main/assets/screenshots/summary.png)
+
+*Screenshots use real public data. The home page shows the article's 30 example datasets; the other three
+use the [PGC3 schizophrenia GWAS](https://doi.org/10.6084/m9.figshare.19426775)
+(Trubetskoy et al. 2022, [Nature](https://doi.org/10.1038/s41586-022-04434-5)), here at the well-known
+CACNA1C locus (lead SNP rs2238057, p=8.5×10⁻²²), with LD from the 1000 Genomes Phase 3 EUR panel,
+gene annotation from GENCODE and enhancer–gene links from scE2G.*
 
 ## Install
 
@@ -110,7 +122,9 @@ workspace or computer, with a progress bar, without touching projects that are a
 - Genome-wide QC triage: genomic inflation factor (λ<sub>GC</sub>), with an optional LDSC-intercept comparison to separate genuine polygenicity from confounding
 
 **LD & fine-mapping**
-- LD computation and pairwise LD triangles per locus (PLINK reference-panel subsetting under the hood)
+- LD computation and pairwise LD triangles per locus (PLINK reference-panel subsetting under the hood);
+  the triangle is drawn on the locus plot's genomic axis, so each SNP's column sits under its dot, and
+  zooming recomputes LD for the SNPs in view
 - **SuSiE** — Bayesian sum-of-single-effects fine-mapping with credible sets
 - **FINEMAP**-style Wakefield ABF fine-mapping for single-causal-variant loci
 - **GCTA-COJO** — conditional & joint SNP selection with an automatic reliability/artifact check
@@ -119,7 +133,8 @@ workspace or computer, with a progress bar, without touching projects that are a
 - **SuSiEx** — cross-ancestry joint fine-mapping across multiple LYNXgwas projects at once
 - **mvSuSiE** — joint fine-mapping of an aligned locus across datasets (within a disease, or across
   diseases whose credible sets overlap), with sample overlap estimated from null SNPs
-- **MAGMA** — per-locus gene-based test ranking the genes of each locus
+- **MAGMA** — per-locus gene-based test ranking the genes of each locus; a locus with no gene within
+  10 kb is reported as intergenic, with its nearest gene and distance
 - **Causal-SNP ranking** — one score per SNP from SuSiE/ABF/COJO, joint fine-mapping, CADD, LD score,
   histone peaks, coding position, TSS distance, MAGMA, and how the SNP replicates in the other
   datasets of the same disease (credible sets, PIPs, top SNP, significance, effect direction), with a
@@ -158,6 +173,7 @@ workspace or computer, with a progress bar, without touching projects that are a
 - Live locus editing: resize, split, create, and reorder loci without re-running the whole pipeline
 - Per-locus and whole-genome PDF export; full Excel export of all annotated SNPs
 - Multi-project management from a single home page, with per-project staleness tracking
+- A project summary page: which analyses have run on which loci, and the project-wide results
 
 ## Requirements
 
